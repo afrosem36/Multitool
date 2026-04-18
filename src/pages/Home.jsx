@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { pdfTools, textTools } from '../data/toolCatalog';
+import { linkTools, pdfTools, textTools } from '../data/toolCatalog';
 import { homeFaqs } from '../seo/seoConfig';
 import './Home.css';
 
@@ -87,6 +87,36 @@ const Home = () => {
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.25 + index * 0.06}s` }}
+              >
+                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                  <Icon size={32} className="feature-icon text-gradient" />
+                </div>
+                <h3>{feature.name}</h3>
+                <p>{feature.description}</p>
+                <Link to={feature.path} className="feature-link">
+                  Open Tool <ArrowRight size={16} />
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="feature-section">
+        <div className="section-heading">
+          <h2>Link Tools</h2>
+          <p>Create share-ready communication links for WhatsApp campaigns, customer support, and contact pages.</p>
+        </div>
+
+        <div className="features-grid features-grid-compact">
+          {linkTools.map((feature, index) => {
+            const Icon = feature.icon;
+
+            return (
+              <div
+                key={feature.path}
+                className="feature-card glass-panel animate-fade-in"
+                style={{ animationDelay: `${0.3 + index * 0.06}s` }}
               >
                 <div className="feature-icon-wrapper" style={{ background: feature.color }}>
                   <Icon size={32} className="feature-icon text-gradient" />

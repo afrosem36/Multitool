@@ -1,4 +1,4 @@
-import { pdfTools, textTools } from '../data/toolCatalog';
+import { linkTools, pdfTools, textTools } from '../data/toolCatalog';
 
 export const siteMeta = {
   siteName: 'MultiTool',
@@ -136,6 +136,13 @@ const buildHomeSchemas = (origin, url, title, description) => [
   buildWebAppSchema(title, description, url),
   {
     '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: siteMeta.siteName,
+    url: origin,
+    logo: normalizedUrl(origin, '/favicon.svg')
+  },
+  {
+    '@context': 'https://schema.org',
     '@type': 'FAQPage',
     mainEntity: homeFaqs.map((item) => ({
       '@type': 'Question',
@@ -150,7 +157,7 @@ const buildHomeSchemas = (origin, url, title, description) => [
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'Popular MultiTool Features',
-    itemListElement: [...pdfTools.slice(0, 6), ...textTools.slice(0, 6)].map((tool, index) => ({
+    itemListElement: [...pdfTools.slice(0, 6), ...textTools.slice(0, 6), ...linkTools].map((tool, index) => ({
       '@type': 'ListItem',
       position: index + 1,
       url: `${origin}${tool.path}`,
@@ -205,6 +212,22 @@ pdfTools.forEach((tool) => {
 textTools.forEach((tool) => {
   routeMeta[tool.path] = buildTextToolMeta(tool);
 });
+
+linkTools.forEach((tool) => {
+  routeMeta[tool.path] = {
+    title: `${tool.name} Online | ${siteMeta.siteName}`,
+    description: `${tool.description} Generate a direct WhatsApp URL with phone number and automatic message text.`,
+    keywords: `whatsapp link creator, wa.me generator, prefilled whatsapp message, ${siteMeta.defaultKeywords}`
+  };
+});
+
+function normalizedUrl(origin, path) {
+  if (!origin) {
+    return path;
+  }
+
+  return `${origin}${path}`;
+}
 
 export const getSeoData = (pathname, origin) => {
   const currentRouteMeta = routeMeta[pathname] || routeMeta['/'];

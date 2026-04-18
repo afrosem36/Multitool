@@ -48,10 +48,12 @@ const SeoManager = () => {
     upsertMetaTag('meta[name="theme-color"]', { name: 'theme-color' }, siteMeta.themeColor);
     upsertMetaTag('meta[property="og:type"]', { property: 'og:type' }, 'website');
     upsertMetaTag('meta[property="og:site_name"]', { property: 'og:site_name' }, siteMeta.siteName);
+    upsertMetaTag('meta[property="og:locale"]', { property: 'og:locale' }, 'en_US');
     upsertMetaTag('meta[property="og:title"]', { property: 'og:title' }, seo.title);
     upsertMetaTag('meta[property="og:description"]', { property: 'og:description' }, seo.description);
     upsertMetaTag('meta[property="og:url"]', { property: 'og:url' }, seo.url);
     upsertMetaTag('meta[property="og:image"]', { property: 'og:image' }, seo.image);
+    upsertMetaTag('meta[property="og:image:alt"]', { property: 'og:image:alt' }, seo.title);
     upsertMetaTag('meta[name="twitter:card"]', { name: 'twitter:card' }, 'summary');
     upsertMetaTag('meta[name="twitter:title"]', { name: 'twitter:title' }, seo.title);
     upsertMetaTag('meta[name="twitter:description"]', { name: 'twitter:description' }, seo.description);

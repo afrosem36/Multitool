@@ -42,6 +42,10 @@
   gap: 1.5rem;
 }
 
+.features-grid-compact {
+  grid-template-columns: minmax(280px, 420px);
+}
+
 .content-grid,
 .faq-list {
   display: grid;

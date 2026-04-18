@@ -227,6 +227,17 @@ export const textTools = [
   }
 ];
 
+export const linkTools = [
+  {
+    id: 'whatsapp-link-creator',
+    name: 'WhatsApp Link Creator',
+    description: 'Create a WhatsApp chat link with a prefilled message for sharing and marketing.',
+    path: '/whatsapp-link-creator',
+    icon: MessageCircle,
+    color: 'rgba(34, 197, 94, 0.12)'
+  }
+];
+
 export const toolSections = [
   {
     id: 'pdf',
@@ -250,11 +261,7 @@ export const toolSections = [
     path: '/whatsapp-link-creator',
     description: 'Create a WhatsApp chat link with a prefilled message.',
     icon: MessageCircle,
-    tools: [
-      {
-        path: '/whatsapp-link-creator'
-      }
-    ]
+    tools: linkTools
   }
 ];
 
