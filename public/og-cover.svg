@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0f" />
+      <stop offset="100%" stop-color="#171728" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <circle cx="970" cy="120" r="180" fill="#6366f1" opacity="0.12" />
+  <circle cx="170" cy="540" r="220" fill="#8b5cf6" opacity="0.12" />
+  <rect x="72" y="72" width="1056" height="486" rx="42" fill="#12121a" opacity="0.92" stroke="#2b2b44" />
+  <text x="110" y="220" fill="#ffffff" font-size="76" font-family="Outfit, Arial, sans-serif" font-weight="700">
+    MultiTool
+  </text>
+  <text x="110" y="310" fill="url(#accent)" font-size="52" font-family="Outfit, Arial, sans-serif" font-weight="600">
+    PDF Tools, Text Tools and WhatsApp Links
+  </text>
+  <text x="110" y="388" fill="#c9c9dd" font-size="30" font-family="Outfit, Arial, sans-serif">
+    Merge PDF, split PDF, convert files, clean text, generate random content
+  </text>
+  <text x="110" y="432" fill="#c9c9dd" font-size="30" font-family="Outfit, Arial, sans-serif">
+    and create prefilled WhatsApp links in one browser-based workspace.
+  </text>
+</svg>

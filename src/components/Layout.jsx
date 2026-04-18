@@ -1,11 +1,13 @@
 import React from 'react';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
+import SeoManager from './SeoManager';
 import './Layout.css';
 
 const Layout = ({ children }) => {
   return (
     <div className="layout">
+      <SeoManager />
       <Navbar />
       <div className="layout-shell">
         <Sidebar />

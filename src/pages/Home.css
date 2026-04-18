@@ -42,6 +42,19 @@
   gap: 1.5rem;
 }
 
+.content-grid,
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
 .feature-card {
   padding: 2rem;
   display: flex;
@@ -85,6 +98,33 @@
 
 .feature-card:hover .feature-link {
   gap: 0.75rem;
+}
+
+.content-card,
+.faq-card,
+.step-card {
+  padding: 1.5rem;
+}
+
+.content-card h3,
+.faq-card h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.75rem;
+}
+
+.step-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.step-number {
+  display: inline-flex;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
 }
 
 @media (max-width: 768px) {

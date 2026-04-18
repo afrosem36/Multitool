@@ -1,0 +1,16 @@
+{
+  "name": "MultiTool",
+  "short_name": "MultiTool",
+  "description": "Browser-based PDF tools, text tools, and WhatsApp link creator.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
