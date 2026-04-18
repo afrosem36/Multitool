@@ -1,0 +1,104 @@
+.tool-hub-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tool-hub-hero {
+  padding: 1.75rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.tool-hub-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--accent-primary);
+}
+
+.tool-hub-hero h1 {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  margin-bottom: 0.75rem;
+}
+
+.tool-hub-summary {
+  min-width: 240px;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.tool-hub-summary strong,
+.tool-hub-card h3 {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.tool-hub-summary span {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.tool-hub-summary-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(99, 102, 241, 0.16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.tool-hub-card {
+  padding: 1.5rem;
+}
+
+.tool-hub-card-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.1rem;
+}
+
+.tool-hub-card p {
+  margin-bottom: 1.35rem;
+}
+
+.tool-hub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--accent-primary);
+  font-weight: 600;
+  transition: gap 0.2s ease;
+}
+
+.tool-hub-link:hover {
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .tool-hub-hero {
+    flex-direction: column;
+  }
+
+  .tool-hub-summary {
+    min-width: 100%;
+  }
+}

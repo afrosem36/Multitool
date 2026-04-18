@@ -1,0 +1,244 @@
+.text-tool-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.text-tool-hero {
+  padding: 1.75rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.text-tool-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--accent-primary);
+}
+
+.text-tool-hero h1 {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  margin-bottom: 0.75rem;
+}
+
+.text-tool-hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.text-tool-shell {
+  padding: 1.5rem;
+}
+
+.text-tool-filter,
+.text-tool-settings {
+  margin-bottom: 1.5rem;
+}
+
+.text-tool-filter label,
+.settings-field span {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.text-tool-filter input,
+.settings-field input,
+.settings-field select,
+.text-panel textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 9, 15, 0.65);
+  color: var(--text-primary);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  font-size: 1rem;
+}
+
+.text-tool-filter input:focus,
+.settings-field input:focus,
+.settings-field select:focus,
+.text-panel textarea:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.75);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.text-tool-settings {
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-checkbox-grid {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.checkbox-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+}
+
+.text-tool-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.text-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.text-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.text-panel-header span {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.text-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.text-panel-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.text-panel-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.text-panel textarea {
+  min-height: 230px;
+  resize: vertical;
+}
+
+.text-panel-meta {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.text-tool-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+}
+
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.text-tool-message {
+  margin-top: 1.5rem;
+  border-radius: 12px;
+  padding: 0.95rem 1rem;
+  border: 1px solid transparent;
+}
+
+.text-tool-message.success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: #7ef2b9;
+}
+
+.text-tool-message.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.text-tool-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .text-tool-hero {
+    flex-direction: column;
+  }
+
+  .text-tool-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .text-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .text-panel-actions,
+  .text-tool-controls,
+  .text-tool-footer-actions {
+    width: 100%;
+  }
+
+  .text-tool-controls > * {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .text-panel-actions button,
+  .text-tool-footer-actions button {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+
+  .text-panel-meta {
+    justify-content: space-between;
+  }
+}
