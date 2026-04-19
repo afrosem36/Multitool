@@ -200,7 +200,7 @@ const ZodiacCalculator = () => {
         </div>
 
         {result && (
-          <div className="glass-panel text-center" style={{ padding: '2rem', background: 'rgba(234, 179, 8, 0.05)', border: '1px solid rgba(234, 179, 8, 0.2)', transition: 'all 0.3s ease' }}>
+          <div className="glass-panel text-center" style={{ padding: 'clamp(1rem, 5vw, 2rem)', background: 'rgba(234, 179, 8, 0.05)', border: '1px solid rgba(234, 179, 8, 0.2)', transition: 'all 0.3s ease' }}>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Your Sign</p>
             <h2 style={{ fontSize: '4rem', margin: '0 0 0.5rem 0', color: 'var(--accent-primary)' }}>{result.symbol}</h2>
             <h3 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0' }}>{result.sign}</h3>
@@ -226,7 +226,7 @@ const ZodiacCalculator = () => {
                 </button>
               </div>
             ) : (
-              <div className="animate-fade-in" style={{ textAlign: 'left', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '12px' }}>
+              <div className="animate-fade-in" style={{ textAlign: 'left', background: 'rgba(0,0,0,0.2)', padding: 'clamp(1rem, 5vw, 1.5rem)', borderRadius: '12px' }}>
                 {apiError && <p style={{ color: '#ef4444', textAlign: 'center', marginBottom: '1rem' }}>{apiError}</p>}
                 
                 {apiResult ? (
@@ -263,7 +263,7 @@ const ZodiacCalculator = () => {
                 
                 <div style={{ display: 'grid', gap: '1.5rem' }}>
                   {result.daily_horoscope && (
-                    <div className="animate-fade-in" style={{ background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(234, 179, 8, 0.05) 100%)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+                    <div className="animate-fade-in" style={{ background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(234, 179, 8, 0.05) 100%)', padding: 'clamp(1rem, 5vw, 1.5rem)', borderRadius: '12px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
                       <h4 style={{ color: '#eab308', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <Star size={18} /> Today's Horoscope
                       </h4>

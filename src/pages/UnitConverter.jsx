@@ -159,7 +159,7 @@ const UnitConverter = () => {
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '1rem', alignItems: 'flex-end', marginBottom: '2rem' }}>
+        <div className="unit-inputs-grid">
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>From</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -189,7 +189,7 @@ const UnitConverter = () => {
             </div>
           </div>
 
-          <div style={{ paddingBottom: '0.75rem' }}>
+          <div className="swap-btn-container" style={{ paddingBottom: '0.75rem', display: 'flex', justifyContent: 'center' }}>
             <button onClick={handleSwap} className="btn-secondary" style={{ padding: '0.75rem', borderRadius: '50%' }}>
               <ArrowRightLeft size={16} />
             </button>

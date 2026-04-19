@@ -16,7 +16,27 @@
 }
 
 .tool-content {
-  padding: 2rem;
+  padding: clamp(1rem, 5vw, 2rem);
+}
+
+.unit-inputs-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 480px) {
+  .unit-inputs-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  .unit-inputs-grid .swap-btn-container {
+    padding-bottom: 0;
+    transform: rotate(90deg);
+  }
 }
 
 .upload-area {
