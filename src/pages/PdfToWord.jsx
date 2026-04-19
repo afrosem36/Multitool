@@ -1,38 +1,61 @@
-import React, { useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
-import { Upload, FileText, ArrowDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileText, ArrowDown } from 'lucide-react';
+import FileUpload from '../components/shared/FileUpload';
+import FilePreviewList from '../components/shared/FilePreviewList';
+import ProcessingState from '../components/shared/ProcessingState';
+import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { useFileValidation } from '../hooks/useFileValidation';
+import { useToolHistory } from '../hooks/useToolHistory';
 import './ToolStyles.css';
-
-// Set worker source
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 const PdfToWord = () => {
   const [file, setFile] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
+  
+  const [status, setStatus] = useState('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleFileUpload = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-      setFile(selectedFile);
-      setError(null);
-      setSuccess(false);
-    } else {
-      setError("Please select a valid PDF file.");
+  const { validateFiles } = useFileValidation();
+  const { addHistory } = useToolHistory();
+
+  useEffect(() => {
+    addHistory('/pdf-to-word', 'PDF to Word', 'fileText');
+  }, [addHistory]);
+
+  const handleFilesSelected = (selectedFiles) => {
+    setStatus('idle');
+    setErrorMessage('');
+    
+    const { validFiles, error } = validateFiles(selectedFiles, { 
+      allowedTypes: ['application/pdf'],
+      maxFiles: 1 
+    });
+
+    if (error) {
+      setStatus('error');
+      setErrorMessage(error);
+      return;
     }
+
+    if (validFiles.length > 0) {
+      setFile(validFiles[0]);
+    }
+  };
+
+  const removeFile = () => {
+    setFile(null);
+    setStatus('idle');
   };
 
   const extractTextAndDownloadWord = async () => {
     if (!file) return;
 
-    setIsProcessing(true);
-    setError(null);
-    setSuccess(false);
+    setStatus('processing');
 
     try {
+      const pdfjsLib = await import('pdfjs-dist');
+      const workerUrl = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.default;
+
       const fileReader = new FileReader();
       
       fileReader.onload = async function() {
@@ -52,12 +75,13 @@ const PdfToWord = () => {
           }
 
           if (extractedText.length === 0) {
-            setError("No extractable text found in this PDF (might be scanned images).");
-            setIsProcessing(false);
+            setStatus('error');
+            setErrorMessage("No extractable text found in this PDF (might be scanned images).");
             return;
           }
 
-          // Create Word Document
+          const { Document, Packer, Paragraph, TextRun } = await import('docx');
+          
           const paragraphs = extractedText.map(text => 
             new Paragraph({
               children: [
@@ -75,7 +99,6 @@ const PdfToWord = () => {
 
           const blob = await Packer.toBlob(doc);
           
-          // Download
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
@@ -85,20 +108,19 @@ const PdfToWord = () => {
           document.body.removeChild(link);
           URL.revokeObjectURL(url);
 
-          setSuccess(true);
+          setStatus('success');
         } catch (err) {
           console.error(err);
-          setError("Error parsing PDF document or creating Word file.");
-        } finally {
-          setIsProcessing(false);
+          setStatus('error');
+          setErrorMessage("Error parsing PDF document or creating Word file.");
         }
       };
       
       fileReader.readAsArrayBuffer(file);
     } catch (err) {
       console.error(err);
-      setError("Failed to process the PDF.");
-      setIsProcessing(false);
+      setStatus('error');
+      setErrorMessage("Failed to process the PDF.");
     }
   };
 
@@ -111,41 +133,55 @@ const PdfToWord = () => {
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
-        <div className="upload-area">
-          <input 
-            type="file" 
-            accept="application/pdf" 
-            onChange={handleFileUpload}
-            id="file-upload"
-            className="hidden-input"
+        {!file && status !== 'processing' && status !== 'success' ? (
+          <FileUpload 
+            onFilesSelected={handleFilesSelected}
+            accept="application/pdf"
+            multiple={false}
+            title="Click or drag to upload a PDF for text extraction"
           />
-          <label htmlFor="file-upload" className="upload-label">
-            <Upload size={48} className="upload-icon" />
-            <span>Click to upload a PDF for text extraction</span>
-          </label>
-        </div>
+        ) : (
+          <div className="file-loaded-area">
+             {file && (
+               <FilePreviewList 
+                 files={[file]} 
+                 onRemove={status === 'processing' ? null : removeFile} 
+                 title="Selected File"
+               />
+             )}
 
-        {error && <div className="error-message">{error}</div>}
-        {success && <div className="error-message" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', borderColor: 'rgba(16, 185, 129, 0.2)' }}>Successfully extracted text and downloaded Word document!</div>}
+             <ProcessingState 
+               status={status} 
+               error={errorMessage} 
+               message={status === 'success' ? 'Extracted text and downloaded Word document!' : 'Extracting Text...'} 
+             />
 
-        {file && (
-          <div className="action-area text-center">
-            <p className="mb-4">Selected: <strong>{file.name}</strong></p>
-            <button 
-              onClick={extractTextAndDownloadWord} 
-              className="btn-primary" 
-              disabled={isProcessing}
-            >
-              {isProcessing ? 'Extracting Text...' : (
-                <>
-                  <FileText size={18} />
-                  Extract & Download DOCX
-                </>
-              )}
-            </button>
+             {status !== 'success' && status !== 'processing' && file && (
+               <div className="action-area text-center">
+                 <button 
+                   onClick={extractTextAndDownloadWord} 
+                   className="btn-primary" 
+                 >
+                   <FileText size={18} /> Extract & Download DOCX
+                 </button>
+               </div>
+             )}
+             
+             {status === 'success' && (
+               <div className="action-area text-center mt-4">
+                 <button 
+                   onClick={removeFile} 
+                   className="btn-secondary"
+                 >
+                   Convert Another PDF
+                 </button>
+               </div>
+             )}
           </div>
         )}
       </div>
+      
+      {(status === 'success' || file) && <AdPlaceholder className="mt-5" />}
     </div>
   );
 };

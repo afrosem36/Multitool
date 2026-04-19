@@ -1,16 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { Upload, Type, ArrowDown, XCircle } from 'lucide-react';
+import { Type, ArrowDown, XCircle } from 'lucide-react';
+import FileUpload from '../components/shared/FileUpload';
+import ProcessingState from '../components/shared/ProcessingState';
+import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { useFileValidation } from '../hooks/useFileValidation';
+import { useToolHistory } from '../hooks/useToolHistory';
 import './ToolStyles.css';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 const PdfEdit = () => {
   const [file, setFile] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
   
   const [pageData, setPageData] = useState(null); // { url, width, height, originalWidth, originalHeight }
   const [annotations, setAnnotations] = useState([]); // [{ id, text, x, y, size, color, pageHeight }]
@@ -18,25 +16,50 @@ const PdfEdit = () => {
   const [activeColor, setActiveColor] = useState('#ff0000');
   const [activeSize, setActiveSize] = useState(24);
   
-  const canvasRef = useRef(null);
+  const [status, setStatus] = useState('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleFileUpload = async (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
+  const canvasRef = useRef(null);
+  const { validateFiles } = useFileValidation();
+  const { addHistory } = useToolHistory();
+
+  useEffect(() => {
+    addHistory('/edit', 'Edit PDF', 'type');
+  }, [addHistory]);
+
+  const handleFilesSelected = async (selectedFiles) => {
+    setStatus('idle');
+    setErrorMessage('');
+    
+    const { validFiles, error } = validateFiles(selectedFiles, { 
+      allowedTypes: ['application/pdf'],
+      maxFiles: 1 
+    });
+
+    if (error) {
+      setStatus('error');
+      setErrorMessage(error);
+      return;
+    }
+
+    if (validFiles.length > 0) {
+      const selectedFile = validFiles[0];
       setFile(selectedFile);
-      setError(null);
       setAnnotations([]);
       setCurrentAnnotation(null);
-      setIsProcessing(true);
+      setStatus('processing');
       
       try {
+        const pdfjsLib = await import('pdfjs-dist');
+        const workerUrl = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        
         const fileReader = new FileReader();
         fileReader.onload = async function() {
           try {
             const typedarray = new Uint8Array(this.result);
             const pdf = await pdfjsLib.getDocument(typedarray).promise;
             
-            // For simplicity in this demo, we only annotate the first page
             const page = await pdf.getPage(1);
             const viewport = page.getViewport({ scale: 1.0 });
             
@@ -55,23 +78,19 @@ const PdfEdit = () => {
               originalWidth: viewport.width,
               originalHeight: viewport.height
             });
-            
+            setStatus('idle');
           } catch (err) {
             console.error(err);
-            setError("Error parsing PDF document.");
-          } finally {
-            setIsProcessing(false);
+            setStatus('error');
+            setErrorMessage("Error parsing PDF document.");
           }
         };
         fileReader.readAsArrayBuffer(selectedFile);
       } catch (err) {
         console.error(err);
-        setError("Could not read PDF.");
-        setIsProcessing(false);
+        setStatus('error');
+        setErrorMessage("Could not load PDF worker.");
       }
-    } else {
-      setError("Please select a valid PDF file.");
-      setFile(null);
     }
   };
 
@@ -80,14 +99,12 @@ const PdfEdit = () => {
     
     const rect = canvasRef.current.getBoundingClientRect();
     
-    // Calculate scale ratio between displayed image and actual PDF size
     const scaleX = pageData.width / rect.width;
     const scaleY = pageData.height / rect.height;
 
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
-    // In pdf-lib, (0,0) is bottom-left. We need to convert from top-left.
     const pdfLibY = pageData.height - clickY;
 
     setCurrentAnnotation({
@@ -124,16 +141,16 @@ const PdfEdit = () => {
   const savePdf = async () => {
     if (!file) return;
 
-    setIsProcessing(true);
-    setError(null);
+    setStatus('processing');
 
     try {
+      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
       const fileBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(fileBuffer);
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
       
       const pages = pdfDoc.getPages();
-      const firstPage = pages[0]; // We are only editing page 1 in this demo
+      const firstPage = pages[0];
 
       annotations.forEach(ann => {
         const colorObj = hexToRgbObj(ann.color);
@@ -158,11 +175,11 @@ const PdfEdit = () => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      setStatus('success');
     } catch (err) {
       console.error(err);
-      setError("Failed to generate the annotated PDF.");
-    } finally {
-      setIsProcessing(false);
+      setStatus('error');
+      setErrorMessage("Failed to generate the annotated PDF.");
     }
   };
 
@@ -177,20 +194,13 @@ const PdfEdit = () => {
         
         {/* Left Sidebar: Controls */}
         <div style={{ flex: '1', minWidth: '300px' }}>
-          {!file ? (
-            <div className="upload-area">
-              <input 
-                type="file" 
-                accept="application/pdf" 
-                onChange={handleFileUpload}
-                id="file-upload"
-                className="hidden-input"
-              />
-              <label htmlFor="file-upload" className="upload-label">
-                <Upload size={48} className="upload-icon" />
-                <span>Upload a PDF to annotate</span>
-              </label>
-            </div>
+          {!file && status !== 'processing' && status !== 'success' ? (
+            <FileUpload 
+              onFilesSelected={handleFilesSelected}
+              accept="application/pdf"
+              multiple={false}
+              title="Upload a PDF to annotate"
+            />
           ) : (
             <div className="controls-panel glass-panel" style={{ padding: '1.5rem' }}>
               <div style={{ marginBottom: '1.5rem' }}>
@@ -256,18 +266,31 @@ const PdfEdit = () => {
                   </ul>
                 )}
 
-                <button 
-                  onClick={savePdf} 
-                  className="btn-primary" 
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  disabled={isProcessing || annotations.length === 0}
-                >
-                  {isProcessing ? 'Saving...' : <><ArrowDown size={18} /> Save & Download PDF</>}
-                </button>
+                <ProcessingState status={status} error={errorMessage} message={status === 'success' ? 'Saved successfully!' : 'Saving...'} />
+
+                {status !== 'success' && status !== 'processing' && (
+                  <button 
+                    onClick={savePdf} 
+                    className="btn-primary" 
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    disabled={annotations.length === 0}
+                  >
+                    <ArrowDown size={18} /> Save & Download PDF
+                  </button>
+                )}
+
+                {status === 'success' && (
+                  <button 
+                    onClick={() => { setFile(null); setPageData(null); setStatus('idle'); }} 
+                    className="btn-secondary" 
+                    style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
+                  >
+                    Annotate Another PDF
+                  </button>
+                )}
               </div>
             </div>
           )}
-          {error && <div className="error-message" style={{ marginTop: '1rem' }}>{error}</div>}
         </div>
 
         {/* Right Area: Document Preview */}
@@ -282,10 +305,7 @@ const PdfEdit = () => {
                 style={{ display: 'block', maxWidth: '100%', height: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} 
               />
               
-              {/* Display existing annotations over the image */}
               {annotations.map(ann => {
-                // Approximate display coordinates
-                // We need the current rect to scale properly if the image is resized by CSS
                 const rect = canvasRef.current?.getBoundingClientRect();
                 const scale = rect ? (rect.width / pageData.width) : 1;
                 
@@ -295,16 +315,12 @@ const PdfEdit = () => {
                     style={{
                       position: 'absolute',
                       left: `${(ann.x / pageData.width) * 100}%`,
-                      // Y in pdf-lib is bottom-up, so top is (pageHeight - Y)
                       top: `${((pageData.height - ann.y) / pageData.height) * 100}%`,
                       color: ann.color,
                       fontSize: `${ann.size * scale}px`,
                       fontFamily: 'Helvetica, Arial, sans-serif',
                       pointerEvents: 'none',
                       whiteSpace: 'nowrap',
-                      // pdf-lib draws text starting from the baseline. 
-                      // CSS top positions the top of the element.
-                      // Adjusting via transform to better match visual output.
                       transform: 'translateY(-100%)' 
                     }}
                   >
@@ -313,7 +329,6 @@ const PdfEdit = () => {
                 );
               })}
 
-              {/* Display input marker if adding */}
               {currentAnnotation && (
                 <div style={{
                   position: 'absolute',
@@ -330,8 +345,9 @@ const PdfEdit = () => {
             </div>
           </div>
         )}
-
       </div>
+
+      {(status === 'success' || file) && <AdPlaceholder className="mt-5" />}
     </div>
   );
 };

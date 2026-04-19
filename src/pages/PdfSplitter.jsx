@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { PDFDocument } from 'pdf-lib';
-import { Upload, File, ArrowDown, Scissors } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Scissors } from 'lucide-react';
+import FileUpload from '../components/shared/FileUpload';
+import FilePreviewList from '../components/shared/FilePreviewList';
+import ProcessingState from '../components/shared/ProcessingState';
+import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { useFileValidation } from '../hooks/useFileValidation';
+import { useToolHistory } from '../hooks/useToolHistory';
 import './ToolStyles.css';
 
 const PdfSplitter = () => {
@@ -8,30 +13,59 @@ const PdfSplitter = () => {
   const [numPages, setNumPages] = useState(0);
   const [startPage, setStartPage] = useState('');
   const [endPage, setEndPage] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
+  
+  const [status, setStatus] = useState('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleFileUpload = async (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
+  const { validateFiles } = useFileValidation();
+  const { addHistory } = useToolHistory();
+
+  useEffect(() => {
+    addHistory('/split', 'Split PDF', 'split');
+  }, [addHistory]);
+
+  const handleFilesSelected = async (selectedFiles) => {
+    setStatus('idle');
+    setErrorMessage('');
+    
+    const { validFiles, error } = validateFiles(selectedFiles, { 
+      allowedTypes: ['application/pdf'],
+      maxFiles: 1 
+    });
+
+    if (error) {
+      setStatus('error');
+      setErrorMessage(error);
+      return;
+    }
+
+    if (validFiles.length > 0) {
+      const selectedFile = validFiles[0];
       setFile(selectedFile);
-      setError(null);
       
-      // Read the PDF to get the total number of pages
       try {
+        const { PDFDocument } = await import('pdf-lib');
         const arrayBuffer = await selectedFile.arrayBuffer();
         const pdf = await PDFDocument.load(arrayBuffer);
-        setNumPages(pdf.getPageCount());
+        const count = pdf.getPageCount();
+        setNumPages(count);
         setStartPage('1');
-        setEndPage(pdf.getPageCount().toString());
+        setEndPage(count.toString());
       } catch (err) {
         console.error(err);
-        setError("Could not read PDF. It might be corrupted or encrypted.");
+        setStatus('error');
+        setErrorMessage("Could not read PDF. It might be corrupted or encrypted.");
+        setFile(null);
       }
-    } else {
-      setError("Please select a valid PDF file.");
-      setFile(null);
     }
+  };
+
+  const removeFile = () => {
+    setFile(null);
+    setNumPages(0);
+    setStartPage('');
+    setEndPage('');
+    setStatus('idle');
   };
 
   const splitPdf = async () => {
@@ -41,19 +75,19 @@ const PdfSplitter = () => {
     const end = parseInt(endPage, 10);
 
     if (isNaN(start) || isNaN(end) || start < 1 || end > numPages || start > end) {
-      setError(`Please enter a valid page range between 1 and ${numPages}.`);
+      setStatus('error');
+      setErrorMessage(`Please enter a valid page range between 1 and ${numPages}.`);
       return;
     }
 
-    setIsProcessing(true);
-    setError(null);
+    setStatus('processing');
 
     try {
+      const { PDFDocument } = await import('pdf-lib');
       const fileBuffer = await file.arrayBuffer();
       const originalPdf = await PDFDocument.load(fileBuffer);
       const newPdf = await PDFDocument.create();
 
-      // pdf-lib page indices are 0-based
       const pageIndices = [];
       for (let i = start - 1; i < end; i++) {
         pageIndices.push(i);
@@ -66,7 +100,6 @@ const PdfSplitter = () => {
 
       const newPdfBytes = await newPdf.save();
       
-      // Trigger download
       const blob = new Blob([newPdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -77,11 +110,11 @@ const PdfSplitter = () => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      setStatus('success');
     } catch (err) {
       console.error(err);
-      setError("Failed to split PDF.");
-    } finally {
-      setIsProcessing(false);
+      setStatus('error');
+      setErrorMessage("Failed to split PDF.");
     }
   };
 
@@ -93,80 +126,82 @@ const PdfSplitter = () => {
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
-        {!file ? (
-          <div className="upload-area">
-            <input 
-              type="file" 
-              accept="application/pdf" 
-              onChange={handleFileUpload}
-              id="file-upload"
-              className="hidden-input"
-            />
-            <label htmlFor="file-upload" className="upload-label">
-              <Upload size={48} className="upload-icon" />
-              <span>Click to upload a PDF</span>
-            </label>
-          </div>
+        {!file && status !== 'processing' && status !== 'success' ? (
+          <FileUpload 
+            onFilesSelected={handleFilesSelected}
+            accept="application/pdf"
+            multiple={false}
+            title="Click or drag to upload a PDF"
+          />
         ) : (
           <div className="file-loaded-area">
-             <div className="file-item glass-panel" style={{ marginBottom: '2rem' }}>
-                <div className="file-info">
-                  <File size={20} className="text-gradient" />
-                  <span>{file.name} ({numPages} pages)</span>
-                </div>
-                <button onClick={() => setFile(null)} className="btn-secondary" style={{ padding: '0.25rem 0.75rem' }}>
-                  Change File
-                </button>
-              </div>
+             {file && (
+               <FilePreviewList 
+                 files={[{ ...file, name: `${file.name} (${numPages} pages)` }]} 
+                 onRemove={status === 'processing' ? null : removeFile} 
+                 title="Selected File"
+               />
+             )}
 
-              <div className="page-range-selector" style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <label htmlFor="start-page">From page:</label>
-                  <input 
-                    type="number" 
-                    id="start-page" 
-                    value={startPage} 
-                    onChange={(e) => setStartPage(e.target.value)} 
-                    min="1" 
-                    max={numPages}
-                    style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.1)', color: 'white', width: '100px' }}
-                  />
+             {status !== 'success' && status !== 'processing' && file && (
+                <div className="page-range-selector" style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center', margin: '2rem 0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label htmlFor="start-page">From page:</label>
+                    <input 
+                      type="number" 
+                      id="start-page" 
+                      value={startPage} 
+                      onChange={(e) => setStartPage(e.target.value)} 
+                      min="1" 
+                      max={numPages}
+                      style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.1)', color: 'white', width: '100px' }}
+                    />
+                  </div>
+                  <span style={{ marginTop: '1.5rem' }}>to</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label htmlFor="end-page">To page:</label>
+                    <input 
+                      type="number" 
+                      id="end-page" 
+                      value={endPage} 
+                      onChange={(e) => setEndPage(e.target.value)} 
+                      min="1" 
+                      max={numPages}
+                      style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.1)', color: 'white', width: '100px' }}
+                    />
+                  </div>
                 </div>
-                <span style={{ marginTop: '1.5rem' }}>to</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <label htmlFor="end-page">To page:</label>
-                  <input 
-                    type="number" 
-                    id="end-page" 
-                    value={endPage} 
-                    onChange={(e) => setEndPage(e.target.value)} 
-                    min="1" 
-                    max={numPages}
-                    style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.1)', color: 'white', width: '100px' }}
-                  />
-                </div>
-              </div>
+             )}
 
-              <div className="action-area text-center">
-                <button 
-                  onClick={splitPdf} 
-                  className="btn-primary" 
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? 'Splitting...' : (
-                    <>
-                      <Scissors size={18} />
-                      Split & Download
-                    </>
-                  )}
-                </button>
-              </div>
+             <ProcessingState status={status} error={errorMessage} message={status === 'success' ? 'PDF split successfully!' : 'Splitting PDF...'} />
+
+             {status !== 'success' && status !== 'processing' && file && (
+               <div className="action-area text-center">
+                 <button 
+                   onClick={splitPdf} 
+                   className="btn-primary" 
+                 >
+                   <Scissors size={18} />
+                   Split & Download
+                 </button>
+               </div>
+             )}
+             
+             {status === 'success' && (
+               <div className="action-area text-center mt-4">
+                 <button 
+                   onClick={removeFile} 
+                   className="btn-secondary"
+                 >
+                   Split Another PDF
+                 </button>
+               </div>
+             )}
           </div>
         )}
-
-        {error && <div className="error-message" style={{ marginTop: '1rem' }}>{error}</div>}
-
       </div>
+      
+      {(status === 'success' || file) && <AdPlaceholder className="mt-5" />}
     </div>
   );
 };

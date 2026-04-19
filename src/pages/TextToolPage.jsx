@@ -10,6 +10,8 @@ import {
   Trash2
 } from 'lucide-react';
 import { findTextToolById } from '../data/toolCatalog';
+import RelatedTools from '../components/shared/RelatedTools';
+import AffiliatePlaceholder from '../components/shared/AffiliatePlaceholder';
 import './TextToolPage.css';
 
 const RANDOM_WORD_BANK = [
@@ -783,6 +785,15 @@ const TextToolPage = () => {
           </button>
         </div>
       </div>
+
+      <AffiliatePlaceholder 
+        title="Need Advanced Text Analysis?" 
+        description="Try Grammarly for real-time grammar checking, style suggestions, and advanced writing assistance."
+        link="https://grammarly.com"
+        cta="Try for Free"
+      />
+
+      <RelatedTools currentToolId={toolId} category="text" />
 
       <input
         ref={fileInputRef}

@@ -18,8 +18,36 @@ import {
   Shuffle,
   Smile,
   Type,
-  WrapText
+  WrapText,
+  Calculator,
+  Calendar,
+  Clock,
+  Activity,
+  DollarSign,
+  Star,
+  QrCode,
+  ScanLine,
+  Wrench
 } from 'lucide-react';
+
+export const utilityTools = [
+  {
+    id: 'qr-generator',
+    name: 'QR Code Generator',
+    description: 'Instantly generate high-quality QR codes for links, text, or contact information.',
+    path: '/utilities/qr-generator',
+    icon: QrCode,
+    color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'qr-decoder',
+    name: 'QR Code Decoder',
+    description: 'Upload a QR code image to quickly extract and read its hidden data.',
+    path: '/utilities/qr-decoder',
+    icon: ScanLine,
+    color: 'rgba(16, 185, 129, 0.1)'
+  }
+];
 
 export const pdfTools = [
   {
@@ -238,6 +266,57 @@ export const linkTools = [
   }
 ];
 
+export const calculatorTools = [
+  {
+    id: 'finance-calculator',
+    name: 'Finance Calculator',
+    description: 'Calculate loans, mortgages, and simple investments.',
+    path: '/calculator/finance',
+    icon: DollarSign,
+    color: 'rgba(34, 197, 94, 0.1)'
+  },
+  {
+    id: 'bmi-calculator',
+    name: 'BMI Calculator',
+    description: 'Calculate your Body Mass Index (BMI).',
+    path: '/calculator/bmi',
+    icon: Activity,
+    color: 'rgba(239, 68, 68, 0.1)'
+  },
+  {
+    id: 'age-calculator',
+    name: 'Age Calculator',
+    description: 'Calculate your exact age in years, months, and days.',
+    path: '/calculator/age',
+    icon: Calculator,
+    color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'days-calculator',
+    name: 'Days Calculator',
+    description: 'Calculate the number of days between two dates.',
+    path: '/calculator/days',
+    icon: Calendar,
+    color: 'rgba(168, 85, 247, 0.1)'
+  },
+  {
+    id: 'duration-calculator',
+    name: 'Duration Calculator',
+    description: 'Calculate time duration between two specific times.',
+    path: '/calculator/duration',
+    icon: Clock,
+    color: 'rgba(249, 115, 22, 0.1)'
+  },
+  {
+    id: 'zodiac-calculator',
+    name: 'Zodiac Signs',
+    description: 'Find your astrological zodiac sign based on your birth date.',
+    path: '/calculator/zodiac',
+    icon: Star,
+    color: 'rgba(234, 179, 8, 0.1)'
+  }
+];
+
 export const toolSections = [
   {
     id: 'pdf',
@@ -262,6 +341,22 @@ export const toolSections = [
     description: 'Create a WhatsApp chat link with a prefilled message.',
     icon: MessageCircle,
     tools: linkTools
+  },
+  {
+    id: 'calculators',
+    label: 'Calculators & More',
+    path: '/calculators',
+    description: 'A collection of useful calculators and miscellaneous tools.',
+    icon: Calculator,
+    tools: calculatorTools
+  },
+  {
+    id: 'utilities',
+    label: 'Utility Tools',
+    path: '/utilities',
+    description: 'Helpful utilities including QR generators and decoders.',
+    icon: Wrench,
+    tools: utilityTools
   }
 ];
 
@@ -270,3 +365,9 @@ export const findTextToolById = (toolId) =>
 
 export const findToolSectionById = (sectionId) =>
   toolSections.find((section) => section.id === sectionId);
+
+export const findCalculatorToolById = (toolId) =>
+  calculatorTools.find((tool) => tool.id === toolId);
+
+export const findUtilityToolById = (toolId) =>
+  utilityTools.find((tool) => tool.id === toolId);

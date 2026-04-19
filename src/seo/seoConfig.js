@@ -1,4 +1,4 @@
-import { linkTools, pdfTools, textTools } from '../data/toolCatalog';
+import { linkTools, pdfTools, textTools, calculatorTools } from '../data/toolCatalog';
 import { guideArticles, sitePages } from '../data/contentPages';
 
 export const siteMeta = {
@@ -51,6 +51,10 @@ const breadcrumbLabelFromPath = (pathname) => {
     return 'WhatsApp Link Creator';
   }
 
+  if (pathname === '/calculators') {
+    return 'Calculators';
+  }
+
   if (pathname === '/guides') {
     return 'Guides';
   }
@@ -73,6 +77,11 @@ const breadcrumbLabelFromPath = (pathname) => {
   const textTool = textTools.find((tool) => tool.path === pathname);
   if (textTool) {
     return textTool.name;
+  }
+
+  const calcTool = calculatorTools.find((tool) => tool.path === pathname);
+  if (calcTool) {
+    return calcTool.name;
   }
 
   return 'MultiTool';
@@ -100,10 +109,16 @@ const buildBreadcrumbs = (pathname, origin) => {
       name: 'Guides',
       item: `${origin}/guides`
     });
+  } else if (pathname.startsWith('/calculator/')) {
+    breadcrumbs.push({
+      name: 'Calculators & More',
+      item: `${origin}/calculators`
+    });
   } else if (
     pathname !== '/pdf-tools' &&
     pathname !== '/text-tools' &&
     pathname !== '/whatsapp-link-creator' &&
+    pathname !== '/calculators' &&
     pathname !== '/guides' &&
     !sitePages.some((page) => page.path === pathname)
   ) {
@@ -261,11 +276,21 @@ const routeMeta = {
       'Create a WhatsApp link with phone number and prefilled message online. Generate, copy, and share chat links instantly.',
     keywords: `whatsapp link creator, whatsapp message link, wa.me link generator, ${siteMeta.defaultKeywords}`
   },
+  '/calculators': {
+    title: `Calculators & Utilities | ${siteMeta.siteName}`,
+    description: 'A collection of useful calculators including Finance, BMI, Age, Duration, and Zodiac tools.',
+    keywords: `online calculators, finance calculator, bmi calculator, age calculator, ${siteMeta.defaultKeywords}`
+  },
   '/guides': {
     title: `Guides and Tutorials | ${siteMeta.siteName}`,
     description:
       'Read practical tutorials about PDF tools, image conversion, text cleanup, and business communication workflows.',
     keywords: `online guides, pdf guides, image conversion guides, text cleanup tutorials, ${siteMeta.defaultKeywords}`
+  },
+  '/terms': {
+    title: `Terms of Service | ${siteMeta.siteName}`,
+    description: 'Read the terms of service for using MultiTool, including acceptable use and liability limitations.',
+    keywords: `terms of service, terms of use, legal terms, multitool terms, ${siteMeta.defaultKeywords}`
   }
 };
 
@@ -282,6 +307,14 @@ linkTools.forEach((tool) => {
     title: `${tool.name} Online | ${siteMeta.siteName}`,
     description: `${tool.description} Generate a direct WhatsApp URL with phone number and automatic message text.`,
     keywords: `whatsapp link creator, wa.me generator, prefilled whatsapp message, ${siteMeta.defaultKeywords}`
+  };
+});
+
+calculatorTools.forEach((tool) => {
+  routeMeta[tool.path] = {
+    title: `${tool.name} Online | ${siteMeta.siteName}`,
+    description: `${tool.description} Use ${tool.name.toLowerCase()} with ${siteMeta.siteName} quickly and easily online.`,
+    keywords: `${tool.name.toLowerCase()}, online calculator, ${siteMeta.defaultKeywords}`
   };
 });
 
