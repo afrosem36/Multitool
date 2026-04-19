@@ -1,4 +1,4 @@
-:root {
+:root, .dark {
   --bg-dark: #0a0a0f;
   --bg-dark-secondary: #12121a;
   --text-primary: #ffffff;
@@ -9,6 +9,21 @@
   --glass-bg: rgba(255, 255, 255, 0.03);
   --glass-border: rgba(255, 255, 255, 0.05);
   --glass-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --danger: #ef4444;
+  --success: #10b981;
+}
+
+.light {
+  --bg-dark: #f8fafc;
+  --bg-dark-secondary: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --accent-primary: #4f46e5;
+  --accent-secondary: #7c3aed;
+  --gradient-primary: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-glow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
   --danger: #ef4444;
   --success: #10b981;
 }
@@ -29,6 +44,7 @@ body {
     radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
     radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
   background-attachment: fixed;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Glassmorphism Utilities */

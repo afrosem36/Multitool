@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Settings } from 'lucide-react';
+import { Menu, X, Settings, Star, Sun, Moon } from 'lucide-react';
 import { toolSections } from '../data/toolCatalog';
 import { headerPages } from '../data/contentPages';
+import { useTheme } from '../hooks/useTheme';
 import './Navbar.css';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   const toggleMenu = () => setIsOpen(!isOpen);
   const isLinkActive = (path) =>
@@ -34,6 +36,23 @@ const Navbar = () => {
               <span>{link.label}</span>
             </Link>
           ))}
+          
+          <Link 
+            to="/favorites" 
+            className={`nav-link ${isLinkActive('/favorites') ? 'active' : ''}`}
+          >
+            <span>Favorites</span> <Star size={16} />
+          </Link>
+          
+          <button 
+            onClick={toggleTheme} 
+            className="btn-icon theme-toggle" 
+            aria-label="Toggle Theme"
+            style={{ marginLeft: '1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
+          >
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          
           <div className="nav-status">
             <span className="nav-status-count">
               {toolSections.reduce((count, section) => count + section.tools.length, 0)} tools
@@ -44,6 +63,14 @@ const Navbar = () => {
 
         {/* Mobile Menu Button */}
         <div className="mobile-menu-btn">
+          <button 
+            onClick={toggleTheme} 
+            className="btn-icon theme-toggle" 
+            aria-label="Toggle Theme"
+            style={{ marginRight: '1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
+          >
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
           <button onClick={toggleMenu} className="btn-icon">
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -63,6 +90,14 @@ const Navbar = () => {
               {link.label}
             </Link>
           ))}
+          
+          <Link
+            to="/favorites"
+            className="mobile-link"
+            onClick={toggleMenu}
+          >
+            Favorites
+          </Link>
           
           {toolSections.map((section) => (
             <Link

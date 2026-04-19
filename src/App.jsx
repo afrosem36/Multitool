@@ -23,6 +23,9 @@ const WhatsAppLinkCreator = React.lazy(() => import('./pages/WhatsAppLinkCreator
 const GuidesHubPage = React.lazy(() => import('./pages/GuidesHubPage'));
 const ArticlePage = React.lazy(() => import('./pages/ArticlePage'));
 const InfoPage = React.lazy(() => import('./pages/InfoPage'));
+const FavoritesPage = React.lazy(() => import('./pages/FavoritesPage'));
+const ExcelMerger = React.lazy(() => import('./pages/ExcelMerger'));
+const ExcelConverter = React.lazy(() => import('./pages/ExcelConverter'));
 
 // New dedicated SEO pages
 const PrivacyPolicy = React.lazy(() => import('./pages/PrivacyPolicy'));
@@ -59,11 +62,13 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/guides" element={<GuidesHubPage />} />
             <Route path="/pdf-tools" element={<ToolHubPage sectionId="pdf" />} />
             <Route path="/text-tools" element={<ToolHubPage sectionId="text" />} />
             <Route path="/calculators" element={<ToolHubPage sectionId="calculators" />} />
             <Route path="/utilities" element={<ToolHubPage sectionId="utilities" />} />
+            <Route path="/excel" element={<ToolHubPage sectionId="excel" />} />
             <Route path="/whatsapp-link-creator" element={<WhatsAppLinkCreator />} />
             <Route path="/merge" element={<PdfMerger />} />
             <Route path="/split" element={<PdfSplitter />} />
@@ -76,6 +81,10 @@ function App() {
             <Route path="/to-jpg" element={<PdfToJpg />} />
             <Route path="/to-word" element={<PdfToWord />} />
             <Route path="/text/:toolId" element={<TextToolPage />} />
+            
+            {/* Excel Tools */}
+            <Route path="/excel/merge" element={<ExcelMerger />} />
+            <Route path="/excel/convert" element={<ExcelConverter />} />
 
             {/* Calculators */}
             <Route path="/calculator/finance" element={<FinanceCalculator />} />

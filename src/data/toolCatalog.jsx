@@ -31,7 +31,8 @@ import {
   ArrowRightLeft,
   Receipt,
   Home,
-  Briefcase
+  Briefcase,
+  Table
 } from 'lucide-react';
 
 export const utilityTools = [
@@ -361,6 +362,25 @@ export const calculatorTools = [
   }
 ];
 
+export const excelTools = [
+  {
+    id: 'excel-merge',
+    name: 'Excel Merger',
+    description: 'Combine multiple Excel or CSV files into a single workbook.',
+    path: '/excel/merge',
+    icon: Table,
+    color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
+    id: 'excel-convert',
+    name: 'Excel Converter',
+    description: 'Convert between XLSX, CSV, and other spreadsheet formats.',
+    path: '/excel/convert',
+    icon: ArrowRightLeft,
+    color: 'rgba(59, 130, 246, 0.1)'
+  }
+];
+
 export const toolSections = [
   {
     id: 'pdf',
@@ -377,6 +397,14 @@ export const toolSections = [
     description: 'Open the full text tools page, including generators and cleaners.',
     icon: Type,
     tools: textTools
+  },
+  {
+    id: 'excel',
+    label: 'Excel Tools',
+    path: '/excel',
+    description: 'Merge and convert Excel spreadsheets securely in your browser.',
+    icon: Table,
+    tools: excelTools
   },
   {
     id: 'whatsapp',
@@ -415,3 +443,6 @@ export const findCalculatorToolById = (toolId) =>
 
 export const findUtilityToolById = (toolId) =>
   utilityTools.find((tool) => tool.id === toolId);
+
+export const findExcelToolById = (toolId) =>
+  excelTools.find((tool) => tool.id === toolId);

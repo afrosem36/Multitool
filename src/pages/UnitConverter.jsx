@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRightLeft, Ruler, Weight, Thermometer, Scaling, Beaker } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import ToolHeader from '../components/shared/ToolHeader';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
 import './ToolStyles.css';
@@ -102,15 +102,12 @@ const UnitConverter = () => {
 
   return (
     <div className="tool-container container" style={{ maxWidth: '600px' }}>
-      <Link to="/utilities" className="btn-secondary" style={{ display: 'inline-flex', marginBottom: '2rem' }}>
-        <ArrowLeft size={16} /> Back to Utilities
-      </Link>
-      
-      <div className="tool-header text-center animate-fade-in">
-        <ArrowRightLeft size={48} className="text-gradient mx-auto mb-4" />
-        <h1>Unit Converter</h1>
-        <p>Convert seamlessly between length, weight, temperature, volume, and area.</p>
-      </div>
+      <ToolHeader 
+        title="Unit Converter"
+        description="Convert seamlessly between length, weight, temperature, volume, and area."
+        icon={ArrowRightLeft}
+        toolId="unit-converter"
+      />
 
       <div className="tool-content glass-panel animate-fade-in">
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem', scrollbarWidth: 'none' }}>

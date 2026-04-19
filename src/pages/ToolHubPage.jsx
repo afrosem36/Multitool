@@ -1,11 +1,13 @@
 import React from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Star } from 'lucide-react';
 import { findToolSectionById } from '../data/toolCatalog';
+import { useFavorites } from '../hooks/useFavorites';
 import './ToolHubPage.css';
 
 const ToolHubPage = ({ sectionId }) => {
   const section = findToolSectionById(sectionId);
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   if (!section) {
     return <Navigate to="/" replace />;
@@ -41,8 +43,27 @@ const ToolHubPage = ({ sectionId }) => {
             <div
               key={tool.path}
               className="tool-hub-card glass-panel animate-fade-in"
-              style={{ animationDelay: `${0.12 + index * 0.05}s` }}
+              style={{ animationDelay: `${0.12 + index * 0.05}s`, position: 'relative' }}
             >
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleFavorite(tool.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '1rem',
+                  right: '1rem',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: isFavorite(tool.id) ? '#eab308' : 'var(--text-secondary)',
+                  zIndex: 10
+                }}
+                title={isFavorite(tool.id) ? "Remove from Favorites" : "Add to Favorites"}
+              >
+                <Star size={20} fill={isFavorite(tool.id) ? '#eab308' : 'none'} />
+              </button>
               <div className="tool-hub-card-icon" style={{ background: tool.color }}>
                 <Icon size={24} />
               </div>

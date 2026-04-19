@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Star, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import ToolHeader from '../components/shared/ToolHeader';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
 import './ToolStyles.css';
@@ -168,14 +168,12 @@ const ZodiacCalculator = () => {
 
   return (
     <div className="tool-container container" style={{ maxWidth: '600px' }}>
-      <Link to="/calculators" className="btn-secondary" style={{ display: 'inline-flex', marginBottom: '2rem' }}>
-        <ArrowLeft size={16} /> Back to Calculators
-      </Link>
-      <div className="tool-header text-center animate-fade-in">
-        <Star size={48} className="text-gradient mx-auto mb-4" />
-        <h1>Zodiac Sign Calculator</h1>
-        <p>Find your astrological zodiac sign based on your birth date.</p>
-      </div>
+      <ToolHeader 
+        title="Zodiac Sign Calculator"
+        description="Find your astrological zodiac sign based on your birth date."
+        icon={Star}
+        toolId="zodiac-calculator"
+      />
 
       <div className="tool-content glass-panel animate-fade-in">
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>

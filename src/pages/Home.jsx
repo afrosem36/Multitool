@@ -1,12 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, ShieldCheck, Sparkles } from 'lucide-react';
-import { linkTools, pdfTools, textTools } from '../data/toolCatalog';
+import { ArrowRight, BookOpen, ShieldCheck, Sparkles, Star } from 'lucide-react';
+import { linkTools, pdfTools, textTools, excelTools } from '../data/toolCatalog';
 import { homeFaqs } from '../seo/seoConfig';
 import { guideArticles, sitePages } from '../data/contentPages';
+import { useFavorites } from '../hooks/useFavorites';
 import './Home.css';
 
 const Home = () => {
+  const { isFavorite, toggleFavorite } = useFavorites();
+  
   const advantages = [
     {
       title: 'All-In-One Workspace',
@@ -111,8 +114,27 @@ const Home = () => {
               <div
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.2 + index * 0.06}s` }}
+                style={{ animationDelay: `${0.2 + index * 0.06}s`, position: 'relative' }}
               >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleFavorite(feature.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    right: '1rem',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
+                    zIndex: 10
+                  }}
+                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                </button>
                 <div className="feature-icon-wrapper" style={{ background: feature.color }}>
                   <Icon size={32} className="feature-icon text-gradient" />
                 </div>
@@ -145,8 +167,27 @@ const Home = () => {
               <div
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.25 + index * 0.06}s` }}
+                style={{ animationDelay: `${0.25 + index * 0.06}s`, position: 'relative' }}
               >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleFavorite(feature.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    right: '1rem',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
+                    zIndex: 10
+                  }}
+                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                </button>
                 <div className="feature-icon-wrapper" style={{ background: feature.color }}>
                   <Icon size={32} className="feature-icon text-gradient" />
                 </div>
@@ -178,8 +219,27 @@ const Home = () => {
               <div
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.3 + index * 0.06}s` }}
+                style={{ animationDelay: `${0.3 + index * 0.06}s`, position: 'relative' }}
               >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleFavorite(feature.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    right: '1rem',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
+                    zIndex: 10
+                  }}
+                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                </button>
                 <div className="feature-icon-wrapper" style={{ background: feature.color }}>
                   <Icon size={32} className="feature-icon text-gradient" />
                 </div>
