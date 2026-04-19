@@ -1,7 +1,9 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
 import SeoManager from './SeoManager';
+import { footerPages } from '../data/contentPages';
 import './Layout.css';
 
 const Layout = ({ children }) => {
@@ -18,7 +20,14 @@ const Layout = ({ children }) => {
 
       <footer className="footer glass-panel">
         <div className="footer-inner">
-          <p>&copy; {new Date().getFullYear()} PDF Tools. Browser-based PDF and text utilities in one workspace.</p>
+          <div className="footer-links">
+            {footerPages.map((page) => (
+              <Link key={page.path} to={page.path} className="footer-link">
+                {page.label}
+              </Link>
+            ))}
+          </div>
+          <p>&copy; {new Date().getFullYear()} MultiTool. Browser-based PDF tools, text utilities, guides, and support pages in one workspace.</p>
         </div>
       </footer>
     </div>

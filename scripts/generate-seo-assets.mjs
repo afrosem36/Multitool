@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { guideArticles, sitePages } from '../src/data/contentPages.js';
 
 const pdfTools = [
   '/merge',
@@ -29,7 +30,7 @@ const textTools = [
   '/text/word-repeater'
 ];
 
-const extraRoutes = ['/', '/pdf-tools', '/text-tools', '/whatsapp-link-creator'];
+const extraRoutes = ['/', '/guides', '/pdf-tools', '/text-tools', '/whatsapp-link-creator'];
 
 const siteUrl =
   process.env.SITE_URL ||
@@ -39,7 +40,9 @@ const siteUrl =
     : 'https://multitool.vercel.app');
 
 const normalizedSiteUrl = siteUrl.replace(/\/+$/, '');
-const allRoutes = [...extraRoutes, ...pdfTools, ...textTools];
+const infoRoutes = sitePages.map((page) => page.path);
+const guideRoutes = guideArticles.map((article) => article.path);
+const allRoutes = [...extraRoutes, ...infoRoutes, ...guideRoutes, ...pdfTools, ...textTools];
 const now = new Date().toISOString();
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>

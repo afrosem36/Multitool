@@ -14,6 +14,10 @@ import WordToPdf from './pages/WordToPdf';
 import TextToolPage from './pages/TextToolPage';
 import ToolHubPage from './pages/ToolHubPage';
 import WhatsAppLinkCreator from './pages/WhatsAppLinkCreator';
+import GuidesHubPage from './pages/GuidesHubPage';
+import ArticlePage from './pages/ArticlePage';
+import InfoPage from './pages/InfoPage';
+import { guideArticles, sitePages } from './data/contentPages';
 
 function App() {
   return (
@@ -21,6 +25,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/guides" element={<GuidesHubPage />} />
           <Route path="/pdf-tools" element={<ToolHubPage sectionId="pdf" />} />
           <Route path="/text-tools" element={<ToolHubPage sectionId="text" />} />
           <Route path="/whatsapp-link-creator" element={<WhatsAppLinkCreator />} />
@@ -35,6 +40,12 @@ function App() {
           <Route path="/to-jpg" element={<PdfToJpg />} />
           <Route path="/to-word" element={<PdfToWord />} />
           <Route path="/text/:toolId" element={<TextToolPage />} />
+          {guideArticles.map((article) => (
+            <Route key={article.path} path={article.path} element={<ArticlePage />} />
+          ))}
+          {sitePages.map((page) => (
+            <Route key={page.path} path={page.path} element={<InfoPage />} />
+          ))}
         </Routes>
       </Layout>
     </Router>

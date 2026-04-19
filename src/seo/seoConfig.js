@@ -1,4 +1,5 @@
 import { linkTools, pdfTools, textTools } from '../data/toolCatalog';
+import { guideArticles, sitePages } from '../data/contentPages';
 
 export const siteMeta = {
   siteName: 'MultiTool',
@@ -50,6 +51,20 @@ const breadcrumbLabelFromPath = (pathname) => {
     return 'WhatsApp Link Creator';
   }
 
+  if (pathname === '/guides') {
+    return 'Guides';
+  }
+
+  const sitePage = sitePages.find((page) => page.path === pathname);
+  if (sitePage) {
+    return sitePage.title;
+  }
+
+  const guideArticle = guideArticles.find((article) => article.path === pathname);
+  if (guideArticle) {
+    return guideArticle.title;
+  }
+
   const pdfTool = pdfTools.find((tool) => tool.path === pathname);
   if (pdfTool) {
     return pdfTool.name;
@@ -80,10 +95,17 @@ const buildBreadcrumbs = (pathname, origin) => {
       name: 'Text Tools',
       item: `${origin}/text-tools`
     });
+  } else if (pathname.startsWith('/guides/')) {
+    breadcrumbs.push({
+      name: 'Guides',
+      item: `${origin}/guides`
+    });
   } else if (
     pathname !== '/pdf-tools' &&
     pathname !== '/text-tools' &&
-    pathname !== '/whatsapp-link-creator'
+    pathname !== '/whatsapp-link-creator' &&
+    pathname !== '/guides' &&
+    !sitePages.some((page) => page.path === pathname)
   ) {
     breadcrumbs.push({
       name: 'PDF Tools',
@@ -122,6 +144,31 @@ const buildWebAppSchema = (title, description, url) => ({
     '@type': 'Offer',
     price: '0',
     priceCurrency: 'USD'
+  }
+});
+
+const buildWebPageSchema = (title, description, url) => ({
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: title,
+  url,
+  description
+});
+
+const buildArticleSchema = (article, url) => ({
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: article.title,
+  description: article.description,
+  articleSection: article.category,
+  mainEntityOfPage: url,
+  author: {
+    '@type': 'Organization',
+    name: siteMeta.siteName
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: siteMeta.siteName
   }
 });
 
@@ -164,6 +211,17 @@ const buildHomeSchemas = (origin, url, title, description) => [
       name: tool.name
     }))
   },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Featured Guides',
+    itemListElement: guideArticles.map((article, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      url: `${origin}${article.path}`,
+      name: article.title
+    }))
+  },
   buildBreadcrumbSchema('/', origin)
 ];
 
@@ -202,6 +260,12 @@ const routeMeta = {
     description:
       'Create a WhatsApp link with phone number and prefilled message online. Generate, copy, and share chat links instantly.',
     keywords: `whatsapp link creator, whatsapp message link, wa.me link generator, ${siteMeta.defaultKeywords}`
+  },
+  '/guides': {
+    title: `Guides and Tutorials | ${siteMeta.siteName}`,
+    description:
+      'Read practical tutorials about PDF tools, image conversion, text cleanup, and business communication workflows.',
+    keywords: `online guides, pdf guides, image conversion guides, text cleanup tutorials, ${siteMeta.defaultKeywords}`
   }
 };
 
@@ -221,6 +285,22 @@ linkTools.forEach((tool) => {
   };
 });
 
+sitePages.forEach((page) => {
+  routeMeta[page.path] = {
+    title: `${page.title} | ${siteMeta.siteName}`,
+    description: page.description,
+    keywords: `${page.keywords}, ${siteMeta.defaultKeywords}`
+  };
+});
+
+guideArticles.forEach((article) => {
+  routeMeta[article.path] = {
+    title: `${article.title} | ${siteMeta.siteName}`,
+    description: article.description,
+    keywords: `${article.keywords}, ${siteMeta.defaultKeywords}`
+  };
+});
+
 function normalizedUrl(origin, path) {
   if (!origin) {
     return path;
@@ -237,10 +317,48 @@ export const getSeoData = (pathname, origin) => {
   const schemas =
     pathname === '/'
       ? buildHomeSchemas(normalizedOrigin, url, currentRouteMeta.title, currentRouteMeta.description)
-      : [
-          buildWebAppSchema(currentRouteMeta.title, currentRouteMeta.description, url),
-          buildBreadcrumbSchema(pathname, normalizedOrigin)
-        ];
+      : (() => {
+          const guideArticle = guideArticles.find((article) => article.path === pathname);
+          const sitePage = sitePages.find((page) => page.path === pathname);
+
+          if (guideArticle) {
+            return [
+              buildArticleSchema(guideArticle, url),
+              buildWebPageSchema(currentRouteMeta.title, currentRouteMeta.description, url),
+              buildBreadcrumbSchema(pathname, normalizedOrigin)
+            ];
+          }
+
+          if (sitePage) {
+            return [
+              buildWebPageSchema(currentRouteMeta.title, currentRouteMeta.description, url),
+              buildBreadcrumbSchema(pathname, normalizedOrigin)
+            ];
+          }
+
+          if (pathname === '/guides') {
+            return [
+              buildWebPageSchema(currentRouteMeta.title, currentRouteMeta.description, url),
+              {
+                '@context': 'https://schema.org',
+                '@type': 'CollectionPage',
+                name: 'MultiTool Guides',
+                url,
+                hasPart: guideArticles.map((article) => ({
+                  '@type': 'Article',
+                  headline: article.title,
+                  url: `${normalizedOrigin}${article.path}`
+                }))
+              },
+              buildBreadcrumbSchema(pathname, normalizedOrigin)
+            ];
+          }
+
+          return [
+            buildWebAppSchema(currentRouteMeta.title, currentRouteMeta.description, url),
+            buildBreadcrumbSchema(pathname, normalizedOrigin)
+          ];
+        })();
 
   return {
     ...currentRouteMeta,

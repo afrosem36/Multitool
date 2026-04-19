@@ -37,7 +37,20 @@
 }
 
 .footer-inner {
+  display: grid;
+  gap: 0.8rem;
   padding: 0 2rem;
+}
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.footer-link {
+  color: var(--text-primary);
 }
 
 @media (max-width: 1024px) {

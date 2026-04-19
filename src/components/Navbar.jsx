@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Settings, Home } from 'lucide-react';
+import { Menu, X, Settings } from 'lucide-react';
 import { toolSections } from '../data/toolCatalog';
+import { headerPages } from '../data/contentPages';
 import './Navbar.css';
 
 const Navbar = () => {
@@ -9,10 +10,8 @@ const Navbar = () => {
   const location = useLocation();
 
   const toggleMenu = () => setIsOpen(!isOpen);
-
-  const navLinks = [
-    { name: 'Home', path: '/', icon: <Home size={18} /> },
-  ];
+  const isLinkActive = (path) =>
+    location.pathname === path || (path === '/guides' && location.pathname.startsWith('/guides/'));
 
   return (
     <nav className="navbar glass-panel">
@@ -26,14 +25,13 @@ const Navbar = () => {
 
         {/* Desktop Menu */}
         <div className="navbar-menu hidden-mobile">
-          {navLinks.map((link) => (
+          {headerPages.map((link) => (
             <Link 
               key={link.path} 
               to={link.path} 
-              className={`nav-link ${location.pathname === link.path ? 'active' : ''}`}
+              className={`nav-link ${isLinkActive(link.path) ? 'active' : ''}`}
             >
-              {link.icon}
-              <span>{link.name}</span>
+              <span>{link.label}</span>
             </Link>
           ))}
           <div className="nav-status">
@@ -55,15 +53,14 @@ const Navbar = () => {
       {/* Mobile Menu Overlay */}
       {isOpen && (
         <div className="mobile-menu glass-panel animate-fade-in">
-          {navLinks.map((link) => (
+          {headerPages.map((link) => (
             <Link 
               key={link.path} 
               to={link.path} 
               className="mobile-link"
               onClick={toggleMenu}
             >
-              {link.icon}
-              {link.name}
+              {link.label}
             </Link>
           ))}
           

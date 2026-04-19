@@ -11,6 +11,14 @@
   margin: 0 auto 4rem;
 }
 
+.hero-kicker {
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.85rem;
+  color: var(--accent-primary);
+}
+
 .hero-title {
   font-size: 4rem;
   margin-bottom: 1.5rem;
@@ -21,6 +29,40 @@
   font-size: 1.25rem;
   max-width: 600px;
   margin: 0 auto;
+}
+
+.hero-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.home-intro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.home-intro-card {
+  padding: 1.5rem;
+}
+
+.home-intro-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent-primary);
+  margin-bottom: 1rem;
+}
+
+.home-intro-card h2 {
+  margin-bottom: 0.75rem;
+  font-size: 1.25rem;
 }
 
 .feature-section + .feature-section {
@@ -91,6 +133,15 @@
   margin-bottom: 2rem;
 }
 
+.guide-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
 .feature-link {
   display: inline-flex;
   align-items: center;
@@ -138,5 +189,9 @@
 
   .home-container {
     padding-top: 0.5rem;
+  }
+
+  .hero-actions {
+    flex-direction: column;
   }
 }
