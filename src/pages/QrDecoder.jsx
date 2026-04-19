@@ -12,22 +12,147 @@ const QrDecoder = () => {
   const [isDecoding, setIsDecoding] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [useCamera, setUseCamera] = useState(false);
   
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const isScanning = useRef(false);
   const { addHistory } = useToolHistory();
 
   useEffect(() => {
     addHistory('/utilities/qr-decoder', 'QR Code Decoder', 'scanLine');
+    return () => {
+      stopCamera();
+    };
   }, [addHistory]);
 
+  const stopCamera = () => {
+    isScanning.current = false;
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject;
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setUseCamera(false);
+  };
+
+  const startCamera = async () => {
+    setFile(null);
+    setPreview('');
+    setDecodedText('');
+    setError('');
+    setCopied(false);
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      setUseCamera(true);
+      isScanning.current = true;
+      
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", true);
+          videoRef.current.play();
+          requestAnimationFrame(tick);
+        }
+      }, 100);
+    } catch (err) {
+      console.error(err);
+      setError('Unable to access camera. Please ensure permissions are granted.');
+    }
+  };
+
+  const tick = () => {
+    if (!isScanning.current) return;
+    
+    if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+      const canvasElement = canvasRef.current;
+      if (!canvasElement) return;
+      const canvas = canvasElement.getContext("2d");
+      
+      canvasElement.height = videoRef.current.videoHeight;
+      canvasElement.width = videoRef.current.videoWidth;
+      
+      canvas.drawImage(videoRef.current, 0, 0, canvasElement.width, canvasElement.height);
+      const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+      
+      if (window.jsQR) {
+        const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+        
+        if (code && code.data) {
+          setDecodedText(code.data);
+          stopCamera();
+          return;
+        }
+      }
+    }
+    
+    if (isScanning.current) {
+      requestAnimationFrame(tick);
+    }
+  };
+
+  const decodeQRFromFile = (selectedFile) => {
+    if (!window.jsQR) {
+      setError('QR decoder library is still loading. Please try again in a moment.');
+      return;
+    }
+    
+    setIsDecoding(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvasElement = document.createElement("canvas");
+        const canvas = canvasElement.getContext("2d");
+        
+        let width = img.width;
+        let height = img.height;
+        const maxDimension = 1000;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        
+        canvasElement.width = width;
+        canvasElement.height = height;
+        canvas.drawImage(img, 0, 0, width, height);
+        
+        const imageData = canvas.getImageData(0, 0, width, height);
+        const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "attemptBoth",
+        });
+        
+        if (code && code.data) {
+          setDecodedText(code.data);
+        } else {
+          setError('No QR code found in this image. Try another image or scan with the camera.');
+        }
+        setIsDecoding(false);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(selectedFile);
+  };
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
+      stopCamera();
       setFile(selectedFile);
       setPreview(URL.createObjectURL(selectedFile));
       setDecodedText('');
       setError('');
       setCopied(false);
+      decodeQRFromFile(selectedFile);
     }
   };
 
@@ -35,11 +160,13 @@ const QrDecoder = () => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile && droppedFile.type.startsWith('image/')) {
+      stopCamera();
       setFile(droppedFile);
       setPreview(URL.createObjectURL(droppedFile));
       setDecodedText('');
       setError('');
       setCopied(false);
+      decodeQRFromFile(droppedFile);
     } else {
       setError('Please upload a valid image file.');
     }
@@ -47,43 +174,6 @@ const QrDecoder = () => {
 
   const handleDragOver = (e) => {
     e.preventDefault();
-  };
-
-  const decodeQR = async () => {
-    if (!file) return;
-    
-    setIsDecoding(true);
-    setError('');
-    
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await fetch('https://api.qrserver.com/v1/read-qr-code/', {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) throw new Error('Failed to process image');
-      
-      const data = await response.json();
-      
-      if (data && data[0] && data[0].symbol && data[0].symbol[0]) {
-        const symbolData = data[0].symbol[0];
-        if (symbolData.data) {
-          setDecodedText(symbolData.data);
-        } else {
-          setError(symbolData.error || 'No QR code found in this image.');
-        }
-      } else {
-        setError('Unexpected API response.');
-      }
-    } catch (err) {
-      console.error(err);
-      setError('An error occurred while trying to decode the image. Please try another image.');
-    } finally {
-      setIsDecoding(false);
-    }
   };
 
   const copyToClipboard = () => {
@@ -105,12 +195,34 @@ const QrDecoder = () => {
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '2rem' }}>
+          {!useCamera ? (
+            <button onClick={startCamera} className="btn-primary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+              <ScanLine size={20} /> Scan with Camera
+            </button>
+          ) : (
+            <button onClick={stopCamera} className="btn-secondary" style={{ width: '100%' }}>
+              Stop Camera
+            </button>
+          )}
+        </div>
+
+        {useCamera && (
+          <div style={{ marginBottom: '2rem', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '2px solid rgba(16, 185, 129, 0.5)' }}>
+            <video ref={videoRef} style={{ width: '100%', display: 'block' }}></video>
+            <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '200px', height: '200px', border: '2px dashed rgba(16, 185, 129, 0.8)', borderRadius: '12px' }}></div>
+            </div>
+          </div>
+        )}
+
         <div 
           className="upload-area" 
           onDrop={handleDrop} 
           onDragOver={handleDragOver}
           onClick={() => fileInputRef.current.click()}
-          style={{ cursor: 'pointer', border: '2px dashed rgba(255,255,255,0.2)', padding: '3rem 2rem', borderRadius: '12px', textAlign: 'center', marginBottom: '2rem', transition: 'all 0.3s ease' }}
+          style={{ cursor: 'pointer', border: '2px dashed rgba(255,255,255,0.2)', padding: '2rem', borderRadius: '12px', textAlign: 'center', marginBottom: '2rem', transition: 'all 0.3s ease' }}
         >
           <input 
             type="file" 
@@ -119,14 +231,20 @@ const QrDecoder = () => {
             accept="image/*" 
             style={{ display: 'none' }} 
           />
-          <Upload size={48} style={{ color: 'var(--text-secondary)', marginBottom: '1rem', margin: '0 auto' }} />
-          <h3 style={{ marginBottom: '0.5rem' }}>Drag & Drop Image Here</h3>
-          <p style={{ color: 'var(--text-secondary)', margin: 0 }}>or click to browse your files</p>
+          <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '1rem', margin: '0 auto' }} />
+          <h3 style={{ marginBottom: '0.5rem', fontSize: '1.2rem' }}>Upload QR Image</h3>
+          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>Drag & drop or click to browse</p>
         </div>
 
-        {preview && (
+        {preview && !useCamera && (
           <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
             <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
+          </div>
+        )}
+
+        {isDecoding && (
+          <div style={{ textAlign: 'center', marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
+            <p>Decoding image...</p>
           </div>
         )}
 
@@ -134,17 +252,6 @@ const QrDecoder = () => {
           <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderLeft: '4px solid #ef4444', borderRadius: '4px', marginBottom: '1.5rem' }}>
             <p style={{ color: '#ef4444', margin: 0 }}>{error}</p>
           </div>
-        )}
-
-        {file && !decodedText && !error && (
-          <button 
-            onClick={decodeQR}
-            className="btn-primary"
-            style={{ width: '100%', marginBottom: '2rem' }}
-            disabled={isDecoding}
-          >
-            {isDecoding ? 'Decoding...' : 'Decode QR Image'}
-          </button>
         )}
 
         {decodedText && (

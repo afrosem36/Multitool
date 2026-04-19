@@ -5,7 +5,8 @@ import {
   Link as LinkIcon,
   MessageCircle,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  QrCode
 } from 'lucide-react';
 import './WhatsAppLinkCreator.css';
 
@@ -44,6 +45,7 @@ const WhatsAppLinkCreator = () => {
   const [generatedLink, setGeneratedLink] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [qrUrl, setQrUrl] = useState('');
 
   useEffect(() => {
     const { link, error } = buildWhatsAppLink(phoneNumber, message);
@@ -198,11 +200,24 @@ const WhatsAppLinkCreator = () => {
             <Clipboard size={16} />
             Copy Link
           </button>
+          <button className="btn-secondary" onClick={() => setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(generatedLink)}`)} disabled={!generatedLink}>
+            <QrCode size={16} />
+            Show QR Code
+          </button>
           <button className="btn-primary" onClick={handleOpenLink}>
             <ExternalLink size={16} />
             Open WhatsApp
           </button>
         </div>
+        
+        {qrUrl && generatedLink && (
+          <div className="glass-panel text-center animate-fade-in" style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(34, 197, 94, 0.05)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+            <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Scan to Chat</h3>
+            <div style={{ background: 'white', padding: '1rem', display: 'inline-block', borderRadius: '12px' }}>
+              <img src={qrUrl} alt="WhatsApp Link QR Code" style={{ display: 'block', width: '150px', height: '150px' }} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

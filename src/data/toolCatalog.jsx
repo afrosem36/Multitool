@@ -27,7 +27,11 @@ import {
   Star,
   QrCode,
   ScanLine,
-  Wrench
+  Wrench,
+  ArrowRightLeft,
+  Receipt,
+  Home,
+  Briefcase
 } from 'lucide-react';
 
 export const utilityTools = [
@@ -46,6 +50,14 @@ export const utilityTools = [
     path: '/utilities/qr-decoder',
     icon: ScanLine,
     color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
+    id: 'unit-converter',
+    name: 'Unit Converter',
+    description: 'Convert seamlessly between length, weight, temperature, volume, and area.',
+    path: '/utilities/unit-converter',
+    icon: ArrowRightLeft,
+    color: 'rgba(234, 179, 8, 0.1)'
   }
 ];
 
@@ -314,6 +326,38 @@ export const calculatorTools = [
     path: '/calculator/zodiac',
     icon: Star,
     color: 'rgba(234, 179, 8, 0.1)'
+  },
+  {
+    id: 'working-days',
+    name: 'Working Day Calculator',
+    description: 'Calculate the exact number of business days between dates.',
+    path: '/calculator/working-days',
+    icon: Briefcase,
+    color: 'rgba(99, 102, 241, 0.1)'
+  },
+  {
+    id: 'sales-tax',
+    name: 'Sales Tax Calculator',
+    description: 'Easily add or extract sales tax from any price.',
+    path: '/calculator/sales-tax',
+    icon: Receipt,
+    color: 'rgba(14, 165, 233, 0.1)'
+  },
+  {
+    id: 'home-loan',
+    name: 'Home Loan Calculator',
+    description: 'Calculate your monthly mortgage payments and total interest.',
+    path: '/calculator/home-loan',
+    icon: Home,
+    color: 'rgba(34, 197, 94, 0.1)'
+  },
+  {
+    id: 'currency',
+    name: 'Currency Converter',
+    description: 'Live exchange rates for global currencies.',
+    path: '/calculator/currency',
+    icon: DollarSign,
+    color: 'rgba(239, 68, 68, 0.1)'
   }
 ];
 

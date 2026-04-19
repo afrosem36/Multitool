@@ -10,6 +10,11 @@ export default defineConfig({
         target: 'https://json.astrologyapi.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/astrology/, '')
+      },
+      '/api/ninja': {
+        target: 'https://api.api-ninjas.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/ninja/, '')
       }
     }
   }

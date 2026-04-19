@@ -29,6 +29,11 @@ const PrivacyPolicy = React.lazy(() => import('./pages/PrivacyPolicy'));
 const Terms = React.lazy(() => import('./pages/Terms'));
 const Contact = React.lazy(() => import('./pages/Contact'));
 
+// Utility pages
+const QrGenerator = React.lazy(() => import('./pages/QrGenerator'));
+const QrDecoder = React.lazy(() => import('./pages/QrDecoder'));
+const UnitConverter = React.lazy(() => import('./pages/UnitConverter'));
+
 // Calculator pages
 const FinanceCalculator = React.lazy(() => import('./pages/FinanceCalculator'));
 const BmiCalculator = React.lazy(() => import('./pages/BmiCalculator'));
@@ -36,10 +41,10 @@ const AgeCalculator = React.lazy(() => import('./pages/AgeCalculator'));
 const DaysCalculator = React.lazy(() => import('./pages/DaysCalculator'));
 const DurationCalculator = React.lazy(() => import('./pages/DurationCalculator'));
 const ZodiacCalculator = React.lazy(() => import('./pages/ZodiacCalculator'));
-
-// Utility pages
-const QrGenerator = React.lazy(() => import('./pages/QrGenerator'));
-const QrDecoder = React.lazy(() => import('./pages/QrDecoder'));
+const WorkingDayCalculator = React.lazy(() => import('./pages/WorkingDayCalculator'));
+const SalesTaxCalculator = React.lazy(() => import('./pages/SalesTaxCalculator'));
+const HomeLoanCalculator = React.lazy(() => import('./pages/HomeLoanCalculator'));
+const CurrencyConverter = React.lazy(() => import('./pages/CurrencyConverter'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
@@ -79,10 +84,15 @@ function App() {
             <Route path="/calculator/days" element={<DaysCalculator />} />
             <Route path="/calculator/duration" element={<DurationCalculator />} />
             <Route path="/calculator/zodiac" element={<ZodiacCalculator />} />
+            <Route path="/calculator/working-days" element={<WorkingDayCalculator />} />
+            <Route path="/calculator/sales-tax" element={<SalesTaxCalculator />} />
+            <Route path="/calculator/home-loan" element={<HomeLoanCalculator />} />
+            <Route path="/calculator/currency" element={<CurrencyConverter />} />
             
             {/* Utilities */}
             <Route path="/utilities/qr-generator" element={<QrGenerator />} />
             <Route path="/utilities/qr-decoder" element={<QrDecoder />} />
+            <Route path="/utilities/unit-converter" element={<UnitConverter />} />
             
             {/* Dedicated compliance pages */}
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
