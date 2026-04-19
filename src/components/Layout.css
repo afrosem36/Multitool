@@ -21,40 +21,6 @@
   min-width: 0;
 }
 
-.adsterra-stack {
-  width: min(1400px, calc(100% - 2rem));
-  margin: 0 auto 1rem;
-  display: grid;
-  gap: 1rem;
-}
-
-.adsterra-slot {
-  padding: 1rem;
-}
-
-.adsterra-slot-label {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 0.75rem;
-}
-
-.adsterra-native-wrap {
-  width: 100%;
-  overflow: hidden;
-}
-
-.adsterra-banner-slot {
-  overflow-x: auto;
-}
-
-.adsterra-banner-wrap {
-  min-width: 468px;
-  display: flex;
-  justify-content: center;
-}
-
 .footer {
   margin-top: auto;
   padding: 1.5rem 0;
@@ -85,10 +51,6 @@
     width: min(100% - 1rem, 1400px);
     padding-top: 1rem;
     gap: 1rem;
-  }
-
-  .adsterra-stack {
-    width: min(100% - 1rem, 1400px);
   }
 
   .footer {
