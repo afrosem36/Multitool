@@ -281,6 +281,14 @@ export const linkTools = [
 
 export const calculatorTools = [
   {
+    id: 'personal-finance-calculator',
+    name: 'Personal Finance Analyzer',
+    description: 'Comprehensive financial health checker, budget planner, and projection tool.',
+    path: '/calculator/personal-finance',
+    icon: Activity,
+    color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
     id: 'finance-calculator',
     name: 'Finance Calculator',
     description: 'Calculate loans, mortgages, and simple investments.',

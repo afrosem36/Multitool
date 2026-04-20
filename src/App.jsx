@@ -38,6 +38,7 @@ const QrDecoder = React.lazy(() => import('./pages/QrDecoder'));
 const UnitConverter = React.lazy(() => import('./pages/UnitConverter'));
 
 // Calculator pages
+const PersonalFinanceCalculator = React.lazy(() => import('./pages/PersonalFinanceCalculator'));
 const FinanceCalculator = React.lazy(() => import('./pages/FinanceCalculator'));
 const BmiCalculator = React.lazy(() => import('./pages/BmiCalculator'));
 const AgeCalculator = React.lazy(() => import('./pages/AgeCalculator'));
@@ -87,6 +88,7 @@ function App() {
             <Route path="/excel/convert" element={<ExcelConverter />} />
 
             {/* Calculators */}
+            <Route path="/calculator/personal-finance" element={<PersonalFinanceCalculator />} />
             <Route path="/calculator/finance" element={<FinanceCalculator />} />
             <Route path="/calculator/bmi" element={<BmiCalculator />} />
             <Route path="/calculator/age" element={<AgeCalculator />} />
