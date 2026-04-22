@@ -188,13 +188,13 @@ export const textTools = [
   },
   {
     id: 'remove-line-breaks',
-    name: 'Remove Line Breaks',
-    description: 'Join wrapped lines into one clean paragraph.',
+    name: 'Remove Line Breaks & Extra Spaces',
+    description: 'Join wrapped lines and collapse multiple spaces into one clean paragraph.',
     path: '/text/remove-line-breaks',
     icon: WrapText,
     color: 'rgba(6, 182, 212, 0.1)',
-    sampleInput: 'This is a line\nthat wraps\nacross multiple\nrows.',
-    actionLabel: 'Remove Line Breaks'
+    sampleInput: 'This is a line  \n  that wraps \t across   multiple\nrows.',
+    actionLabel: 'Clean Text'
   },
   {
     id: 'remove-extra-spaces',

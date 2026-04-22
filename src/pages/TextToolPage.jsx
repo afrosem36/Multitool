@@ -159,7 +159,7 @@ const runTextTool = (toolId, sourceText, filterValue = '', settings = {}) => {
       };
     case 'remove-line-breaks':
       return {
-        result: sourceText.replace(/\s*\r?\n+\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim(),
+        result: sourceText.replace(/\s+/g, ' ').trim(),
         error: ''
       };
     case 'remove-extra-spaces':
