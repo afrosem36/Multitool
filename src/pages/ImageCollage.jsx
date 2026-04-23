@@ -112,9 +112,9 @@ function useDebounced(value, delay = 50) {
 function getWorkerSource() {
   return `
     function roundedClip(ctx,x,y,w,h,r){ctx.beginPath();if(r<=0){ctx.rect(x,y,w,h);}else{const cr=Math.min(r,w/2,h/2);ctx.moveTo(x+cr,y);ctx.lineTo(x+w-cr,y);ctx.quadraticCurveTo(x+w,y,x+w,y+cr);ctx.lineTo(x+w,y+h-cr);ctx.quadraticCurveTo(x+w,y+h,x+w-cr,y+h);ctx.lineTo(x+cr,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-cr);ctx.lineTo(x,y+cr);ctx.quadraticCurveTo(x,y,x+cr,y);ctx.closePath();}ctx.clip();}
-    function drawImageWithTransform(ctx,img,x,y,w,h,r,transform){const s=Math.min(w/img.width,h/img.height);const dw=img.width*s,dh=img.height*s;const centerX=x+w/2,centerY=y+h/2;const finalScale=(transform?.scale||1)*s;const finalW=dw*finalScale,finalH=dh*finalScale;const dx=centerX-finalW/2+(transform?.x||0),dy=centerY-finalH/2+(transform?.y||0);ctx.save();roundedClip(ctx,x,y,w,h,r);ctx.drawImage(img,dx,dy,finalW,finalH);ctx.restore();}
-    async function renderCollage(items,opts){const{columns,gap,padding,fit,background,cellWidth,cellHeight,borderRadius,showLabels}=opts;const LH=showLabels?28:0;const rows=Math.ceil(items.length/columns);const W=padding*2+columns*cellWidth+gap*(columns-1);const H=padding*2+rows*(cellHeight+LH)+gap*(rows-1);const canvas=new OffscreenCanvas(W,H);const ctx=canvas.getContext('2d');ctx.fillStyle=background;ctx.fillRect(0,0,W,H);items.forEach(({image,label,transform},i)=>{const col=i%columns,row=Math.floor(i/columns);const x=padding+col*(cellWidth+gap),y=padding+row*(cellHeight+LH+gap);drawImageWithTransform(ctx,image,x,y,cellWidth,cellHeight,borderRadius,transform);if(showLabels&&label){ctx.save();ctx.font='13px sans-serif';ctx.fillStyle='#374151';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,x+cellWidth/2,y+cellHeight+LH/2,cellWidth-8);ctx.restore();}});return canvas.convertToBlob({type:'image/png'});}
-    self.onmessage=async(e)=>{const{bitmaps,labels,transforms,options}=e.data;try{const items=bitmaps.map((image,i)=>({image,label:labels[i]||'',transform:transforms[i]||{x:0,y:0,scale:1}}));const blob=await renderCollage(items,options);self.postMessage({blob});}catch(err){self.postMessage({error:err?.message??'Worker error'});}};
+    function drawImageWithTransform(ctx,img,x,y,w,h,r,transform){const baseScale=Math.min(w/img.width,h/img.height);const finalScale=baseScale*(transform?.scale||1);const drawWidth=img.width*finalScale;const drawHeight=img.height*finalScale;const cellCenterX=x+w/2;const cellCenterY=y+h/2;ctx.save();roundedClip(ctx,x,y,w,h,r);ctx.translate(cellCenterX,cellCenterY);ctx.rotate(((transform?.rotation||0)*Math.PI)/180);ctx.drawImage(img,-drawWidth/2+(transform?.x||0),-drawHeight/2+(transform?.y||0),drawWidth,drawHeight);ctx.restore();}
+    async function renderCollage(items,opts){const{columns,gap,padding,background,cellWidth,cellHeight,borderRadius,showLabels}=opts;const LH=showLabels?28:0;const rows=Math.ceil(items.length/columns);const W=padding*2+columns*cellWidth+gap*(columns-1);const H=padding*2+rows*(cellHeight+LH)+gap*(rows-1);const dpr=Math.min(self.devicePixelRatio||1,2);const canvas=new OffscreenCanvas(W*dpr,H*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.fillStyle=background;ctx.fillRect(0,0,W,H);items.forEach(({image,label,transform},i)=>{const col=i%columns,row=Math.floor(i/columns);const x=padding+col*(cellWidth+gap),y=padding+row*(cellHeight+LH+gap);drawImageWithTransform(ctx,image,x,y,cellWidth,cellHeight,borderRadius,transform);if(showLabels&&label){ctx.save();ctx.font='13px sans-serif';ctx.fillStyle='#374151';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,x+cellWidth/2,y+cellHeight+LH/2,cellWidth-8);ctx.restore();}});return canvas.convertToBlob({type:'image/png'});}
+    self.onmessage=async(e)=>{const{bitmaps,labels,transforms,options}=e.data;try{const items=bitmaps.map((image,i)=>({image,label:labels[i]||'',transform:transforms[i]||{x:0,y:0,scale:1,rotation:0}}));const blob=await renderCollage(items,options);self.postMessage({blob});}catch(err){self.postMessage({error:err?.message??'Worker error'});}};
   `;
 }
 
@@ -124,9 +124,11 @@ async function renderOnMainThread(items, opts) {
   const rows = Math.ceil(items.length / columns);
   const W = padding * 2 + columns * cellWidth + gap * (columns - 1);
   const H = padding * 2 + rows * (cellHeight + LH) + gap * (rows - 1);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
+  canvas.width = W * dpr; canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
   function roundedClip(x, y, w, h, r) {
     ctx.beginPath();
@@ -149,22 +151,24 @@ async function renderOnMainThread(items, opts) {
     const x = padding + col * (cellWidth + gap);
     const y = padding + row * (cellHeight + LH + gap);
     
-    // Fit image to cell (contain logic only)
-    const s = Math.min(cellWidth / image.width, cellHeight / image.height);
-    const dw = image.width * s, dh = image.height * s;
-    
-    // Center image in cell, then apply user transform
-    const centerX = x + cellWidth / 2;
-    const centerY = y + cellHeight / 2;
-    const finalScale = (transform?.scale || 1) * s;
-    const finalW = dw * finalScale;
-    const finalH = dh * finalScale;
-    const dx = centerX - finalW / 2 + (transform?.x || 0);
-    const dy = centerY - finalH / 2 + (transform?.y || 0);
+    const baseScale = Math.min(cellWidth / image.width, cellHeight / image.height);
+    const finalScale = baseScale * (transform?.scale || 1);
+    const drawWidth = image.width * finalScale;
+    const drawHeight = image.height * finalScale;
+    const cellCenterX = x + cellWidth / 2;
+    const cellCenterY = y + cellHeight / 2;
     
     ctx.save();
     roundedClip(x, y, cellWidth, cellHeight, borderRadius);
-    ctx.drawImage(image, dx, dy, finalW, finalH);
+    ctx.translate(cellCenterX, cellCenterY);
+    ctx.rotate(((transform?.rotation || 0) * Math.PI) / 180);
+    ctx.drawImage(
+      image,
+      -drawWidth / 2 + (transform?.x || 0),
+      -drawHeight / 2 + (transform?.y || 0),
+      drawWidth,
+      drawHeight
+    );
     ctx.restore();
     
     if (showLabels && label) {
@@ -192,6 +196,39 @@ function computeDimensions(count, { columns, gap, padding, cellWidth, cellHeight
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+function ResponsiveWireframe({ children, actualW, actualH }) {
+  const containerRef = useRef(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      const { width } = entries[0].contentRect;
+      if (width && actualW) {
+        setScale(Math.min(1, width / actualW));
+      }
+    });
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [actualW]);
+
+  return (
+    <div ref={containerRef} style={{ width: '100%', overflow: 'hidden' }}>
+      <div style={{
+        width: actualW,
+        height: actualH,
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+        transition: 'transform 0.1s ease',
+      }}>
+        {children}
+      </div>
+      {scale < 1 && (
+        <div style={{ marginTop: `-${actualH * (1 - scale)}px` }} />
+      )}
+    </div>
+  );
+}
+
 function ThumbSkeletons({ count }) {
   return (
     <div className="collage-skeleton-grid" aria-busy="true" aria-label="Loading images">
@@ -206,12 +243,18 @@ function ThumbSkeletons({ count }) {
 
 function WireframePreview({ items, columns, gap, padding, cellWidth, cellHeight, onUpdateTransform }) {
   const rows = Math.ceil(items.length / columns);
+  
+  const actualW = padding * 2 + columns * cellWidth + gap * (columns - 1);
+  const actualH = padding * 2 + rows * cellHeight + gap * (rows - 1);
+
   const containerStyle = useMemo(() => ({ padding }), [padding]);
   const gridStyle = useMemo(() => ({
-    display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap,
-  }), [columns, gap]);
+    display: 'grid', gridTemplateColumns: `repeat(${columns}, ${cellWidth}px)`, gap,
+  }), [columns, gap, cellWidth]);
+  
   const cellStyle = { 
-    aspectRatio: String(cellWidth / cellHeight), 
+    width: cellWidth,
+    height: cellHeight,
     position: 'relative', 
     overflow: 'hidden', 
     borderRadius: '8px', 
@@ -223,23 +266,27 @@ function WireframePreview({ items, columns, gap, padding, cellWidth, cellHeight,
   if (!items.length) return null;
 
   return (
-    <div className="collage-wireframe" role="img" aria-label="Live layout preview">
-      <p style={{ margin: '0 0 6px', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+    <div className="collage-wireframe" role="img" aria-label="Live layout preview" style={{ padding: '8px 8px 0', border: 'none', background: 'transparent' }}>
+      <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', letterSpacing: '.06em', textTransform: 'uppercase' }}>
         Layout preview · {columns} col × {rows} row · Drag to move, scroll to zoom
       </p>
-      <div style={containerStyle}>
-        <div style={gridStyle}>
-          {items.map((item) => (
-            <ImageCell 
-              key={item.id} 
-              item={item} 
-              cellWidth={cellWidth}
-              cellHeight={cellHeight}
-              onUpdateTransform={onUpdateTransform}
-              cellStyle={cellStyle}
-            />
-          ))}
-        </div>
+      <div style={{ background: 'var(--surface,rgba(255,255,255,.04))', border: '1px dashed var(--border,rgba(255,255,255,.12))', borderRadius: '12px', overflow: 'hidden' }}>
+        <ResponsiveWireframe actualW={actualW} actualH={actualH}>
+          <div style={containerStyle}>
+            <div style={gridStyle}>
+              {items.map((item) => (
+                <ImageCell 
+                  key={item.id} 
+                  item={item} 
+                  cellWidth={cellWidth}
+                  cellHeight={cellHeight}
+                  onUpdateTransform={onUpdateTransform}
+                  cellStyle={cellStyle}
+                />
+              ))}
+            </div>
+          </div>
+        </ResponsiveWireframe>
       </div>
     </div>
   );
@@ -248,37 +295,78 @@ function WireframePreview({ items, columns, gap, padding, cellWidth, cellHeight,
 function ImageCell({ item, cellWidth, cellHeight, onUpdateTransform, cellStyle }) {
   const containerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0, startX: 0, startY: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0, startX: 0, startY: 0, scale: 1, isPinching: false, startScale: 1, startDist: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+  const [guides, setGuides] = useState({ centerX: false, centerY: false, left: false, right: false, top: false, bottom: false });
 
-  const transform = item.transform || { x: 0, y: 0, scale: 1 };
+  const transform = item.transform || { x: 0, y: 0, scale: 1, rotation: 0 };
+  const baseScale = item.image ? Math.min(cellWidth / item.image.width, cellHeight / item.image.height) : 1;
+  const finalScale = baseScale * transform.scale;
+
+  const handleDragUpdate = useCallback((dx, dy) => {
+    let newX = dragStartRef.current.x + dx;
+    let newY = dragStartRef.current.y + dy;
+
+    if (!item.image) return { newX, newY, newGuides: guides };
+
+    const drawWidth = item.image.width * finalScale;
+    const drawHeight = item.image.height * finalScale;
+    const newGuides = { centerX: false, centerY: false, left: false, right: false, top: false, bottom: false };
+    const SNAP = 8 / dragStartRef.current.scale;
+
+    if (Math.abs(newX) < SNAP) { newX = 0; newGuides.centerX = true; }
+    if (Math.abs(newY) < SNAP) { newY = 0; newGuides.centerY = true; }
+
+    const leftEdge = cellWidth/2 + newX - drawWidth/2;
+    if (Math.abs(leftEdge) < SNAP) { newX -= leftEdge; newGuides.left = true; }
+
+    const rightEdge = cellWidth/2 + newX + drawWidth/2;
+    if (Math.abs(rightEdge - cellWidth) < SNAP) { newX -= (rightEdge - cellWidth); newGuides.right = true; }
+
+    const topEdge = cellHeight/2 + newY - drawHeight/2;
+    if (Math.abs(topEdge) < SNAP) { newY -= topEdge; newGuides.top = true; }
+
+    const bottomEdge = cellHeight/2 + newY + drawHeight/2;
+    if (Math.abs(bottomEdge - cellHeight) < SNAP) { newY -= (bottomEdge - cellHeight); newGuides.bottom = true; }
+
+    return { newX, newY, newGuides };
+  }, [item.image, cellWidth, cellHeight, finalScale, guides]);
 
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
     setIsDragging(true);
+    
+    const el = containerRef.current;
+    const currentDOMScale = el ? (el.getBoundingClientRect().width / cellWidth) : 1;
+
     dragStartRef.current = {
+      ...dragStartRef.current,
       x: transform.x,
       y: transform.y,
       startX: e.clientX,
       startY: e.clientY,
+      scale: currentDOMScale || 1
     };
     if (containerRef.current) {
       containerRef.current.style.cursor = 'grabbing';
     }
-  }, [transform]);
+  }, [transform.x, transform.y, cellWidth]);
 
   const handleMouseMove = useCallback((e) => {
-    if (!isDragging) return;
-    const dx = e.clientX - dragStartRef.current.startX;
-    const dy = e.clientY - dragStartRef.current.startY;
-    onUpdateTransform(item.id, {
-      x: dragStartRef.current.x + dx,
-      y: dragStartRef.current.y + dy,
-      scale: transform.scale,
+    if (!isDragging || dragStartRef.current.isPinching) return;
+    const dx = (e.clientX - dragStartRef.current.startX) / dragStartRef.current.scale;
+    const dy = (e.clientY - dragStartRef.current.startY) / dragStartRef.current.scale;
+    
+    requestAnimationFrame(() => {
+      const { newX, newY, newGuides } = handleDragUpdate(dx, dy);
+      setGuides(newGuides);
+      onUpdateTransform(item.id, { ...transform, x: newX, y: newY });
     });
-  }, [isDragging, item.id, transform.scale, onUpdateTransform]);
+  }, [isDragging, handleDragUpdate, item.id, transform, onUpdateTransform]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setGuides({ centerX: false, centerY: false, left: false, right: false, top: false, bottom: false });
     if (containerRef.current) {
       containerRef.current.style.cursor = 'grab';
     }
@@ -286,17 +374,28 @@ function ImageCell({ item, cellWidth, cellHeight, onUpdateTransform, cellStyle }
 
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-    const scaleStep = 0.1;
-    const newScale = Math.max(0.5, Math.min(3, transform.scale - e.deltaY * 0.001 * scaleStep));
+    const el = containerRef.current;
+    const rect = el.getBoundingClientRect();
+    const currentDOMScale = rect.width / cellWidth;
+    
+    const cursorX = (e.clientX - rect.left) / currentDOMScale - cellWidth / 2;
+    const cursorY = (e.clientY - rect.top) / currentDOMScale - cellHeight / 2;
+    
+    const delta = e.deltaY * -0.002;
+    const oldScale = transform.scale;
+    const newScale = Math.max(0.5, Math.min(4, oldScale + delta));
+    const ratio = newScale / oldScale;
+
     onUpdateTransform(item.id, {
-      x: transform.x,
-      y: transform.y,
-      scale: Number(newScale.toFixed(2)),
+      ...transform,
+      x: cursorX - (cursorX - transform.x) * ratio,
+      y: cursorY - (cursorY - transform.y) * ratio,
+      scale: Number(newScale.toFixed(3)),
     });
-  }, [transform, item.id, onUpdateTransform]);
+  }, [transform, item.id, onUpdateTransform, cellWidth, cellHeight]);
 
   const handleDoubleClick = useCallback(() => {
-    onUpdateTransform(item.id, { x: 0, y: 0, scale: 1 });
+    onUpdateTransform(item.id, { x: 0, y: 0, scale: 1, rotation: 0 });
   }, [item.id, onUpdateTransform]);
 
   useEffect(() => {
@@ -310,43 +409,162 @@ function ImageCell({ item, cellWidth, cellHeight, onUpdateTransform, cellStyle }
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  // Touch handlers
+  const handleTouchStart = useCallback((e) => {
+    const el = containerRef.current;
+    const currentDOMScale = el ? (el.getBoundingClientRect().width / cellWidth) : 1;
+
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      dragStartRef.current = {
+        ...dragStartRef.current,
+        x: transform.x,
+        y: transform.y,
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        scale: currentDOMScale,
+        isPinching: false
+      };
+    } else if (e.touches.length === 2) {
+      setIsDragging(true);
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const dist = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+      const cx = (touch1.clientX + touch2.clientX) / 2;
+      const cy = (touch1.clientY + touch2.clientY) / 2;
+      const rect = el.getBoundingClientRect();
+
+      dragStartRef.current = {
+        ...dragStartRef.current,
+        x: transform.x,
+        y: transform.y,
+        startDist: dist,
+        startScale: transform.scale,
+        startX: cx,
+        startY: cy,
+        cursorX: (cx - rect.left) / currentDOMScale - cellWidth / 2,
+        cursorY: (cy - rect.top) / currentDOMScale - cellHeight / 2,
+        scale: currentDOMScale,
+        isPinching: true
+      };
+    }
+  }, [transform, cellWidth, cellHeight]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!isDragging) return;
+    if (e.cancelable) e.preventDefault();
+
+    if (e.touches.length === 1 && !dragStartRef.current.isPinching) {
+      const dx = (e.touches[0].clientX - dragStartRef.current.startX) / dragStartRef.current.scale;
+      const dy = (e.touches[0].clientY - dragStartRef.current.startY) / dragStartRef.current.scale;
+      
+      requestAnimationFrame(() => {
+        const { newX, newY, newGuides } = handleDragUpdate(dx, dy);
+        setGuides(newGuides);
+        onUpdateTransform(item.id, { ...transform, x: newX, y: newY });
+      });
+    } else if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const dist = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+      const cx = (touch1.clientX + touch2.clientX) / 2;
+      const cy = (touch1.clientY + touch2.clientY) / 2;
+      
+      const pinchRatio = dist / dragStartRef.current.startDist;
+      let newScale = dragStartRef.current.startScale * pinchRatio;
+      newScale = Math.max(0.5, Math.min(4, newScale));
+      const ratio = newScale / dragStartRef.current.startScale;
+      
+      const dx = (cx - dragStartRef.current.startX) / dragStartRef.current.scale;
+      const dy = (cy - dragStartRef.current.startY) / dragStartRef.current.scale;
+
+      const cursorX = dragStartRef.current.cursorX;
+      const cursorY = dragStartRef.current.cursorY;
+
+      requestAnimationFrame(() => {
+        setGuides({ centerX: false, centerY: false, left: false, right: false, top: false, bottom: false });
+        onUpdateTransform(item.id, {
+          ...transform,
+          x: cursorX - (cursorX - dragStartRef.current.x) * ratio + dx,
+          y: cursorY - (cursorY - dragStartRef.current.y) * ratio + dy,
+          scale: Number(newScale.toFixed(3)),
+        });
+      });
+    }
+  }, [isDragging, handleDragUpdate, item.id, transform, onUpdateTransform]);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+    setGuides({ centerX: false, centerY: false, left: false, right: false, top: false, bottom: false });
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e) => handleWheel(e);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [handleWheel]);
+
   const imgStyle = {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    maxWidth: '100%',
-    maxHeight: '100%',
-    width: 'auto',
-    height: 'auto',
-    objectFit: 'cover',
-    transform: `translate(calc(-50% + ${transform.x}px), calc(-50% + ${transform.y}px)) scale(${transform.scale})`,
-    transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+    width: item.image ? `${item.image.width}px` : 'auto',
+    height: item.image ? `${item.image.height}px` : 'auto',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(calc(-50% + ${transform.x}px), calc(-50% + ${transform.y}px)) scale(${finalScale}) rotate(${transform.rotation || 0}deg)`,
+    transformOrigin: 'center',
+    transition: isDragging ? 'none' : 'transform 0.2s ease',
     pointerEvents: 'none',
+    userSelect: 'none'
   };
 
   return (
     <div
       ref={containerRef}
-      style={cellStyle}
+      style={{
+        ...cellStyle,
+        outline: isHovered ? '2px solid var(--primary)' : 'none',
+        outlineOffset: '-2px',
+        transition: 'outline 0.2s ease',
+        touchAction: 'none'
+      }}
       onMouseDown={handleMouseDown}
-      onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       title="Drag to move, scroll to zoom, double-click to reset"
     >
       <img src={item.url} alt={item.label || 'Image'} style={imgStyle} />
-      <div style={{
-        position: 'absolute',
-        bottom: 4,
-        right: 4,
-        fontSize: '9px',
-        color: 'rgba(255,255,255,0.6)',
-        background: 'rgba(0,0,0,0.5)',
-        padding: '2px 4px',
-        borderRadius: '3px',
-        pointerEvents: 'none',
-      }}>
-        {transform.scale.toFixed(1)}x
-      </div>
+      
+      {guides.centerX && <div style={{position:'absolute', left:'50%', top:0, bottom:0, width:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+      {guides.centerY && <div style={{position:'absolute', top:'50%', left:0, right:0, height:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+      {guides.left && <div style={{position:'absolute', left:0, top:0, bottom:0, width:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+      {guides.right && <div style={{position:'absolute', right:0, top:0, bottom:0, width:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+      {guides.top && <div style={{position:'absolute', top:0, left:0, right:0, height:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+      {guides.bottom && <div style={{position:'absolute', bottom:0, left:0, right:0, height:'1px', background:'#f59e0b', zIndex:10, pointerEvents:'none'}}/>}
+
+      {transform.scale !== 1 && (
+        <div style={{
+          position: 'absolute',
+          bottom: 4,
+          right: 4,
+          background: 'rgba(15,23,42,0.8)',
+          color: 'white',
+          fontSize: '10px',
+          padding: '2px 4px',
+          borderRadius: '4px',
+          pointerEvents: 'none',
+          zIndex: 20
+        }}>
+          {transform.scale.toFixed(1)}x
+        </div>
+      )}
     </div>
   );
 }
