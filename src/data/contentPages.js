@@ -329,6 +329,7 @@ export const headerPages = [
   { label: 'Home', path: '/' },
   { label: 'Guides', path: '/guides' },
   { label: 'PDF Tools', path: '/pdf-tools' },
+  { label: 'Image Tools', path: '/image-tools' },
   { label: 'Text Tools', path: '/text-tools' },
   { label: 'Contact Us', path: '/contact-us' }
 ];

@@ -57,7 +57,7 @@ const Navbar = () => {
             <span className="nav-status-count">
               {toolSections.reduce((count, section) => count + section.tools.length, 0)} tools
             </span>
-            <span className="nav-status-label">PDF + Text + Link Workspace</span>
+            <span className="nav-status-label">PDF + Image + Text + Link Workspace</span>
           </div>
         </div>
 

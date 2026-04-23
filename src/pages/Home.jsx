@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, ShieldCheck, Sparkles, Star } from 'lucide-react';
-import { linkTools, pdfTools, textTools, excelTools } from '../data/toolCatalog';
+import { imageTools, linkTools, pdfTools, textTools, excelTools } from '../data/toolCatalog';
 import { homeFaqs } from '../seo/seoConfig';
 import { guideArticles, sitePages } from '../data/contentPages';
 import { useFavorites } from '../hooks/useFavorites';
@@ -13,7 +13,7 @@ const Home = () => {
   const advantages = [
     {
       title: 'All-In-One Workspace',
-      description: 'Access PDF tools, text utilities, and quick link generators from one searchable browser workspace.'
+      description: 'Access PDF tools, image utilities, text utilities, and quick link generators from one searchable browser workspace.'
     },
     {
       title: 'Fast Browser-Based Tools',
@@ -30,7 +30,7 @@ const Home = () => {
   ];
 
   const steps = [
-    'Choose a tool from the PDF, text, or link creator sections.',
+    'Choose a tool from the PDF, image, text, or link creator sections.',
     'Upload files or paste the content you want to process.',
     'Preview the result, then download, copy, or share it instantly.'
   ];
@@ -115,6 +115,58 @@ const Home = () => {
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.2 + index * 0.06}s`, position: 'relative' }}
+              >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleFavorite(feature.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    right: '1rem',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
+                    zIndex: 10
+                  }}
+                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                </button>
+                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                  <Icon size={32} className="feature-icon text-gradient" />
+                </div>
+                <h3>{feature.name}</h3>
+                <p>{feature.description}</p>
+                <Link to={feature.path} className="feature-link">
+                  Open Tool <ArrowRight size={16} />
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="feature-section">
+        <div className="section-heading">
+          <h2>Image Tools</h2>
+          <p>
+            Compress, enhance, convert, and combine images online. These tools help with social media assets, product
+            images, document preparation, quick design exports, and format cleanup without leaving the browser.
+          </p>
+        </div>
+
+        <div className="features-grid">
+          {imageTools.map((feature, index) => {
+            const Icon = feature.icon;
+
+            return (
+              <div
+                key={feature.path}
+                className="feature-card glass-panel animate-fade-in"
+                style={{ animationDelay: `${0.22 + index * 0.06}s`, position: 'relative' }}
               >
                 <button
                   onClick={(e) => {

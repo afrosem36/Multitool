@@ -1,13 +1,13 @@
-import { linkTools, pdfTools, textTools, calculatorTools } from '../data/toolCatalog';
+import { imageTools, linkTools, pdfTools, textTools, calculatorTools } from '../data/toolCatalog';
 import { guideArticles, sitePages } from '../data/contentPages';
 
 export const siteMeta = {
   siteName: 'MultiTool',
-  defaultTitle: 'PDF Tools, Text Tools and WhatsApp Link Creator | MultiTool',
+  defaultTitle: 'PDF, Image, Text Tools and WhatsApp Link Creator | MultiTool',
   defaultDescription:
-    'Use MultiTool to merge PDF files, split PDF pages, convert PDF documents, clean text, generate random text utilities, and create WhatsApp links online.',
+    'Use MultiTool to merge PDF files, compress and convert images, clean text, generate random text utilities, and create WhatsApp links online.',
   defaultKeywords:
-    'pdf tools, merge pdf online, split pdf online, pdf to word, pdf to jpg, word to pdf, text tools, remove punctuation, remove line breaks, random password generator, whatsapp link creator, online tools',
+    'pdf tools, image tools, compress image online, jpg to png, png to jpg, merge pdf online, split pdf online, pdf to word, text tools, remove punctuation, remove line breaks, random password generator, whatsapp link creator, online tools',
   themeColor: '#0a0a0f'
 };
 
@@ -15,12 +15,12 @@ export const homeFaqs = [
   {
     question: 'What can I do with MultiTool?',
     answer:
-      'MultiTool gives you browser-based PDF tools, text cleanup utilities, random text generators, and a WhatsApp link creator in one place.'
+      'MultiTool gives you browser-based PDF tools, image converters and enhancers, text cleanup utilities, random text generators, and a WhatsApp link creator in one place.'
   },
   {
     question: 'Do I need to install software to use these tools?',
     answer:
-      'No. The tools are designed to run in the browser so you can work with PDFs, text, and links without installing desktop software.'
+      'No. The tools are designed to run in the browser so you can work with PDFs, images, text, and links without installing desktop software.'
   },
   {
     question: 'Which PDF tasks are available on this website?',
@@ -45,6 +45,10 @@ const breadcrumbLabelFromPath = (pathname) => {
 
   if (pathname === '/text-tools') {
     return 'Text Tools';
+  }
+
+  if (pathname === '/image-tools') {
+    return 'Image Tools';
   }
 
   if (pathname === '/whatsapp-link-creator') {
@@ -79,6 +83,11 @@ const breadcrumbLabelFromPath = (pathname) => {
     return textTool.name;
   }
 
+  const imageTool = imageTools.find((tool) => tool.path === pathname);
+  if (imageTool) {
+    return imageTool.name;
+  }
+
   const calcTool = calculatorTools.find((tool) => tool.path === pathname);
   if (calcTool) {
     return calcTool.name;
@@ -104,6 +113,11 @@ const buildBreadcrumbs = (pathname, origin) => {
       name: 'Text Tools',
       item: `${origin}/text-tools`
     });
+  } else if (pathname === '/image-to-pdf' || pathname.startsWith('/image/')) {
+    breadcrumbs.push({
+      name: 'Image Tools',
+      item: `${origin}/image-tools`
+    });
   } else if (pathname.startsWith('/guides/')) {
     breadcrumbs.push({
       name: 'Guides',
@@ -116,6 +130,7 @@ const buildBreadcrumbs = (pathname, origin) => {
     });
   } else if (
     pathname !== '/pdf-tools' &&
+    pathname !== '/image-tools' &&
     pathname !== '/text-tools' &&
     pathname !== '/whatsapp-link-creator' &&
     pathname !== '/calculators' &&
@@ -219,7 +234,7 @@ const buildHomeSchemas = (origin, url, title, description) => [
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'Popular MultiTool Features',
-    itemListElement: [...pdfTools.slice(0, 6), ...textTools.slice(0, 6), ...linkTools].map((tool, index) => ({
+    itemListElement: [...pdfTools.slice(0, 4), ...imageTools.slice(0, 4), ...textTools.slice(0, 4), ...linkTools].map((tool, index) => ({
       '@type': 'ListItem',
       position: index + 1,
       url: `${origin}${tool.path}`,
@@ -252,6 +267,12 @@ const buildTextToolMeta = (tool) => ({
   keywords: `${tool.name.toLowerCase()}, text tools, online text utility, ${siteMeta.defaultKeywords}`
 });
 
+const buildImageToolMeta = (tool) => ({
+  title: `${tool.name} Online | ${siteMeta.siteName}`,
+  description: `${tool.description} Use ${tool.name.toLowerCase()} online with ${siteMeta.siteName} right in your browser.`,
+  keywords: `${tool.name.toLowerCase()}, image tools, online image utility, ${siteMeta.defaultKeywords}`
+});
+
 const routeMeta = {
   '/': {
     title: siteMeta.defaultTitle,
@@ -263,6 +284,12 @@ const routeMeta = {
     description:
       'Browse PDF tools for merging, splitting, protecting, converting, organizing, and editing PDF files online in one workspace.',
     keywords: `pdf tools hub, pdf utilities, online pdf editor, ${siteMeta.defaultKeywords}`
+  },
+  '/image-tools': {
+    title: `Online Image Tools Hub | ${siteMeta.siteName}`,
+    description:
+      'Browse image tools for compression, enhancement, collage making, format conversion, HTML export, and image to PDF workflows online.',
+    keywords: `image tools hub, image compression, jpg to png, png to jpg, html to image, ${siteMeta.defaultKeywords}`
   },
   '/text-tools': {
     title: `Online Text Tools Hub | ${siteMeta.siteName}`,
@@ -300,6 +327,10 @@ pdfTools.forEach((tool) => {
 
 textTools.forEach((tool) => {
   routeMeta[tool.path] = buildTextToolMeta(tool);
+});
+
+imageTools.forEach((tool) => {
+  routeMeta[tool.path] = buildImageToolMeta(tool);
 });
 
 linkTools.forEach((tool) => {

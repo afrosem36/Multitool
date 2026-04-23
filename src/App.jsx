@@ -17,6 +17,12 @@ const PdfEdit = React.lazy(() => import('./pages/PdfEdit'));
 const PdfFromImage = React.lazy(() => import('./pages/PdfFromImage'));
 const PdfWatermark = React.lazy(() => import('./pages/PdfWatermark'));
 const WordToPdf = React.lazy(() => import('./pages/WordToPdf'));
+const ImageCompress = React.lazy(() => import('./pages/ImageCompress'));
+const ImageCollage = React.lazy(() => import('./pages/ImageCollage'));
+const ImageEnhance = React.lazy(() => import('./pages/ImageEnhance'));
+const JpgToPng = React.lazy(() => import('./pages/JpgToPng'));
+const PngToJpg = React.lazy(() => import('./pages/PngToJpg'));
+const HtmlToImage = React.lazy(() => import('./pages/HtmlToImage'));
 const TextToolPage = React.lazy(() => import('./pages/TextToolPage'));
 const ToolHubPage = React.lazy(() => import('./pages/ToolHubPage'));
 const WhatsAppLinkCreator = React.lazy(() => import('./pages/WhatsAppLinkCreator'));
@@ -66,6 +72,7 @@ function App() {
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/guides" element={<GuidesHubPage />} />
             <Route path="/pdf-tools" element={<ToolHubPage sectionId="pdf" />} />
+            <Route path="/image-tools" element={<ToolHubPage sectionId="image" />} />
             <Route path="/text-tools" element={<ToolHubPage sectionId="text" />} />
             <Route path="/calculators" element={<ToolHubPage sectionId="calculators" />} />
             <Route path="/utilities" element={<ToolHubPage sectionId="utilities" />} />
@@ -77,6 +84,12 @@ function App() {
             <Route path="/organize" element={<PdfOrganize />} />
             <Route path="/edit" element={<PdfEdit />} />
             <Route path="/image-to-pdf" element={<PdfFromImage />} />
+            <Route path="/image/compress" element={<ImageCompress />} />
+            <Route path="/image/collage" element={<ImageCollage />} />
+            <Route path="/image/enhance" element={<ImageEnhance />} />
+            <Route path="/image/jpg-to-png" element={<JpgToPng />} />
+            <Route path="/image/png-to-jpg" element={<PngToJpg />} />
+            <Route path="/image/html-to-image" element={<HtmlToImage />} />
             <Route path="/watermark" element={<PdfWatermark />} />
             <Route path="/word-to-pdf" element={<WordToPdf />} />
             <Route path="/to-jpg" element={<PdfToJpg />} />

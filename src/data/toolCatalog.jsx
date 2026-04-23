@@ -32,7 +32,11 @@ import {
   Receipt,
   Home,
   Briefcase,
-  Table
+  Table,
+  SlidersHorizontal,
+  Images,
+  Wand2,
+  FileImage
 } from 'lucide-react';
 
 export const utilityTools = [
@@ -96,14 +100,6 @@ export const pdfTools = [
     color: 'rgba(59, 130, 246, 0.1)'
   },
   {
-    id: 'image-to-pdf',
-    name: 'Image to PDF',
-    description: 'Combine multiple JPG or PNG images into a single PDF.',
-    path: '/image-to-pdf',
-    icon: ImageIcon,
-    color: 'rgba(168, 85, 247, 0.1)'
-  },
-  {
     id: 'watermark',
     name: 'Watermark PDF',
     description: 'Stamp custom text diagonally across every page.',
@@ -142,6 +138,65 @@ export const pdfTools = [
     path: '/to-word',
     icon: FileText,
     color: 'rgba(236, 72, 153, 0.1)'
+  }
+];
+
+export const imageTools = [
+  {
+    id: 'image-compress',
+    name: 'Image Compress',
+    description: 'Compress images with quality and resize adjustment bars.',
+    path: '/image/compress',
+    icon: SlidersHorizontal,
+    color: 'rgba(14, 165, 233, 0.1)'
+  },
+  {
+    id: 'image-collage',
+    name: 'Image Collage',
+    description: 'Build custom collages with spacing, layout, and fit adjustments.',
+    path: '/image/collage',
+    icon: Images,
+    color: 'rgba(249, 115, 22, 0.1)'
+  },
+  {
+    id: 'image-enhance',
+    name: 'Image Enhance',
+    description: 'Enhance brightness, contrast, saturation, and sharpness online.',
+    path: '/image/enhance',
+    icon: Wand2,
+    color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
+    id: 'image-to-pdf',
+    name: 'Image to PDF',
+    description: 'Combine multiple JPG or PNG images into a single PDF.',
+    path: '/image-to-pdf',
+    icon: ImageIcon,
+    color: 'rgba(168, 85, 247, 0.1)'
+  },
+  {
+    id: 'jpg-to-png',
+    name: 'JPG to PNG',
+    description: 'Convert JPEG images into clean PNG files in your browser.',
+    path: '/image/jpg-to-png',
+    icon: ArrowRightLeft,
+    color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'png-to-jpg',
+    name: 'PNG to JPG',
+    description: 'Convert PNG images to JPG with background and quality controls.',
+    path: '/image/png-to-jpg',
+    icon: ArrowRightLeft,
+    color: 'rgba(236, 72, 153, 0.1)'
+  },
+  {
+    id: 'html-to-image',
+    name: 'HTML to Image',
+    description: 'Render HTML and inline CSS into a downloadable image file.',
+    path: '/image/html-to-image',
+    icon: FileImage,
+    color: 'rgba(234, 179, 8, 0.1)'
   }
 ];
 
@@ -399,6 +454,14 @@ export const toolSections = [
     tools: pdfTools
   },
   {
+    id: 'image',
+    label: 'Image Tools',
+    path: '/image-tools',
+    description: 'Compress, enhance, convert, and combine images in your browser.',
+    icon: Image,
+    tools: imageTools
+  },
+  {
     id: 'text',
     label: 'TEXT Tools',
     path: '/text-tools',
@@ -454,3 +517,6 @@ export const findUtilityToolById = (toolId) =>
 
 export const findExcelToolById = (toolId) =>
   excelTools.find((tool) => tool.id === toolId);
+
+export const findImageToolById = (toolId) =>
+  imageTools.find((tool) => tool.id === toolId);
