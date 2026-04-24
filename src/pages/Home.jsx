@@ -5,6 +5,7 @@ import { imageTools, linkTools, pdfTools, textTools, excelTools } from '../data/
 import { homeFaqs } from '../seo/seoConfig';
 import { guideArticles, sitePages } from '../data/contentPages';
 import { useFavorites } from '../hooks/useFavorites';
+import { TiltCard } from '../components/ui/TiltCard';
 import './Home.css';
 
 const Home = () => {
@@ -111,10 +112,12 @@ const Home = () => {
             const Icon = feature.icon;
 
             return (
-              <div
+              <TiltCard
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.2 + index * 0.06}s`, position: 'relative' }}
+                tiltLimit={5}
+                scale={1.02}
               >
                 <button
                   onClick={(e) => {
@@ -143,7 +146,7 @@ const Home = () => {
                 <Link to={feature.path} className="feature-link">
                   Open Tool <ArrowRight size={16} />
                 </Link>
-              </div>
+              </TiltCard>
             );
           })}
         </div>
@@ -163,10 +166,12 @@ const Home = () => {
             const Icon = feature.icon;
 
             return (
-              <div
+              <TiltCard
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.22 + index * 0.06}s`, position: 'relative' }}
+                tiltLimit={5}
+                scale={1.02}
               >
                 <button
                   onClick={(e) => {
@@ -195,7 +200,7 @@ const Home = () => {
                 <Link to={feature.path} className="feature-link">
                   Open Tool <ArrowRight size={16} />
                 </Link>
-              </div>
+              </TiltCard>
             );
           })}
         </div>
@@ -216,10 +221,12 @@ const Home = () => {
             const Icon = feature.icon;
 
             return (
-              <div
+              <TiltCard
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.25 + index * 0.06}s`, position: 'relative' }}
+                tiltLimit={5}
+                scale={1.02}
               >
                 <button
                   onClick={(e) => {
@@ -248,7 +255,7 @@ const Home = () => {
                 <Link to={feature.path} className="feature-link">
                   Open Tool <ArrowRight size={16} />
                 </Link>
-              </div>
+              </TiltCard>
             );
           })}
         </div>
@@ -268,10 +275,12 @@ const Home = () => {
             const Icon = feature.icon;
 
             return (
-              <div
+              <TiltCard
                 key={feature.path}
                 className="feature-card glass-panel animate-fade-in"
                 style={{ animationDelay: `${0.3 + index * 0.06}s`, position: 'relative' }}
+                tiltLimit={5}
+                scale={1.02}
               >
                 <button
                   onClick={(e) => {
@@ -300,7 +309,7 @@ const Home = () => {
                 <Link to={feature.path} className="feature-link">
                   Open Tool <ArrowRight size={16} />
                 </Link>
-              </div>
+              </TiltCard>
             );
           })}
         </div>
@@ -317,10 +326,12 @@ const Home = () => {
 
         <div className="features-grid">
           {guideArticles.map((article, index) => (
-            <article
+            <TiltCard
               key={article.path}
               className="feature-card glass-panel animate-fade-in"
               style={{ animationDelay: `${0.18 + index * 0.04}s` }}
+              tiltLimit={5}
+              scale={1.02}
             >
               <div className="guide-meta-row">
                 <span>{article.category}</span>
@@ -331,7 +342,7 @@ const Home = () => {
               <Link to={article.path} className="feature-link">
                 Read Guide <ArrowRight size={16} />
               </Link>
-            </article>
+            </TiltCard>
           ))}
         </div>
       </section>

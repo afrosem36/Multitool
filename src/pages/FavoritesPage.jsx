@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useFavorites } from '../hooks/useFavorites';
 import { toolSections } from '../data/toolCatalog';
 import ToolHeader from '../components/shared/ToolHeader';
+import { TiltCard } from '../components/ui/TiltCard';
 import '../pages/ToolStyles.css';
 
 const FavoritesPage = () => {
@@ -37,23 +38,31 @@ const FavoritesPage = () => {
       ) : (
         <div className="tools-grid animate-fade-in" style={{ marginTop: '2rem' }}>
           {favoriteTools.map(tool => (
-            <Link to={tool.path} key={tool.id} className="tool-card glass-panel" style={{ textDecoration: 'none' }}>
-              <div className="tool-card-content">
-                <div 
-                  className="tool-icon-wrapper"
-                  style={{ backgroundColor: tool.color }}
-                >
-                  <tool.icon size={28} className="tool-icon" />
+            <TiltCard
+              key={tool.id}
+              className="tool-card glass-panel"
+              style={{ textDecoration: 'none', padding: 0 }}
+              tiltLimit={5}
+              scale={1.02}
+            >
+              <Link to={tool.path} style={{ textDecoration: 'none', display: 'block', height: '100%', padding: '1.5rem' }}>
+                <div className="tool-card-content">
+                  <div 
+                    className="tool-icon-wrapper"
+                    style={{ backgroundColor: tool.color }}
+                  >
+                    <tool.icon size={28} className="tool-icon" />
+                  </div>
+                  <h3>{tool.name}</h3>
+                  <p>{tool.description}</p>
+                  <div className="tool-card-footer">
+                    <span className="tool-link">
+                      Open Tool <ExternalLink size={16} />
+                    </span>
+                  </div>
                 </div>
-                <h3>{tool.name}</h3>
-                <p>{tool.description}</p>
-                <div className="tool-card-footer">
-                  <span className="tool-link">
-                    Open Tool <ExternalLink size={16} />
-                  </span>
-                </div>
-              </div>
-            </Link>
+              </Link>
+            </TiltCard>
           ))}
         </div>
       )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { pdfTools, textTools, calculatorTools } from '../../data/toolCatalog';
+import { TiltCard } from '../ui/TiltCard';
 
 const RelatedTools = ({ currentToolId, category }) => {
   let toolList = [];
@@ -22,10 +23,12 @@ const RelatedTools = ({ currentToolId, category }) => {
         {related.map((tool, index) => {
           const Icon = tool.icon;
           return (
-            <div
+            <TiltCard
               key={tool.path}
               className="tool-hub-card glass-panel animate-fade-in"
               style={{ animationDelay: `${0.12 + index * 0.05}s`, padding: '1.5rem' }}
+              tiltLimit={5}
+              scale={1.02}
             >
               <div className="tool-hub-card-icon" style={{ background: tool.color, marginBottom: '1rem' }}>
                 <Icon size={24} />
@@ -35,7 +38,7 @@ const RelatedTools = ({ currentToolId, category }) => {
               <Link to={tool.path} className="tool-hub-link" style={{ fontSize: '0.9rem' }}>
                 Open Tool <ArrowRight size={14} />
               </Link>
-            </div>
+            </TiltCard>
           );
         })}
       </div>

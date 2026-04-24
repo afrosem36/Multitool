@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { ArrowRight, Star } from 'lucide-react';
 import { findToolSectionById } from '../data/toolCatalog';
 import { useFavorites } from '../hooks/useFavorites';
+import { TiltCard } from '../components/ui/TiltCard';
 import './ToolHubPage.css';
 
 const ToolHubPage = ({ sectionId }) => {
@@ -40,10 +41,12 @@ const ToolHubPage = ({ sectionId }) => {
           const Icon = tool.icon;
 
           return (
-            <div
+            <TiltCard
               key={tool.path}
               className="tool-hub-card glass-panel animate-fade-in"
               style={{ animationDelay: `${0.12 + index * 0.05}s`, position: 'relative' }}
+              tiltLimit={5}
+              scale={1.02}
             >
               <button
                 onClick={(e) => {
@@ -72,7 +75,7 @@ const ToolHubPage = ({ sectionId }) => {
               <Link to={tool.path} className="tool-hub-link">
                 Open Tool <ArrowRight size={16} />
               </Link>
-            </div>
+            </TiltCard>
           );
         })}
       </div>
