@@ -34,7 +34,7 @@ const Navbar = () => {
               to={link.path} 
               className={`nav-link ${isLinkActive(link.path) ? 'active' : ''}`}
             >
-              <span>{link.label}</span>
+              {link.label}
             </Link>
           ))}
           

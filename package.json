@@ -15,6 +15,7 @@
     "@hello-pangea/dnd": "latest",
     "@pdfsmaller/pdf-encrypt-lite": "latest",
     "docx": "^8.5.0",
+    "framer-motion": "^12.38.0",
     "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.368.0",
     "mammoth": "^1.12.0",
