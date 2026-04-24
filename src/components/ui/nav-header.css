@@ -1,0 +1,118 @@
+.nav-header-container {
+  position: relative;
+  margin: 0 auto;
+  display: flex;
+  width: fit-content;
+  border-radius: 9999px;
+  border: 2px solid #000;
+  background-color: #fff;
+  padding: 4px;
+  list-style: none;
+  isolation: isolate;
+}
+
+.nav-header-tab {
+  position: relative;
+  z-index: 10;
+  display: block;
+  cursor: pointer;
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+.nav-header-link {
+  display: block;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: opacity 0.2s;
+  color: inherit;
+  user-select: none;
+}
+
+.nav-header-link:hover {
+  opacity: 0.8;
+}
+
+@media (min-width: 768px) {
+  .nav-header-link {
+    padding: 12px 20px;
+    font-size: 0.875rem;
+  }
+}
+
+.nav-header-cursor {
+  position: absolute;
+  z-index: 0;
+  height: 28px;
+  border-radius: 9999px;
+  background-color: #000;
+  top: 4px;
+}
+
+@media (min-width: 768px) {
+  .nav-header-cursor {
+    height: 44px;
+  }
+}
+
+/* Dropdown Styles */
+.nav-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* Invisible bridge to keep hover active between tab and dropdown */
+.nav-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: 0;
+  right: 0;
+  height: 16px;
+}
+
+.nav-dropdown.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(4px);
+}
+
+.nav-dropdown-item {
+  display: block;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #111;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.nav-dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.nav-dropdown-item:first-child {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.nav-dropdown-item:last-child {
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+}

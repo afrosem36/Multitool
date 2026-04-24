@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, Settings, Star } from 'lucide-react';
 import Switch from './ui/sky-toggle';
+import NavHeader from './ui/nav-header';
 import { toolSections } from '../data/toolCatalog';
 import { headerPages } from '../data/contentPages';
 import { useTheme } from '../hooks/useTheme';
@@ -27,17 +28,11 @@ const Navbar = () => {
         </Link>
 
         {/* Desktop Menu */}
-        <div className="navbar-menu hidden-mobile">
-          {headerPages.map((link) => (
-            <Link 
-              key={link.path} 
-              to={link.path} 
-              className={`nav-link ${isLinkActive(link.path) ? 'active' : ''}`}
-            >
-              {link.label}
-            </Link>
-          ))}
-          
+        <div className="navbar-menu-center hidden-mobile">
+          <NavHeader />
+        </div>
+        
+        <div className="navbar-actions-right hidden-mobile">
           <Link 
             to="/favorites" 
             className={`nav-link ${isLinkActive('/favorites') ? 'active' : ''}`}
@@ -45,18 +40,11 @@ const Navbar = () => {
             <span>Favorites</span> <Star size={16} />
           </Link>
           
-          <div style={{ marginLeft: '1rem', transform: 'scale(0.26)' }}>
+          <div style={{ transform: 'scale(0.26)', transformOrigin: 'center right' }}>
             <Switch 
               checked={theme === 'dark'} 
               onChange={toggleTheme} 
             />
-          </div>
-          
-          <div className="nav-status">
-            <span className="nav-status-count">
-              {toolSections.reduce((count, section) => count + section.tools.length, 0)} tools
-            </span>
-            <span className="nav-status-label">PDF + Image + Text + Link Workspace</span>
           </div>
         </div>
 
