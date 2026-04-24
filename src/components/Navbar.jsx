@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Settings, Star, Sun, Moon } from 'lucide-react';
+import { Menu, X, Settings, Star } from 'lucide-react';
+import Switch from './ui/sky-toggle';
 import { toolSections } from '../data/toolCatalog';
 import { headerPages } from '../data/contentPages';
 import { useTheme } from '../hooks/useTheme';
@@ -44,14 +45,12 @@ const Navbar = () => {
             <span>Favorites</span> <Star size={16} />
           </Link>
           
-          <button 
-            onClick={toggleTheme} 
-            className="btn-icon theme-toggle" 
-            aria-label="Toggle Theme"
-            style={{ marginLeft: '1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
-          >
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div style={{ marginLeft: '1rem', transform: 'scale(0.26)' }}>
+            <Switch 
+              checked={theme === 'dark'} 
+              onChange={toggleTheme} 
+            />
+          </div>
           
           <div className="nav-status">
             <span className="nav-status-count">
@@ -63,14 +62,12 @@ const Navbar = () => {
 
         {/* Mobile Menu Button */}
         <div className="mobile-menu-btn">
-          <button 
-            onClick={toggleTheme} 
-            className="btn-icon theme-toggle" 
-            aria-label="Toggle Theme"
-            style={{ marginRight: '1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
-          >
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div style={{ marginRight: '1rem', transform: 'scale(0.195)' }}>
+            <Switch 
+              checked={theme === 'dark'} 
+              onChange={toggleTheme} 
+            />
+          </div>
           <button onClick={toggleMenu} className="btn-icon">
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>

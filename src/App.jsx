@@ -55,6 +55,7 @@ const WorkingDayCalculator = React.lazy(() => import('./pages/WorkingDayCalculat
 const SalesTaxCalculator = React.lazy(() => import('./pages/SalesTaxCalculator'));
 const HomeLoanCalculator = React.lazy(() => import('./pages/HomeLoanCalculator'));
 const CurrencyConverter = React.lazy(() => import('./pages/CurrencyConverter'));
+const SkyToggleDemo = React.lazy(() => import('./pages/SkyToggleDemo'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
@@ -117,6 +118,7 @@ function App() {
             <Route path="/utilities/qr-generator" element={<QrGenerator />} />
             <Route path="/utilities/qr-decoder" element={<QrDecoder />} />
             <Route path="/utilities/unit-converter" element={<UnitConverter />} />
+            <Route path="/demo/sky-toggle" element={<SkyToggleDemo />} />
             
             {/* Dedicated compliance pages */}
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />

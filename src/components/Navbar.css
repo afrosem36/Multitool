@@ -77,6 +77,7 @@
 
 .mobile-menu-btn {
   display: none;
+  align-items: center;
 }
 
 .btn-icon {
@@ -148,7 +149,7 @@
   }
 
   .mobile-menu-btn {
-    display: block;
+    display: flex;
   }
 
   .navbar-container {
