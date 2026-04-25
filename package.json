@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "vite",
-    "dev:server": "npm run dev --prefix server",
+    "dev:server": "node scripts/free-port.mjs 5000 && npm run dev --prefix server",
     "prebuild": "node scripts/generate-seo-assets.mjs",
     "build": "vite build",
     "postbuild": "node scripts/generate-seo-assets.mjs",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@hello-pangea/dnd": "latest",
     "@pdfsmaller/pdf-encrypt-lite": "latest",
+    "@vercel/analytics": "^2.0.1",
     "docx": "^8.5.0",
     "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",
