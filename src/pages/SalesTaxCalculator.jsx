@@ -3,6 +3,7 @@ import { Receipt, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { formatAmountINR } from '../utils/formatters';
 import './ToolStyles.css';
 
 const SalesTaxCalculator = () => {
@@ -90,13 +91,13 @@ const SalesTaxCalculator = () => {
               {mode === 'add' ? 'Pre-Tax Price' : 'Total Price (with tax)'}
             </label>
             <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>$</span>
+              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>Rs.</span>
               <input 
                 type="number" 
                 value={price} 
                 onChange={(e) => setPrice(e.target.value)}
-                placeholder="100.00"
-                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
+                placeholder="10,000"
+                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 3rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
               />
             </div>
           </div>
@@ -131,15 +132,15 @@ const SalesTaxCalculator = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Pre-Tax Amount:</span>
-                <span style={{ fontWeight: '500' }}>${result.preTax}</span>
+                <span style={{ fontWeight: '500' }}>{formatAmountINR(result.preTax, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: '#f87171' }}>Tax Amount (+):</span>
-                <span style={{ fontWeight: '500', color: '#f87171' }}>${result.taxAmount}</span>
+                <span style={{ fontWeight: '500', color: '#f87171' }}>{formatAmountINR(result.taxAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem' }}>
                 <span style={{ color: '#4ade80', fontSize: '1.2rem', fontWeight: 'bold' }}>Total Price:</span>
-                <span style={{ color: '#4ade80', fontSize: '1.2rem', fontWeight: 'bold' }}>${result.postTax}</span>
+                <span style={{ color: '#4ade80', fontSize: '1.2rem', fontWeight: 'bold' }}>{formatAmountINR(result.postTax, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>

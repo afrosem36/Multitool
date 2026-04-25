@@ -58,6 +58,14 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+.dark {
+  color-scheme: dark;
+}
+
+.light {
+  color-scheme: light;
+}
+
 /* Glassmorphism Utilities */
 .glass-panel {
   background: var(--glass-bg);
@@ -90,6 +98,34 @@ button {
   background: none;
   font-family: inherit;
   color: inherit;
+}
+
+select,
+input,
+textarea {
+  font-family: inherit;
+}
+
+select option,
+select optgroup {
+  background: var(--surface-color);
+  color: var(--text-primary);
+}
+
+option {
+  background-color: var(--surface-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.light select option,
+.light select optgroup {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.light option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
 }
 
 /* Buttons */

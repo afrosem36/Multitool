@@ -3,6 +3,7 @@ import { Home, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { formatAmountINR } from '../utils/formatters';
 import './ToolStyles.css';
 
 const HomeLoanCalculator = () => {
@@ -78,24 +79,24 @@ const HomeLoanCalculator = () => {
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Home Price</label>
             <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>$</span>
+              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>Rs.</span>
               <input 
                 type="number" 
                 value={principal} 
                 onChange={(e) => setPrincipal(e.target.value)}
-                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
+                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 3rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
               />
             </div>
           </div>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Down Payment</label>
             <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>$</span>
+              <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>Rs.</span>
               <input 
                 type="number" 
                 value={downPayment} 
                 onChange={(e) => setDownPayment(e.target.value)}
-                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
+                style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 3rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
               />
             </div>
           </div>
@@ -135,21 +136,21 @@ const HomeLoanCalculator = () => {
           <div className="glass-panel animate-fade-in" style={{ padding: '1.5rem', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
               <p style={{ color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>Estimated Monthly Payment</p>
-              <h2 style={{ color: '#10b981', margin: 0, fontSize: '2.5rem' }}>${result.monthlyPayment}</h2>
+              <h2 style={{ color: '#10b981', margin: 0, fontSize: '2.5rem' }}>{formatAmountINR(result.monthlyPayment, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Principal Loan Amount:</span>
-                <span style={{ fontWeight: '500' }}>${result.loanAmount}</span>
+                <span style={{ fontWeight: '500' }}>{formatAmountINR(result.loanAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: '#f87171' }}>Total Interest Paid:</span>
-                <span style={{ fontWeight: '500', color: '#f87171' }}>${result.totalInterest}</span>
+                <span style={{ fontWeight: '500', color: '#f87171' }}>{formatAmountINR(result.totalInterest, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem' }}>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>Total Cost of Loan:</span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>${result.totalPayment}</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>{formatAmountINR(result.totalPayment, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>

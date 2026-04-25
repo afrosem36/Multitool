@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, ArrowLeft, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { IndianRupee, ArrowLeft, ArrowRightLeft, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
+import { formatNumberIN } from '../utils/formatters';
 import './ToolStyles.css';
 
 const CurrencyConverter = () => {
   const [rates, setRates] = useState({});
   const [currencies, setCurrencies] = useState([]);
   const [amount, setAmount] = useState('1');
-  const [fromCurrency, setFromCurrency] = useState('USD');
-  const [toCurrency, setToCurrency] = useState('EUR');
+  const [fromCurrency, setFromCurrency] = useState('INR');
+  const [toCurrency, setToCurrency] = useState('USD');
   const [result, setResult] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -18,7 +19,7 @@ const CurrencyConverter = () => {
   const { addHistory } = useToolHistory();
 
   useEffect(() => {
-    addHistory('/calculator/currency', 'Currency Converter', 'dollarSign');
+    addHistory('/calculator/currency', 'Currency Converter', 'indianRupee');
     fetchRates();
   }, [addHistory]);
 
@@ -30,7 +31,20 @@ const CurrencyConverter = () => {
       if (!response.ok) throw new Error('Failed to fetch exchange rates');
       const data = await response.json();
       setRates(data.rates);
-      setCurrencies(Object.keys(data.rates));
+      const sortedCurrencies = Object.keys(data.rates).sort((a, b) => {
+        const priority = ['INR', 'USD', 'EUR', 'GBP'];
+        const indexA = priority.indexOf(a);
+        const indexB = priority.indexOf(b);
+
+        if (indexA !== -1 || indexB !== -1) {
+          if (indexA === -1) return 1;
+          if (indexB === -1) return -1;
+          return indexA - indexB;
+        }
+
+        return a.localeCompare(b);
+      });
+      setCurrencies(sortedCurrencies);
       setIsLoading(false);
     } catch (err) {
       console.error(err);
@@ -59,7 +73,8 @@ const CurrencyConverter = () => {
     if (rateFromUSD && rateToUSD) {
       const inUSD = val / rateFromUSD;
       const final = inUSD * rateToUSD;
-      setResult(final.toFixed(4));
+      const decimals = toCurrency === 'INR' ? 2 : 4;
+      setResult(Number(final).toFixed(decimals));
     }
   };
 
@@ -76,9 +91,9 @@ const CurrencyConverter = () => {
       </Link>
       
       <div className="tool-header text-center animate-fade-in">
-        <DollarSign size={48} className="text-gradient mx-auto mb-4" />
+        <IndianRupee size={48} className="text-gradient mx-auto mb-4" />
         <h1>Currency Converter</h1>
-        <p>Live exchange rates for global currencies.</p>
+        <p>Live exchange rates with Indian Rupees ready by default.</p>
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
@@ -99,6 +114,7 @@ const CurrencyConverter = () => {
                 type="number" 
                 value={amount} 
                 onChange={(e) => setAmount(e.target.value)}
+                placeholder="10,000"
                 style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none', marginBottom: '0.5rem' }}
               />
               <select 
@@ -120,7 +136,7 @@ const CurrencyConverter = () => {
               <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Converted</label>
               <input 
                 type="text" 
-                value={result} 
+                value={result === '' ? '' : formatNumberIN(result, { maximumFractionDigits: toCurrency === 'INR' ? 2 : 4, minimumFractionDigits: toCurrency === 'INR' ? 2 : 0 })} 
                 readOnly
                 style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)', background: 'rgba(59, 130, 246, 0.05)', color: '#60a5fa', outline: 'none', fontWeight: 'bold', marginBottom: '0.5rem' }}
               />

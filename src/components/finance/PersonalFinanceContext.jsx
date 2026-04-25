@@ -1,22 +1,22 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 const FinanceContext = createContext(null);
 
 export const useFinance = () => useContext(FinanceContext);
 
 const initialState = {
-  mode: null, // 'normal' or 'ultraProMax'
+  mode: null,
   currentStep: 0,
   profile: {
     name: '',
     age: 30,
-    cityTier: 'Metro', // Metro, Tier-2, Small town
+    cityTier: 'Metro',
     employmentType: 'Salaried employee',
-    currency: '₹',
+    currency: 'INR',
     gender: 'Prefer not to say',
     relationship: 'Single',
     dependents: 0,
-    literacyLevel: 'Beginner'
+    literacyLevel: 'Beginner',
   },
   income: {
     monthlyTakeHome: '',
@@ -26,7 +26,7 @@ const initialState = {
     bonusAmount: '',
     isVariable: false,
     growthRate: 'Moderate (6-10%)',
-    retirementAge: 60
+    retirementAge: 60,
   },
   tax: {
     regime: 'New',
@@ -34,51 +34,49 @@ const initialState = {
     deductions80D: '',
     hraExemption: '',
     homeLoanInterest: '',
-    monthlyTax: 0
+    monthlyTax: 0,
   },
   expenses: {
-    // Normal mode buckets
     home: '',
     food: '',
     transport: '',
     health: '',
     lifestyle: '',
-    emis: '', // Added for Normal Mode EMI tracking
+    emis: '',
     others: '',
-    // Pro mode detailed tracking
     fixed: [],
     variable: [],
     annual: [],
-    custom: []
+    custom: [],
   },
   debt: {
-    items: [], // { type, principal, emi, interestRate, remainingMonths }
+    items: [],
     strategy: 'Avalanche',
-    extraPayment: 0
+    extraPayment: 0,
   },
   savings: {
     savesMoney: 'Yes',
     monthlySavingsAmount: '',
     hasEmergencyFund: 'No',
     liquidSavings: '',
-    shortTermGoals: []
+    shortTermGoals: [],
   },
   investments: {
     hasBasicInvestments: false,
-    basicItems: [], // Normal mode
-    advancedItems: [], // Pro mode { type, monthlySIP, currentCorpus, expectedReturn }
-    riskProfile: 'Moderate'
+    basicItems: [],
+    advancedItems: [],
+    riskProfile: 'Moderate',
   },
   goals: [],
   netWorth: {
     assets: [],
-    liabilities: []
+    liabilities: [],
   },
   insurance: {
     lifeCover: '',
     healthCover: '',
-    other: []
-  }
+    other: [],
+  },
 };
 
 export const FinanceProvider = ({ children }) => {
@@ -91,33 +89,34 @@ export const FinanceProvider = ({ children }) => {
     localStorage.setItem('finance_analyzer_state', JSON.stringify(state));
   }, [state]);
 
-  const updateProfile = (data) => setState(prev => ({ ...prev, profile: { ...prev.profile, ...data } }));
-  const updateIncome = (data) => setState(prev => ({ ...prev, income: { ...prev.income, ...data } }));
-  const updateTax = (data) => setState(prev => ({ ...prev, tax: { ...prev.tax, ...data } }));
-  const updateExpenses = (data) => setState(prev => ({ ...prev, expenses: { ...prev.expenses, ...data } }));
-  const updateDebt = (data) => setState(prev => ({ ...prev, debt: { ...prev.debt, ...data } }));
-  const updateSavings = (data) => setState(prev => ({ ...prev, savings: { ...prev.savings, ...data } }));
-  const updateInvestments = (data) => setState(prev => ({ ...prev, investments: { ...prev.investments, ...data } }));
-  
-  const setMode = (mode) => setState(prev => ({ ...prev, mode }));
-  const setStep = (step) => setState(prev => ({ ...prev, currentStep: step }));
-  
+  const updateProfile = (data) => setState((prev) => ({ ...prev, profile: { ...prev.profile, ...data } }));
+  const updateIncome = (data) => setState((prev) => ({ ...prev, income: { ...prev.income, ...data } }));
+  const updateTax = (data) => setState((prev) => ({ ...prev, tax: { ...prev.tax, ...data } }));
+  const updateExpenses = (data) => setState((prev) => ({ ...prev, expenses: { ...prev.expenses, ...data } }));
+  const updateDebt = (data) => setState((prev) => ({ ...prev, debt: { ...prev.debt, ...data } }));
+  const updateSavings = (data) => setState((prev) => ({ ...prev, savings: { ...prev.savings, ...data } }));
+  const updateInvestments = (data) => setState((prev) => ({ ...prev, investments: { ...prev.investments, ...data } }));
+
+  const setMode = (mode) => setState((prev) => ({ ...prev, mode }));
+  const setStep = (step) => setState((prev) => ({ ...prev, currentStep: step }));
   const resetData = () => setState(initialState);
 
   return (
-    <FinanceContext.Provider value={{
-      state,
-      updateProfile,
-      updateIncome,
-      updateTax,
-      updateExpenses,
-      updateDebt,
-      updateSavings,
-      updateInvestments,
-      setMode,
-      setStep,
-      resetData
-    }}>
+    <FinanceContext.Provider
+      value={{
+        state,
+        updateProfile,
+        updateIncome,
+        updateTax,
+        updateExpenses,
+        updateDebt,
+        updateSavings,
+        updateInvestments,
+        setMode,
+        setStep,
+        resetData,
+      }}
+    >
       {children}
     </FinanceContext.Provider>
   );

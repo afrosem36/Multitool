@@ -3,6 +3,7 @@ import { ScanLine, ArrowLeft, Upload, Copy, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToolHistory } from '../hooks/useToolHistory';
 import AdPlaceholder from '../components/shared/AdPlaceholder';
+import jsQR from 'jsqr';
 import './ToolStyles.css';
 
 const QrDecoder = () => {
@@ -18,6 +19,7 @@ const QrDecoder = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const isScanning = useRef(false);
+  const streamRef = useRef(null);
   const { addHistory } = useToolHistory();
 
   useEffect(() => {
@@ -29,14 +31,48 @@ const QrDecoder = () => {
 
   const stopCamera = () => {
     isScanning.current = false;
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject;
-      const tracks = stream.getTracks();
+    if (streamRef.current) {
+      const tracks = streamRef.current.getTracks();
       tracks.forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject = null;
     }
     setUseCamera(false);
   };
+
+  useEffect(() => {
+    if (!useCamera || !videoRef.current || !streamRef.current) return;
+
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    video.setAttribute('playsinline', 'true');
+    video.muted = true;
+    video.autoplay = true;
+
+    const startScan = async () => {
+      try {
+        await video.play();
+        requestAnimationFrame(tick);
+      } catch (playError) {
+        console.error(playError);
+        setError('Camera access was granted, but the preview could not start.');
+      }
+    };
+
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      startScan();
+    } else {
+      video.onloadedmetadata = startScan;
+    }
+
+    return () => {
+      if (video) {
+        video.onloadedmetadata = null;
+      }
+    };
+  }, [useCamera]);
 
   const startCamera = async () => {
     setFile(null);
@@ -46,18 +82,17 @@ const QrDecoder = () => {
     setCopied(false);
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      streamRef.current = stream;
       setUseCamera(true);
       isScanning.current = true;
-      
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.setAttribute("playsinline", true);
-          videoRef.current.play();
-          requestAnimationFrame(tick);
-        }
-      }, 100);
     } catch (err) {
       console.error(err);
       setError('Unable to access camera. Please ensure permissions are granted.');
@@ -78,16 +113,14 @@ const QrDecoder = () => {
       canvas.drawImage(videoRef.current, 0, 0, canvasElement.width, canvasElement.height);
       const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
       
-      if (window.jsQR) {
-        const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
-        
-        if (code && code.data) {
-          setDecodedText(code.data);
-          stopCamera();
-          return;
-        }
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'attemptBoth',
+      });
+      
+      if (code && code.data) {
+        setDecodedText(code.data);
+        stopCamera();
+        return;
       }
     }
     
@@ -97,11 +130,6 @@ const QrDecoder = () => {
   };
 
   const decodeQRFromFile = (selectedFile) => {
-    if (!window.jsQR) {
-      setError('QR decoder library is still loading. Please try again in a moment.');
-      return;
-    }
-    
     setIsDecoding(true);
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -128,8 +156,8 @@ const QrDecoder = () => {
         canvas.drawImage(img, 0, 0, width, height);
         
         const imageData = canvas.getImageData(0, 0, width, height);
-        const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "attemptBoth",
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
         });
         
         if (code && code.data) {
@@ -147,6 +175,9 @@ const QrDecoder = () => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
       stopCamera();
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
       setFile(selectedFile);
       setPreview(URL.createObjectURL(selectedFile));
       setDecodedText('');
@@ -161,6 +192,9 @@ const QrDecoder = () => {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile && droppedFile.type.startsWith('image/')) {
       stopCamera();
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
       setFile(droppedFile);
       setPreview(URL.createObjectURL(droppedFile));
       setDecodedText('');
@@ -175,6 +209,14 @@ const QrDecoder = () => {
   const handleDragOver = (e) => {
     e.preventDefault();
   };
+
+  useEffect(() => {
+    return () => {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+    };
+  }, [preview]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(decodedText);
@@ -209,7 +251,7 @@ const QrDecoder = () => {
 
         {useCamera && (
           <div style={{ marginBottom: '2rem', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '2px solid rgba(16, 185, 129, 0.5)' }}>
-            <video ref={videoRef} style={{ width: '100%', display: 'block' }}></video>
+            <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', display: 'block', minHeight: '280px', background: '#000' }}></video>
             <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
               <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '200px', height: '200px', border: '2px dashed rgba(16, 185, 129, 0.8)', borderRadius: '12px' }}></div>

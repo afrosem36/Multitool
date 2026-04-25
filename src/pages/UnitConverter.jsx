@@ -38,7 +38,7 @@ const UnitConverter = () => {
   const { addHistory } = useToolHistory();
 
   useEffect(() => {
-    addHistory('/utilities/unit-converter', 'Unit Converter', 'arrowRightLeft');
+    addHistory('/calculator/unit-converter', 'Unit Converter', 'arrowRightLeft');
   }, [addHistory]);
 
   // Reset units when type changes

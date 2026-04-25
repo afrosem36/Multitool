@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
-import { Activity, Users, Globe, Link as LinkIcon, Loader2, Search, ArrowDown, ArrowUp, Download, Link2, FileSpreadsheet } from 'lucide-react';
+import { Activity, Users, Globe, Link as LinkIcon, Loader2, Search, ArrowDown, ArrowUp, Download, Link2, FileSpreadsheet, Info } from 'lucide-react';
 import SeoHead from '../components/seo/SEOHead';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -184,6 +184,7 @@ export default function AnalyticsDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [now, setNow] = useState(Date.now());
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [searchTerm, setSearchTerm] = useState(() => {
@@ -201,6 +202,28 @@ export default function AnalyticsDashboard() {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatExpiryCountdown = (expiresAt) => {
+    if (!expiresAt) return 'Never';
+
+    const diff = new Date(expiresAt).getTime() - now;
+    if (diff <= 0) return 'Expired';
+
+    const totalSeconds = Math.floor(diff / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+  };
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -249,13 +272,13 @@ export default function AnalyticsDashboard() {
     }
     
     const headers = isFiles 
-      ? ['Alias', 'Original File', 'Size (MB)', 'Clicks', 'Uploaded At', 'Last Clicked']
+      ? ['Alias', 'Original File', 'Size (MB)', 'Clicks', 'Uploaded At', 'Expires At', 'Expiry Status', 'Last Clicked']
       : ['Alias', 'Destination URL', 'Leads Collected', 'Clicks', 'Created At', 'Last Clicked'];
       
     const csvContent = [
       headers.join(','),
       ...activeLinks.map(l => isFiles 
-        ? [l.slug, l.originalName, (l.size / 1024 / 1024).toFixed(2), l.downloadCount, l.uploadedAt, l.lastClicked || 'Never'].join(',')
+        ? [l.slug, l.originalName, (l.size / 1024 / 1024).toFixed(2), l.downloadCount, l.uploadedAt, l.expiresAt || 'Never', l.isExpired ? 'Expired' : formatExpiryCountdown(l.expiresAt), l.lastClicked || 'Never'].join(',')
         : [l.slug, l.longUrl, l.leadsCount || 0, l.downloadCount, l.createdAt, l.lastClicked || 'Never'].join(',')
       )
     ].join('\n');
@@ -285,6 +308,8 @@ export default function AnalyticsDashboard() {
       'Size (MB)': parseFloat((l.size / 1024 / 1024).toFixed(2)),
       Clicks: l.downloadCount,
       'Uploaded At': new Date(l.uploadedAt).toLocaleString(),
+      'Expires At': l.expiresAt ? new Date(l.expiresAt).toLocaleString() : 'Never',
+      'Expiry Status': l.isExpired ? 'Expired' : formatExpiryCountdown(l.expiresAt),
       'Last Clicked': l.lastClicked ? new Date(l.lastClicked).toLocaleString() : 'Never'
     }) : ({
       Alias: l.slug,
@@ -338,7 +363,7 @@ export default function AnalyticsDashboard() {
             gap: '0.5rem'
           }}>
             <Info size={18} />
-            <span><strong>Note:</strong> Data on Vercel is stored in a temporary filesystem and will reset periodically. Use a persistent database for production.</span>
+            <span><strong>Note:</strong> Production share data is now expected to live in Cloudflare R2. If analytics look empty after deploy, verify the R2 environment variables in Vercel.</span>
           </div>
         )}
       </Header>
@@ -490,6 +515,8 @@ export default function AnalyticsDashboard() {
                     <>
                       <th onClick={() => handleSort('originalName')}>Original File {sortConfig.key === 'originalName' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
                       <th onClick={() => handleSort('size')}>Size {sortConfig.key === 'size' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                      <th onClick={() => handleSort('expiresAt')}>Expiry {sortConfig.key === 'expiresAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                      <th>Status</th>
                     </>
                   ) : (
                     <>
@@ -505,7 +532,7 @@ export default function AnalyticsDashboard() {
               <tbody>
                 {filteredAndSortedLinks.filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName).length === 0 ? (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                    <td colSpan={searchParams.get('type') === 'files' ? 8 : 6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                       No {searchParams.get('type') === 'files' ? 'files' : 'URLs'} found matching your criteria.
                     </td>
                   </tr>
@@ -519,6 +546,10 @@ export default function AnalyticsDashboard() {
                         <>
                           <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={link.originalName}>{link.originalName}</td>
                           <td>{(link.size / 1024 / 1024).toFixed(2)} MB</td>
+                          <td>{link.expiresAt ? new Date(link.expiresAt).toLocaleString() : 'Never'}</td>
+                          <td style={{ fontWeight: '600', color: link.isExpired ? '#ef4444' : 'var(--primary-color)' }}>
+                            {link.isExpired ? 'Link Expired' : formatExpiryCountdown(link.expiresAt)}
+                          </td>
                         </>
                       ) : (
                         <>

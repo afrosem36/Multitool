@@ -60,14 +60,6 @@ export const utilityTools = [
     color: 'rgba(16, 185, 129, 0.1)'
   },
   {
-    id: 'unit-converter',
-    name: 'Unit Converter',
-    description: 'Convert seamlessly between length, weight, temperature, volume, and area.',
-    path: '/utilities/unit-converter',
-    icon: ArrowRightLeft,
-    color: 'rgba(234, 179, 8, 0.1)'
-  },
-  {
     id: 'url-shortener',
     name: 'URL Shortener',
     description: 'Paste a long URL to instantly generate a trackable short link.',
@@ -90,14 +82,6 @@ export const utilityTools = [
     path: '/seo-analyzer',
     icon: Search,
     color: 'rgba(16, 185, 129, 0.1)'
-  }] : []),
-  ...(FEATURE_FLAGS.ENABLE_TIME_CONVERTER ? [{
-    id: 'time-converter',
-    name: 'Precision Time Converter',
-    description: 'Zero-drift time unit conversions using the anchor method.',
-    path: '/time-converter',
-    icon: Clock,
-    color: 'rgba(249, 115, 22, 0.1)'
   }] : [])
 ];
 
@@ -458,6 +442,22 @@ export const calculatorTools = [
     icon: Home,
     color: 'rgba(34, 197, 94, 0.1)'
   },
+  {
+    id: 'unit-converter',
+    name: 'Unit Converter',
+    description: 'Convert seamlessly between length, weight, temperature, volume, and area.',
+    path: '/calculator/unit-converter',
+    icon: ArrowRightLeft,
+    color: 'rgba(234, 179, 8, 0.1)'
+  },
+  ...(FEATURE_FLAGS.ENABLE_TIME_CONVERTER ? [{
+    id: 'time-converter',
+    name: 'Precision Time Converter',
+    description: 'Zero-drift time unit conversions using the anchor method.',
+    path: '/calculator/precision-time-converter',
+    icon: Clock,
+    color: 'rgba(249, 115, 22, 0.1)'
+  }] : []),
   {
     id: 'currency',
     name: 'Currency Converter',

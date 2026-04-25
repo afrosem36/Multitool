@@ -1,7 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import styled from 'styled-components';
-import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, Activity, BarChart2 } from 'lucide-react';
+import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+const MAX_FILE_SIZE = 250 * 1024 * 1024;
+const ACCEPTED_FILE_TYPES = 'audio/*,video/*,.pdf,application/pdf';
+const EXTENSION_FALLBACKS = ['.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.oga', '.weba', '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.wmv', '.webm', '.mpeg', '.mpg', '.3gp', '.pdf'];
+const CUSTOM_UNITS = {
+  seconds: 1,
+  minutes: 60,
+  hours: 3600,
+  days: 86400,
+};
 
 const Container = styled.div`
   max-width: 800px;
@@ -129,6 +139,51 @@ const ProgressBar = styled.div`
   }
 `;
 
+const OptionCard = styled.div`
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`;
+
+const SelectRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  select {
+    min-width: 220px;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.2);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  input {
+    width: 140px;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.2);
+    color: var(--text-primary);
+    outline: none;
+  }
+`;
+
 const Button = styled(Link)`
   display: inline-flex;
   align-items: center;
@@ -150,11 +205,23 @@ const Button = styled(Link)`
 `;
 
 export default function FileShare() {
+  const expiryOptions = [
+    { value: 'never', label: 'Never expire', seconds: 0 },
+    { value: '1h', label: '1 hour', seconds: 3600 },
+    { value: '24h', label: '24 hours', seconds: 86400 },
+    { value: '7d', label: '7 days', seconds: 604800 },
+    { value: '30d', label: '30 days', seconds: 2592000 },
+    { value: 'custom', label: 'Custom time', seconds: null },
+  ];
   const [isDragActive, setIsDragActive] = useState(false);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [shortUrl, setShortUrl] = useState(null);
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [expiryOption, setExpiryOption] = useState('never');
+  const [customDuration, setCustomDuration] = useState('30');
+  const [customUnit, setCustomUnit] = useState('minutes');
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   
@@ -178,38 +245,158 @@ export default function FileShare() {
     }
   };
 
+  const getExpiryInSeconds = () => {
+    const selected = expiryOptions.find((option) => option.value === expiryOption);
+    if (!selected) return null;
+    if (selected.value !== 'custom') return selected.seconds;
+
+    const parsedDuration = Number(customDuration);
+    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+      return null;
+    }
+
+    return parsedDuration * CUSTOM_UNITS[customUnit];
+  };
+
+  const validateFile = (selectedFile) => {
+    const isSupportedType = selectedFile.type.startsWith('audio/')
+      || selectedFile.type.startsWith('video/')
+      || selectedFile.type === 'application/pdf'
+      || EXTENSION_FALLBACKS.some((extension) => selectedFile.name.toLowerCase().endsWith(extension));
+
+    if (!isSupportedType) {
+      return 'Only audio, video, and PDF files are supported.';
+    }
+
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      return 'File size exceeds the 250 MB limit.';
+    }
+
+    return null;
+  };
+
+  const uploadToSignedUrl = (uploadUrl, selectedFile) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 90);
+      setProgress(Math.max(percent, 5));
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error('Direct upload to storage failed'));
+    };
+
+    xhr.onerror = () => reject(new Error('Direct upload to storage failed'));
+    xhr.send(selectedFile);
+  });
+
+  const uploadThroughServer = async (selectedFile, expiresInSeconds) => {
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('expiresInSeconds', String(expiresInSeconds || 0));
+
+    const response = await fetch('/api/share/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Upload failed');
+    }
+
+    return data.data;
+  };
+
+  const uploadDirectToR2 = async (selectedFile, expiresInSeconds) => {
+    setProgress(5);
+    const initResponse = await fetch('/api/share/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        originalName: selectedFile.name,
+        mimeType: selectedFile.type || 'application/octet-stream',
+        size: selectedFile.size,
+        expiresInSeconds,
+      }),
+    });
+
+    const initData = await initResponse.json();
+    if (!initResponse.ok) {
+      throw new Error(initData.error || 'Unable to prepare upload');
+    }
+
+    await uploadToSignedUrl(initData.data.uploadUrl, selectedFile);
+    setProgress(95);
+
+    const completeResponse = await fetch('/api/share/complete-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slug: initData.data.slug,
+        key: initData.data.key,
+        originalName: selectedFile.name,
+        mimeType: selectedFile.type || 'application/octet-stream',
+        size: selectedFile.size,
+        expiresInSeconds,
+      }),
+    });
+
+    const completeData = await completeResponse.json();
+    if (!completeResponse.ok) {
+      throw new Error(completeData.error || 'Unable to finish upload');
+    }
+
+    return completeData.data;
+  };
+
   const handleFile = async (selectedFile) => {
+    const validationError = validateFile(selectedFile);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const expiresInSeconds = getExpiryInSeconds();
+    if (expiryOption === 'custom' && !expiresInSeconds) {
+      setError('Enter a valid custom expiry time.');
+      return;
+    }
+
     setFile(selectedFile);
     setUploading(true);
     setError(null);
     setShortUrl(null);
-    setProgress(20);
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
+    setExpiresAt(null);
+    setProgress(0);
 
     try {
-      // Simulate progress since fetch doesn't natively support upload progress well
-      const interval = setInterval(() => {
-        setProgress(p => Math.min(p + 10, 90));
-      }, 200);
-
-      const response = await fetch('/api/share/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      clearInterval(interval);
+      const data = await uploadDirectToR2(selectedFile, expiresInSeconds);
       setProgress(100);
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
+      setShortUrl(data.shortUrl);
+      setExpiresAt(data.expiresAt || null);
+    } catch (err) {
+      try {
+        if (window.location.hostname === 'localhost') {
+          const fallbackData = await uploadThroughServer(selectedFile, expiresInSeconds);
+          setProgress(100);
+          setShortUrl(fallbackData.shortUrl);
+          setExpiresAt(fallbackData.expiresAt || null);
+          return;
+        }
+      } catch (fallbackError) {
+        setError(fallbackError.message);
+        return;
       }
 
-      setShortUrl(data.data.shortUrl);
-    } catch (err) {
       setError(err.message);
     } finally {
       setUploading(false);
@@ -235,25 +422,66 @@ export default function FileShare() {
       </Header>
 
       {!uploading && !shortUrl && (
-        <DropZone
-          $isDragActive={isDragActive}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => inputRef.current?.click()}
-        >
-          <UploadIcon />
-          <h3>Drag & Drop your file here</h3>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            or click to browse (Max 50MB)
-          </p>
-          <HiddenInput
-            type="file"
-            ref={inputRef}
-            onChange={handleFileChange}
-          />
-        </DropZone>
+        <>
+          <OptionCard>
+            <SelectRow>
+              <label htmlFor="expiry-select">
+                <TimerReset size={18} />
+                Link expiry
+              </label>
+              <select id="expiry-select" value={expiryOption} onChange={(e) => setExpiryOption(e.target.value)}>
+                {expiryOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              {expiryOption === 'custom' && (
+                <>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={customDuration}
+                    onChange={(e) => setCustomDuration(e.target.value)}
+                    placeholder="Duration"
+                  />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value)}>
+                    <option value="seconds">Seconds</option>
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </>
+              )}
+            </SelectRow>
+            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+              After expiry, visitors will see "Link expired" and be asked to contact the creator for access.
+            </p>
+            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+              Supports PDF, MP3, MP4, and most audio or video formats up to 250 MB.
+            </p>
+          </OptionCard>
+
+          <DropZone
+            $isDragActive={isDragActive}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => inputRef.current?.click()}
+          >
+            <UploadIcon />
+            <h3>Drag & Drop your file here</h3>
+            <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+              or click to browse audio, video, or PDF files (Max 250MB)
+            </p>
+            <HiddenInput
+              type="file"
+              ref={inputRef}
+              accept={ACCEPTED_FILE_TYPES}
+              onChange={handleFileChange}
+            />
+          </DropZone>
+        </>
       )}
 
       {uploading && (
@@ -271,6 +499,9 @@ export default function FileShare() {
         <ResultCard>
           <h3>File Uploaded Successfully!</h3>
           <p style={{ color: 'var(--text-secondary)' }}>Your secure short link is ready to share.</p>
+          <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+            {expiresAt ? `Expires on ${new Date(expiresAt).toLocaleString()}` : 'This link does not expire.'}
+          </p>
           <UrlBox>
             <LinkIcon size={20} style={{ marginRight: '1rem', color: 'var(--text-secondary)' }} />
             <div className="url">{shortUrl}</div>
@@ -284,7 +515,7 @@ export default function FileShare() {
           <Button to="/analytics?type=files">
             <BarChart2 size={18} /> View Analytics Dashboard
           </Button>
-          <Button as="button" onClick={() => { setShortUrl(null); setFile(null); }} style={{ background: 'none', border: 'none', color: 'var(--primary-color)' }}>
+          <Button as="button" onClick={() => { setShortUrl(null); setFile(null); setExpiresAt(null); setProgress(0); }} style={{ background: 'none', border: 'none', color: 'var(--primary-color)' }}>
             Upload another file
           </Button>
         </ResultCard>

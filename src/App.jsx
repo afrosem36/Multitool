@@ -78,6 +78,7 @@ const SeoAnalyzer = React.lazy(() => import('./pages/SeoAnalyzer'));
 const TimeUnitConverter = React.lazy(() => import('./pages/TimeUnitConverter'));
 const UrlShortener = React.lazy(() => import('./pages/UrlShortener'));
 const LeadGate = React.lazy(() => import('./pages/LeadGate'));
+const ExpiredLink = React.lazy(() => import('./pages/ExpiredLink'));
 
 import { Toaster } from 'react-hot-toast';
 
@@ -88,6 +89,7 @@ function App() {
         <Routes>
           {/* Standalone route without Layout */}
           <Route path="/gate/:slug" element={<LeadGate />} />
+          <Route path="/link-expired/:slug" element={<ExpiredLink />} />
 
           {/* Main Application with Layout */}
           <Route path="/*" element={
@@ -137,6 +139,10 @@ function App() {
             <Route path="/calculator/sales-tax" element={<SalesTaxCalculator />} />
             <Route path="/calculator/home-loan" element={<HomeLoanCalculator />} />
             <Route path="/calculator/currency" element={<CurrencyConverter />} />
+            <Route path="/calculator/unit-converter" element={<UnitConverter />} />
+            {FEATURE_FLAGS.ENABLE_TIME_CONVERTER && (
+              <Route path="/calculator/precision-time-converter" element={<TimeUnitConverter />} />
+            )}
             
             {/* Utilities */}
             <Route path="/utilities/qr-generator" element={<QrGenerator />} />
