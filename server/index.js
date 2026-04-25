@@ -2,8 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { nanoid } from 'nanoid';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,29 +10,37 @@ import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Set up local JSON "database"
-// Vercel serverless functions have a read-only filesystem except for /tmp
-const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
-const dbPath = isVercel ? path.join('/tmp', 'db.json') : path.join(__dirname, 'data', 'db.json');
+const EMPTY_DB = { links: {}, analytics: {} };
 
-function readDB() {
-  if (!fs.existsSync(dbPath)) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.writeFileSync(dbPath, JSON.stringify({ links: {}, analytics: {} }));
-  }
-  return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+// Set up local JSON fallback
+const isVercel = process.env.VERCEL || process.env.NODE_ENV === 'production';
+const dbPath = path.join(__dirname, 'data', 'db.json');
+const r2DbKey = process.env.R2_DB_KEY || '__multitool/db.json';
+
+function ensureDbShape(data) {
+  return {
+    links: data?.links && typeof data.links === 'object' ? data.links : {},
+    analytics: data?.analytics && typeof data.analytics === 'object' ? data.analytics : {},
+  };
 }
 
-function writeDB(data) {
+function readLocalDB() {
+  if (!fs.existsSync(dbPath)) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
+  }
+  return ensureDbShape(JSON.parse(fs.readFileSync(dbPath, 'utf8')));
+}
+
+function writeLocalDB(data) {
   fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
 }
 
@@ -59,9 +66,99 @@ if (missingVars.length === 0) {
   console.warn('R2 is not fully configured. Missing:', missingVars.join(', '));
 }
 
+async function streamToString(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function shouldUseR2Db() {
+  return Boolean(s3Client && process.env.R2_BUCKET_NAME);
+}
+
+async function readDB() {
+  if (!shouldUseR2Db()) {
+    return readLocalDB();
+  }
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: r2DbKey,
+    }));
+    const raw = await streamToString(response.Body);
+    return ensureDbShape(JSON.parse(raw));
+  } catch (error) {
+    const statusCode = error?.$metadata?.httpStatusCode;
+    const missingKey = error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || statusCode === 404;
+    if (missingKey) {
+      return { ...EMPTY_DB };
+    }
+
+    console.error('Failed to read DB from R2, falling back to local DB:', error);
+    return readLocalDB();
+  }
+}
+
+async function writeDB(data) {
+  const normalized = ensureDbShape(data);
+
+  if (shouldUseR2Db()) {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: r2DbKey,
+      Body: JSON.stringify(normalized, null, 2),
+      ContentType: 'application/json',
+    }));
+    return;
+  }
+
+  writeLocalDB(normalized);
+}
+
+function asyncHandler(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
+function getRefererHost(referer) {
+  if (!referer) {
+    return 'Direct';
+  }
+
+  try {
+    return new URL(referer).hostname;
+  } catch {
+    return 'Direct';
+  }
+}
+
+function getPublicOrigin(req) {
+  const configuredShortDomain = process.env.SHORT_DOMAIN;
+  const configuredFrontendUrl = process.env.FRONTEND_URL;
+  const requestHost = req.headers.host;
+
+  if (requestHost?.includes('localhost') && configuredFrontendUrl) {
+    return configuredFrontendUrl;
+  }
+
+  if (configuredShortDomain) {
+    return configuredShortDomain;
+  }
+
+  if (requestHost) {
+    return `${req.protocol}://${requestHost}`;
+  }
+
+  return 'http://localhost:5173';
+}
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB
 
-app.post('/api/share/upload', upload.single('file'), async (req, res) => {
+app.post('/api/share/upload', upload.single('file'), asyncHandler(async (req, res) => {
   if (!s3Client) {
     return res.status(500).json({ 
       error: 'R2 not configured on server', 
@@ -69,6 +166,12 @@ app.post('/api/share/upload', upload.single('file'), async (req, res) => {
     });
   }
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!process.env.R2_PUBLIC_BASE_URL) {
+    return res.status(500).json({
+      error: 'R2 public URL not configured',
+      details: 'Missing environment variable: R2_PUBLIC_BASE_URL'
+    });
+  }
 
   const slug = nanoid(8);
   const key = `${slug}-${req.file.originalname}`;
@@ -82,7 +185,7 @@ app.post('/api/share/upload', upload.single('file'), async (req, res) => {
     }));
 
     const fileUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
-    const db = readDB();
+    const db = await readDB();
     
     // Store metadata & long url mapping
     db.links[slug] = {
@@ -97,22 +200,22 @@ app.post('/api/share/upload', upload.single('file'), async (req, res) => {
     };
     
     db.analytics[slug] = [];
-    writeDB(db);
+    await writeDB(db);
 
-    const shortDomain = process.env.SHORT_DOMAIN || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:5000');
+    const shortDomain = getPublicOrigin(req);
     res.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
   } catch (error) {
     console.error('R2 upload error:', error);
     res.status(500).json({ error: 'Upload failed' });
   }
-});
+}));
 
-app.post('/api/shorten', (req, res) => {
+app.post('/api/shorten', asyncHandler(async (req, res) => {
   const { longUrl, customSlug, requiresDataCollection } = req.body;
   if (!longUrl) return res.status(400).json({ error: 'longUrl required' });
 
   const slug = customSlug || nanoid(8);
-  const db = readDB();
+  const db = await readDB();
 
   if (db.links[slug]) {
     return res.status(400).json({ error: 'Slug already exists' });
@@ -126,15 +229,15 @@ app.post('/api/shorten', (req, res) => {
     downloadCount: 0
   };
   db.analytics[slug] = [];
-  writeDB(db);
+  await writeDB(db);
 
-  const shortDomain = process.env.SHORT_DOMAIN || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:5000');
+  const shortDomain = getPublicOrigin(req);
   res.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
-});
+}));
 
-app.get('/s/:slug', (req, res) => {
+app.get('/s/:slug', asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const db = readDB();
+  const db = await readDB();
   const linkInfo = db.links[slug];
 
   if (!linkInfo) {
@@ -155,7 +258,7 @@ app.get('/s/:slug', (req, res) => {
   };
 
   db.analytics[slug].push(clickData);
-  writeDB(db);
+  await writeDB(db);
 
   if (linkInfo.requiresDataCollection) {
     // Redirect to frontend lead gate page
@@ -165,12 +268,12 @@ app.get('/s/:slug', (req, res) => {
   }
 
   res.redirect(301, linkInfo.longUrl);
-});
+}));
 
-app.post('/api/s/:slug/submit', (req, res) => {
+app.post('/api/s/:slug/submit', asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const { name, contact } = req.body;
-  const db = readDB();
+  const db = await readDB();
   const linkInfo = db.links[slug];
 
   if (!linkInfo) {
@@ -206,13 +309,13 @@ app.post('/api/s/:slug/submit', (req, res) => {
     });
   }
 
-  writeDB(db);
+  await writeDB(db);
 
   res.json({ data: { longUrl: linkInfo.longUrl } });
-});
+}));
 
-app.get('/api/share/analytics', (req, res) => {
-  const db = readDB();
+app.get('/api/share/analytics', asyncHandler(async (req, res) => {
+  const db = await readDB();
   
   let totalClicks = 0;
   let visitors = new Set();
@@ -228,7 +331,7 @@ app.get('/api/share/analytics', (req, res) => {
       
       if (c.country) countries[c.country] = (countries[c.country] || 0) + 1;
       
-      let ref = c.referer ? new URL(c.referer).hostname : 'Direct';
+      const ref = getRefererHost(c.referer);
       referers[ref] = (referers[ref] || 0) + 1;
       
       const date = c.timestamp.split('T')[0];
@@ -288,7 +391,7 @@ app.get('/api/share/analytics', (req, res) => {
       isVercel // Inform frontend about environment
     }
   });
-});
+}));
 
 // ------------------------------------------------------------------
 // MODULE 3: SEO Score Analyzer (Proxy)
@@ -395,6 +498,15 @@ app.post('/api/seo-audit', async (req, res) => {
     console.error('SEO Audit error:', error);
     res.status(500).json({ error: 'Failed to analyze URL. Ensure it is accessible.' });
   }
+});
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Export for Vercel Serverless
