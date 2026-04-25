@@ -89,7 +89,7 @@ app.post('/api/share/upload', upload.single('file'), async (req, res) => {
     db.analytics[slug] = [];
     writeDB(db);
 
-    const shortDomain = process.env.SHORT_DOMAIN || 'http://localhost:5000';
+    const shortDomain = process.env.SHORT_DOMAIN || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:5000');
     res.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
   } catch (error) {
     console.error('R2 upload error:', error);
@@ -118,7 +118,7 @@ app.post('/api/shorten', (req, res) => {
   db.analytics[slug] = [];
   writeDB(db);
 
-  const shortDomain = process.env.SHORT_DOMAIN || 'http://localhost:5000';
+  const shortDomain = process.env.SHORT_DOMAIN || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:5000');
   res.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
 });
 
