@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Settings, Star } from 'lucide-react';
+import { Menu, X, Settings, Star, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Switch from './ui/sky-toggle';
 import NavHeader from './ui/nav-header';
 import { toolSections } from '../data/toolCatalog';
@@ -8,39 +8,55 @@ import { headerPages } from '../data/contentPages';
 import { useTheme } from '../hooks/useTheme';
 import './Navbar.css';
 
-const Navbar = () => {
+const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
 
   const toggleMenu = () => setIsOpen(!isOpen);
+
   const isLinkActive = (path) =>
     location.pathname === path || (path === '/guides' && location.pathname.startsWith('/guides/'));
 
   return (
-    <nav className="navbar glass-panel">
+    <nav className="navbar glass-panel expanded">
       <div className="navbar-container">
-        <Link to="/" className="navbar-logo">
-          <div className="logo-icon">
-            <Settings size={24} color="var(--accent-primary)" />
-          </div>
-          <span className="text-gradient">MultiTool</span>
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {onToggleSidebar && (
+            <button 
+              className="btn-icon hidden-mobile" 
+              onClick={onToggleSidebar}
+              title={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+            </button>
+          )}
+          <Link to="/" className="navbar-logo" title="MultiTool">
+            <div className="logo-icon">
+              <Settings size={24} color="var(--accent-primary)" />
+            </div>
+            <span className="text-gradient logo-text">MultiTool</span>
+          </Link>
+        </div>
 
         {/* Desktop Menu */}
         <div className="navbar-menu-center hidden-mobile">
-          <NavHeader />
+          <div className="nav-items-wrapper">
+            <NavHeader />
+          </div>
         </div>
         
         <div className="navbar-actions-right hidden-mobile">
           <Link 
             to="/favorites" 
-            className={`nav-link ${isLinkActive('/favorites') ? 'active' : ''}`}
+            className={`nav-link fav-link ${isLinkActive('/favorites') ? 'active' : ''}`}
+            title="Favorites"
           >
-            <span>Favorites</span> <Star size={16} />
+            <span className="nav-text">Favorites</span> <Star size={16} />
           </Link>
           
-          <div style={{ transform: 'scale(0.26)', transformOrigin: 'center right' }}>
+          <div className="theme-toggle-wrapper" title="Toggle Theme">
             <Switch 
               checked={theme === 'dark'} 
               onChange={toggleTheme} 
@@ -50,7 +66,7 @@ const Navbar = () => {
 
         {/* Mobile Menu Button */}
         <div className="mobile-menu-btn">
-          <div style={{ marginRight: '1rem', transform: 'scale(0.195)' }}>
+          <div className="theme-toggle-wrapper-mobile">
             <Switch 
               checked={theme === 'dark'} 
               onChange={toggleTheme} 

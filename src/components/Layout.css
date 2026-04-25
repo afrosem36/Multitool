@@ -8,10 +8,22 @@
   width: min(1400px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1.5rem 0 2rem;
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  display: flex;
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
+}
+
+.sidebar-wrapper {
+  width: 280px;
+  flex-shrink: 0;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin 0.3s;
+}
+
+.sidebar-wrapper.hidden {
+  width: 0px;
+  opacity: 0;
+  overflow: hidden;
+  margin-right: -1.5rem; /* Remove the gap visually */
 }
 
 .main-content {
@@ -19,6 +31,7 @@
   width: 100%;
   animation: fadeIn 0.4s ease-out;
   min-width: 0;
+  transition: flex 0.3s ease;
 }
 
 .footer {
@@ -55,7 +68,15 @@
 
 @media (max-width: 1024px) {
   .layout-shell {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .sidebar-wrapper {
+    width: 100%;
+  }
+  .sidebar-wrapper.hidden {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: -1.5rem;
   }
 }
 

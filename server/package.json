@@ -9,11 +9,16 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.549.0",
+    "@aws-sdk/s3-request-presigner": "^3.549.0",
     "@ilovepdf/ilovepdf-nodejs": "latest",
+    "axios": "^1.6.8",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "nanoid": "^5.0.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

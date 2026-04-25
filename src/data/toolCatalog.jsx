@@ -36,8 +36,11 @@ import {
   SlidersHorizontal,
   Images,
   Wand2,
-  FileImage
+  FileImage,
+  Link as LinkIcon
 } from 'lucide-react';
+
+import { FEATURE_FLAGS } from '../config';
 
 export const utilityTools = [
   {
@@ -63,7 +66,39 @@ export const utilityTools = [
     path: '/utilities/unit-converter',
     icon: ArrowRightLeft,
     color: 'rgba(234, 179, 8, 0.1)'
-  }
+  },
+  {
+    id: 'url-shortener',
+    name: 'URL Shortener',
+    description: 'Paste a long URL to instantly generate a trackable short link.',
+    path: '/utilities/url-shortener',
+    icon: LinkIcon,
+    color: 'rgba(139, 92, 246, 0.1)'
+  },
+  ...(FEATURE_FLAGS.ENABLE_FILE_SHARING ? [{
+    id: 'file-share',
+    name: 'File Sharing & Shortener',
+    description: 'Securely upload files to Cloudflare R2 and generate a short URL instantly.',
+    path: '/share',
+    icon: LinkIcon, // Note: I need to ensure Link is imported from lucide-react if I use LinkIcon. Actually I can just use Link icon but renamed. I will add it to the imports.
+    color: 'rgba(139, 92, 246, 0.1)'
+  }] : []),
+  ...(FEATURE_FLAGS.ENABLE_SEO_ANALYZER ? [{
+    id: 'seo-analyzer',
+    name: 'SEO Score Analyzer',
+    description: 'Audit your website on-page SEO and get AI-powered recommendations.',
+    path: '/seo-analyzer',
+    icon: Search,
+    color: 'rgba(16, 185, 129, 0.1)'
+  }] : []),
+  ...(FEATURE_FLAGS.ENABLE_TIME_CONVERTER ? [{
+    id: 'time-converter',
+    name: 'Precision Time Converter',
+    description: 'Zero-drift time unit conversions using the anchor method.',
+    path: '/time-converter',
+    icon: Clock,
+    color: 'rgba(249, 115, 22, 0.1)'
+  }] : [])
 ];
 
 export const pdfTools = [
@@ -197,7 +232,15 @@ export const imageTools = [
     path: '/image/html-to-image',
     icon: FileImage,
     color: 'rgba(234, 179, 8, 0.1)'
-  }
+  },
+  ...(FEATURE_FLAGS.ENABLE_HEIC_CONVERTER ? [{
+    id: 'heic-to-jpg',
+    name: 'HEIC to JPG',
+    description: 'Convert Apple HEIC/HEIF photos to JPG securely in your browser.',
+    path: '/image/heic-to-jpg',
+    icon: Images,
+    color: 'rgba(236, 72, 153, 0.1)'
+  }] : [])
 ];
 
 export const textTools = [

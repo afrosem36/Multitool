@@ -30,7 +30,18 @@ const textTools = [
   '/text/word-repeater'
 ];
 
-const extraRoutes = ['/', '/guides', '/pdf-tools', '/text-tools', '/whatsapp-link-creator'];
+const extraRoutes = [
+  '/', 
+  '/guides', 
+  '/pdf-tools', 
+  '/text-tools', 
+  '/whatsapp-link-creator',
+  '/share',
+  '/analytics',
+  '/image/heic-to-jpg',
+  '/seo-analyzer',
+  '/time-converter'
+];
 
 const siteUrl =
   process.env.SITE_URL ||

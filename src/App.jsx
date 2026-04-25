@@ -57,20 +57,44 @@ const HomeLoanCalculator = React.lazy(() => import('./pages/HomeLoanCalculator')
 const CurrencyConverter = React.lazy(() => import('./pages/CurrencyConverter'));
 const SkyToggleDemo = React.lazy(() => import('./pages/SkyToggleDemo'));
 
+import { FEATURE_FLAGS } from './config';
+
 const PageLoader = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-    <Loader2 size={48} className="spin text-gradient" />
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+    <div className="skeleton" style={{ height: '200px', width: '100%', borderRadius: '16px' }}></div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginTop: '2rem' }}>
+      <div className="skeleton" style={{ height: '200px', borderRadius: '16px' }}></div>
+      <div className="skeleton" style={{ height: '200px', borderRadius: '16px' }}></div>
+      <div className="skeleton" style={{ height: '200px', borderRadius: '16px' }}></div>
+    </div>
   </div>
 );
+
+// New Feature Modules
+const FileShare = React.lazy(() => import('./pages/FileShare'));
+const AnalyticsDashboard = React.lazy(() => import('./pages/AnalyticsDashboard'));
+const HeicConverter = React.lazy(() => import('./pages/HeicConverter'));
+const SeoAnalyzer = React.lazy(() => import('./pages/SeoAnalyzer'));
+const TimeUnitConverter = React.lazy(() => import('./pages/TimeUnitConverter'));
+const UrlShortener = React.lazy(() => import('./pages/UrlShortener'));
+const LeadGate = React.lazy(() => import('./pages/LeadGate'));
+
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
     <Router>
-      <Layout>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/favorites" element={<FavoritesPage />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Standalone route without Layout */}
+          <Route path="/gate/:slug" element={<LeadGate />} />
+
+          {/* Main Application with Layout */}
+          <Route path="/*" element={
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/guides" element={<GuidesHubPage />} />
             <Route path="/pdf-tools" element={<ToolHubPage sectionId="pdf" />} />
             <Route path="/image-tools" element={<ToolHubPage sectionId="image" />} />
@@ -118,7 +142,25 @@ function App() {
             <Route path="/utilities/qr-generator" element={<QrGenerator />} />
             <Route path="/utilities/qr-decoder" element={<QrDecoder />} />
             <Route path="/utilities/unit-converter" element={<UnitConverter />} />
+            <Route path="/utilities/url-shortener" element={<UrlShortener />} />
             <Route path="/demo/sky-toggle" element={<SkyToggleDemo />} />
+
+            {/* Feature Flags */}
+            {FEATURE_FLAGS.ENABLE_FILE_SHARING && (
+              <>
+                <Route path="/share" element={<FileShare />} />
+                <Route path="/analytics" element={<AnalyticsDashboard />} />
+              </>
+            )}
+            {FEATURE_FLAGS.ENABLE_HEIC_CONVERTER && (
+              <Route path="/image/heic-to-jpg" element={<HeicConverter />} />
+            )}
+            {FEATURE_FLAGS.ENABLE_SEO_ANALYZER && (
+              <Route path="/seo-analyzer" element={<SeoAnalyzer />} />
+            )}
+            {FEATURE_FLAGS.ENABLE_TIME_CONVERTER && (
+              <Route path="/time-converter" element={<TimeUnitConverter />} />
+            )}
             
             {/* Dedicated compliance pages */}
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
@@ -131,10 +173,19 @@ function App() {
             {sitePages.filter(p => !['/privacy-policy', '/contact-us'].includes(p.path)).map((page) => (
               <Route key={page.path} path={page.path} element={<InfoPage />} />
             ))}
-          </Routes>
-        </Suspense>
-        <CookieConsent />
-      </Layout>
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
+      </Suspense>
+      <CookieConsent />
+      <Toaster position="bottom-right" toastOptions={{
+        style: {
+          background: 'var(--surface-color)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border-color)'
+        }
+      }} />
     </Router>
   );
 }

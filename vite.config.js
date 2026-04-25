@@ -15,6 +15,14 @@ export default defineConfig({
         target: 'https://api.api-ninjas.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ninja/, '')
+      },
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '^/s/': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
       }
     }
   }

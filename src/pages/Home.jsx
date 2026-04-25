@@ -6,6 +6,7 @@ import { homeFaqs } from '../seo/seoConfig';
 import { guideArticles, sitePages } from '../data/contentPages';
 import { useFavorites } from '../hooks/useFavorites';
 import { TiltCard } from '../components/ui/TiltCard';
+import SEOHead from '../components/seo/SEOHead';
 import './Home.css';
 
 const Home = () => {
@@ -42,6 +43,22 @@ const Home = () => {
 
   return (
     <div className="home-container">
+      <SEOHead 
+        title="MultiTool"
+        description="Smart online tools for PDF, text, image, and link tasks. Browser-based utilities for documents, text cleanup, images, and business communication."
+        canonicalUrl="/"
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          "name": "MultiTool",
+          "url": "https://multitool.vercel.app",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://multitool.vercel.app/search?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        }}
+      />
       <section className="hero-section text-center">
         <p className="hero-kicker">Tools + Guides + Trust Pages</p>
         <h1 className="hero-title animate-fade-in">
