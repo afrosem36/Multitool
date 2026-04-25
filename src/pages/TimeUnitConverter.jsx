@@ -307,7 +307,7 @@ export default function TimeUnitConverter() {
             <input 
               type="text" 
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value.replace(/[^\\d.-]/g, ''))}
+              onChange={(e) => setInputValue(e.target.value.replace(/[^\d.-]/g, ''))}
               placeholder="0"
             />
           </Field>

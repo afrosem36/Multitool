@@ -43,7 +43,10 @@ function writeDB(data) {
 
 // R2 Setup
 let s3Client = null;
-if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'];
+const missingVars = requiredR2Vars.filter(v => !process.env[v]);
+
+if (missingVars.length === 0) {
   s3Client = new S3Client({
     region: "auto",
     endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -52,12 +55,19 @@ if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
   });
+} else if (isVercel) {
+  console.warn('R2 is not fully configured. Missing:', missingVars.join(', '));
 }
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB
 
 app.post('/api/share/upload', upload.single('file'), async (req, res) => {
-  if (!s3Client) return res.status(500).json({ error: 'R2 not configured on server' });
+  if (!s3Client) {
+    return res.status(500).json({ 
+      error: 'R2 not configured on server', 
+      details: isVercel ? `Missing environment variables: ${missingVars.join(', ')}` : 'Check your .env file'
+    });
+  }
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const slug = nanoid(8);
@@ -274,7 +284,8 @@ app.get('/api/share/analytics', (req, res) => {
       topReferers,
       sparkline,
       links: allLinks,
-      leads // Sent to the frontend
+      leads, // Sent to the frontend
+      isVercel // Inform frontend about environment
     }
   });
 });

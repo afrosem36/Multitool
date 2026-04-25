@@ -178,11 +178,17 @@ const Toolbar = styled.div`
   }
 `;
 
+import { useSearchParams } from 'react-router-dom';
+
 export default function AnalyticsDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return searchParams.get('search') || '';
+  });
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
 
   useEffect(() => {
@@ -235,30 +241,29 @@ export default function AnalyticsDashboard() {
   }, [data?.links]);
 
   const exportCSV = () => {
-    if (!filteredAndSortedLinks.length) {
+    const isFiles = searchParams.get('type') === 'files';
+    const activeLinks = filteredAndSortedLinks.filter(l => isFiles ? l.originalName : !l.originalName);
+    if (!activeLinks.length) {
       toast.error('No data to export');
       return;
     }
     
-    const headers = ['Alias', 'Destination URL', 'Leads Collected', 'Clicks', 'Created At', 'Last Clicked'];
+    const headers = isFiles 
+      ? ['Alias', 'Original File', 'Size (MB)', 'Clicks', 'Uploaded At', 'Last Clicked']
+      : ['Alias', 'Destination URL', 'Leads Collected', 'Clicks', 'Created At', 'Last Clicked'];
+      
     const csvContent = [
       headers.join(','),
-      ...filteredAndSortedLinks.map(l => 
-        [
-          l.slug, 
-          l.longUrl, 
-          l.leadsCount || 0,
-          l.downloadCount, 
-          l.createdAt || l.uploadedAt, 
-          l.lastClicked || 'Never'
-        ].join(',')
+      ...activeLinks.map(l => isFiles 
+        ? [l.slug, l.originalName, (l.size / 1024 / 1024).toFixed(2), l.downloadCount, l.uploadedAt, l.lastClicked || 'Never'].join(',')
+        : [l.slug, l.longUrl, l.leadsCount || 0, l.downloadCount, l.createdAt, l.lastClicked || 'Never'].join(',')
       )
     ].join('\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', 'analytics_export.csv');
+    link.setAttribute('download', isFiles ? 'shared_files_analytics.csv' : 'url_analytics_export.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -266,24 +271,34 @@ export default function AnalyticsDashboard() {
   };
 
   const exportXLSX = () => {
-    if (!filteredAndSortedLinks.length) {
+    const isFiles = searchParams.get('type') === 'files';
+    const activeLinks = filteredAndSortedLinks.filter(l => isFiles ? l.originalName : !l.originalName);
+    
+    if (!activeLinks.length) {
       toast.error('No data to export');
       return;
     }
 
-    const worksheetData = filteredAndSortedLinks.map(l => ({
+    const worksheetData = activeLinks.map(l => isFiles ? ({
+      Alias: l.slug,
+      'Original File': l.originalName,
+      'Size (MB)': parseFloat((l.size / 1024 / 1024).toFixed(2)),
+      Clicks: l.downloadCount,
+      'Uploaded At': new Date(l.uploadedAt).toLocaleString(),
+      'Last Clicked': l.lastClicked ? new Date(l.lastClicked).toLocaleString() : 'Never'
+    }) : ({
       Alias: l.slug,
       'Destination URL': l.longUrl,
       'Leads Collected': l.leadsCount || 0,
       Clicks: l.downloadCount,
-      'Created At': new Date(l.createdAt || l.uploadedAt).toLocaleString(),
+      'Created At': new Date(l.createdAt).toLocaleString(),
       'Last Clicked': l.lastClicked ? new Date(l.lastClicked).toLocaleString() : 'Never'
     }));
 
     const ws = XLSX.utils.json_to_sheet(worksheetData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Analytics");
-    XLSX.writeFile(wb, "analytics_export.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, isFiles ? "Shared Files" : "Analytics");
+    XLSX.writeFile(wb, isFiles ? "shared_files_analytics.xlsx" : "url_analytics_export.xlsx");
     toast.success('XLSX Export downloaded!');
   };
 
@@ -309,6 +324,23 @@ export default function AnalyticsDashboard() {
       <Header>
         <h1 className="text-gradient">Analytics Overview</h1>
         <p>Global link performance, top referrers, and collected user insights.</p>
+        {data?.isVercel && (
+          <div style={{ 
+            marginTop: '1rem', 
+            padding: '1rem', 
+            background: 'rgba(234, 179, 8, 0.1)', 
+            border: '1px solid rgba(234, 179, 8, 0.2)', 
+            borderRadius: '8px',
+            color: '#f59e0b',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}>
+            <Info size={18} />
+            <span><strong>Note:</strong> Data on Vercel is stored in a temporary filesystem and will reset periodically. Use a persistent database for production.</span>
+          </div>
+        )}
       </Header>
 
       <StatsGrid>
@@ -389,18 +421,51 @@ export default function AnalyticsDashboard() {
         </div>
       </ChartsGrid>
 
-      {/* URL Table Section */}
+      {/* URL / File Table Section */}
       <div style={{ marginTop: '3rem' }}>
-        <Header style={{ marginBottom: '1rem' }}>
-          <h2>URL Management & Data</h2>
+        <Header style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h2>Link Management & Data</h2>
+            <p>Manage your shortened URLs and shared files.</p>
+          </div>
         </Header>
+        
+        {/* TABS */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+          <button 
+            onClick={() => {
+              setSearchParams(prev => { prev.set('type', 'urls'); return prev; });
+              setSearchTerm('');
+            }}
+            style={{ 
+              background: 'none', border: 'none', padding: '0.5rem 1rem', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer',
+              color: searchParams.get('type') !== 'files' ? 'var(--primary-color)' : 'var(--text-secondary)',
+              borderBottom: searchParams.get('type') !== 'files' ? '2px solid var(--primary-color)' : 'none'
+            }}
+          >
+            Shortened URLs
+          </button>
+          <button 
+            onClick={() => {
+              setSearchParams(prev => { prev.set('type', 'files'); return prev; });
+              setSearchTerm('');
+            }}
+            style={{ 
+              background: 'none', border: 'none', padding: '0.5rem 1rem', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer',
+              color: searchParams.get('type') === 'files' ? 'var(--primary-color)' : 'var(--text-secondary)',
+              borderBottom: searchParams.get('type') === 'files' ? '2px solid var(--primary-color)' : 'none'
+            }}
+          >
+            Shared Files
+          </button>
+        </div>
         
         <Toolbar>
           <div className="search-box">
             <Search size={18} />
             <input 
               type="text" 
-              placeholder="Search by alias, URL..." 
+              placeholder="Search by alias, URL, or filename..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -420,43 +485,49 @@ export default function AnalyticsDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th onClick={() => handleSort('slug')}>
-                    Alias {sortConfig.key === 'slug' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
-                  <th onClick={() => handleSort('longUrl')}>
-                    Destination {sortConfig.key === 'longUrl' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
-                  <th onClick={() => handleSort('leadsCount')}>
-                    Leads {sortConfig.key === 'leadsCount' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
-                  <th onClick={() => handleSort('downloadCount')}>
-                    Clicks {sortConfig.key === 'downloadCount' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
-                  <th onClick={() => handleSort('createdAt')}>
-                    Created {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
-                  <th onClick={() => handleSort('lastClicked')}>
-                    Last Clicked {sortConfig.key === 'lastClicked' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}
-                  </th>
+                  <th onClick={() => handleSort('slug')}>Alias {sortConfig.key === 'slug' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                  {searchParams.get('type') === 'files' ? (
+                    <>
+                      <th onClick={() => handleSort('originalName')}>Original File {sortConfig.key === 'originalName' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                      <th onClick={() => handleSort('size')}>Size {sortConfig.key === 'size' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                    </>
+                  ) : (
+                    <>
+                      <th onClick={() => handleSort('longUrl')}>Destination {sortConfig.key === 'longUrl' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                      <th onClick={() => handleSort('leadsCount')}>Leads {sortConfig.key === 'leadsCount' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                    </>
+                  )}
+                  <th onClick={() => handleSort('downloadCount')}>Clicks {sortConfig.key === 'downloadCount' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                  <th onClick={() => handleSort('createdAt')}>Created {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                  <th onClick={() => handleSort('lastClicked')}>Last Clicked {sortConfig.key === 'lastClicked' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredAndSortedLinks.length === 0 ? (
+                {filteredAndSortedLinks.filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName).length === 0 ? (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                      No URLs found matching your criteria.
+                      No {searchParams.get('type') === 'files' ? 'files' : 'URLs'} found matching your criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredAndSortedLinks.map((link) => (
+                  filteredAndSortedLinks
+                    .filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName)
+                    .map((link) => (
                     <tr key={link.slug}>
                       <td style={{ fontWeight: '500', color: 'var(--accent-primary)' }}>/s/{link.slug}</td>
-                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={link.longUrl}>
-                        {link.longUrl}
-                      </td>
-                      <td style={{ fontWeight: '600', color: link.leadsCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)' }}>
-                        {link.leadsCount} {link.leadsCount === 1 ? 'Lead' : 'Leads'}
-                      </td>
+                      {searchParams.get('type') === 'files' ? (
+                        <>
+                          <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={link.originalName}>{link.originalName}</td>
+                          <td>{(link.size / 1024 / 1024).toFixed(2)} MB</td>
+                        </>
+                      ) : (
+                        <>
+                          <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={link.longUrl}>{link.longUrl}</td>
+                          <td style={{ fontWeight: '600', color: link.leadsCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)' }}>
+                            {link.leadsCount} {link.leadsCount === 1 ? 'Lead' : 'Leads'}
+                          </td>
+                        </>
+                      )}
                       <td style={{ fontFamily: 'monospace', fontSize: '1.1rem' }}>{link.downloadCount}</td>
                       <td>{new Date(link.createdAt || link.uploadedAt).toLocaleDateString()}</td>
                       <td>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString() : 'Never'}</td>
@@ -469,71 +540,74 @@ export default function AnalyticsDashboard() {
         </TableWrapper>
       </div>
 
-      {/* Collected Leads Section */}
-      <div style={{ marginTop: '3rem' }}>
-        <Header style={{ marginBottom: '1rem' }}>
-          <h2>Collected Visitor Leads</h2>
-          <p>Contact information collected from visitors before they accessed your short links.</p>
-        </Header>
+      {/* Collected Leads Section - Only show for URLs */}
+      {searchParams.get('type') !== 'files' && (
+        <div style={{ marginTop: '3rem' }}>
+          <Header style={{ marginBottom: '1rem' }}>
+            <h2>Collected Visitor Leads</h2>
+            <p>Contact information collected from visitors before they accessed your short links.</p>
+          </Header>
 
-        <Toolbar style={{ justifyContent: 'flex-end' }}>
-          <button className="btn-primary" onClick={() => {
-            if (!data?.leads?.length) {
-              toast.error('No leads to export');
-              return;
-            }
-            const worksheetData = data.leads.map(l => ({
-              'Link Alias': l.slug,
-              'Visitor Name': l.name,
-              'Contact Info': l.contact,
-              'Time Collected': new Date(l.timestamp).toLocaleString(),
-              'IP Address': l.ip || 'Unknown'
-            }));
-            const ws = XLSX.utils.json_to_sheet(worksheetData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Visitor Leads");
-            XLSX.writeFile(wb, "visitor_leads_export.xlsx");
-            toast.success('Leads Exported!');
-          }}>
-            <FileSpreadsheet size={18} /> Export Leads XLSX
-          </button>
-        </Toolbar>
+          <Toolbar style={{ justifyContent: 'flex-end' }}>
+            <button className="btn-primary" onClick={() => {
+              const filteredLeads = data?.leads ? data.leads.filter(l => l.slug.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+              if (!filteredLeads.length) {
+                toast.error('No leads to export');
+                return;
+              }
+              const worksheetData = filteredLeads.map(l => ({
+                'Link Alias': l.slug,
+                'Visitor Name': l.name,
+                'Contact Info': l.contact,
+                'Time Collected': new Date(l.timestamp).toLocaleString(),
+                'IP Address': l.ip || 'Unknown'
+              }));
+              const ws = XLSX.utils.json_to_sheet(worksheetData);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "Visitor Leads");
+              XLSX.writeFile(wb, "visitor_leads_export.xlsx");
+              toast.success('Leads Exported!');
+            }}>
+              <FileSpreadsheet size={18} /> Export Leads XLSX
+            </button>
+          </Toolbar>
 
-        <TableWrapper>
-          <div style={{ overflowX: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Visitor Name</th>
-                  <th>Contact Info</th>
-                  <th>Clicked Link</th>
-                  <th>Time Collected</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!data?.leads || data.leads.length === 0 ? (
+          <TableWrapper>
+            <div style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                      No visitor leads collected yet. Enable Data Collection when generating a link to start collecting leads.
-                    </td>
+                    <th>Visitor Name</th>
+                    <th>Contact Info</th>
+                    <th>Clicked Link</th>
+                    <th>Time Collected</th>
                   </tr>
-                ) : (
-                  data.leads.map((lead, index) => (
-                    <tr key={index}>
-                      <td style={{ fontWeight: '500' }}>{lead.name}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{lead.contact}</td>
-                      <td>
-                        <span style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>/s/{lead.slug}</span>
+                </thead>
+                <tbody>
+                  {!data?.leads || data.leads.filter(l => l.slug.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                    <tr>
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                        No visitor leads collected yet for this query. Enable Data Collection when generating a link to start collecting leads.
                       </td>
-                      <td>{new Date(lead.timestamp).toLocaleString()}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </TableWrapper>
-      </div>
+                  ) : (
+                    data.leads.filter(l => l.slug.toLowerCase().includes(searchTerm.toLowerCase())).map((lead, index) => (
+                      <tr key={index}>
+                        <td style={{ fontWeight: '500' }}>{lead.name}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{lead.contact}</td>
+                        <td>
+                          <span style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>/s/{lead.slug}</span>
+                        </td>
+                        <td>{new Date(lead.timestamp).toLocaleString()}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TableWrapper>
+        </div>
+      )}
     </Container>
   );
 }

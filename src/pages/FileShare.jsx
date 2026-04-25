@@ -281,7 +281,7 @@ export default function FileShare() {
               <button title="Open link"><ExternalLink size={20} /></button>
             </a>
           </UrlBox>
-          <Button to="/analytics">
+          <Button to="/analytics?type=files">
             <BarChart2 size={18} /> View Analytics Dashboard
           </Button>
           <Button as="button" onClick={() => { setShortUrl(null); setFile(null); }} style={{ background: 'none', border: 'none', color: 'var(--primary-color)' }}>

@@ -3,18 +3,13 @@
 import React, { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
+import { toolSections } from "../../data/toolCatalog";
 import "./nav-header.css";
 
 const primaryLinks = [
   { label: 'Home', path: '/' },
   { label: 'Tools', path: '#', hasDropdown: true },
   { label: 'Guides', path: '/guides' },
-];
-
-const toolLinks = [
-  { label: 'PDF Tools', path: '/pdf-tools' },
-  { label: 'Image Tools', path: '/image-tools' },
-  { label: 'Text Tools', path: '/text-tools' }
 ];
 
 function NavHeader() {
@@ -88,11 +83,15 @@ const Tab = ({
 
       {page.hasDropdown && (
         <div className={`nav-dropdown ${isDropdownOpen ? 'active' : ''}`}>
-          {toolLinks.map(tool => (
+          {toolSections.map(tool => (
             <Link key={tool.path} to={tool.path} className="nav-dropdown-item">
               {tool.label}
             </Link>
           ))}
+          <div style={{ height: '1px', background: 'var(--border-color)', margin: '0.5rem 0' }} />
+          <Link to="/analytics" className="nav-dropdown-item" style={{ color: 'var(--accent-primary)', fontWeight: '600' }}>
+            Admin Dashboard
+          </Link>
         </div>
       )}
     </li>
