@@ -83,7 +83,13 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/api/health', (c) => {
-  return c.json({ ok: true });
+  const envKeys = Object.keys(c.env || {});
+  console.log('Environment Keys:', envKeys);
+  return c.json({ 
+    ok: true, 
+    envKeys,
+    hasDb: !!c.env.multitool_db 
+  });
 });
 
 app.use('*', authMiddleware);
