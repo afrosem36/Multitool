@@ -1,7 +1,12 @@
 import React from 'react';
 import styled from 'styled-components';
 
-const Switch = ({ checked, onChange }) => {
+type SwitchProps = {
+  checked: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+};
+
+const Switch: React.FC<SwitchProps> = ({ checked, onChange }) => {
   return (
     <StyledWrapper>
       <label className="theme-switch">
@@ -35,7 +40,7 @@ const Switch = ({ checked, onChange }) => {
 
 const StyledWrapper = styled.div`
   .theme-switch {
-    --toggle-size: 30px;
+    --toggle-size: 8px;
     /* the size is adjusted using font-size,
        this is not transform scale,
        so you can choose any size */

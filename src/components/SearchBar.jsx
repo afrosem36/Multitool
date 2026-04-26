@@ -49,8 +49,7 @@ const SearchBar = () => {
       tool.description.toLowerCase().includes(lowerQuery)
     ).slice(0, 5); // Limit to top 5 tools
 
-    // 2. Future: Fetch User's Files and Links from Backend (Requires Auth Phase)
-    // TODO: implement API call to /api/search?q=lowerQuery
+    // Future: Fetch User's Files and Links from Backend (Requires Auth Phase)
 
     setResults({
       tools: matchedTools,
@@ -117,35 +116,7 @@ const SearchBar = () => {
                 </div>
               )}
 
-              {/* Files Section (Future) */}
-              {results.files.length > 0 && (
-                <div className="search-section">
-                  <div className="search-section-title">Your Files</div>
-                  {results.files.map(file => (
-                    <div key={file.id} className="search-item" onClick={() => handleSelect(`/dashboard`)}>
-                      <File size={16} className="search-item-icon-simple" />
-                      <div className="search-item-info">
-                        <span className="search-item-name">{file.name}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Links Section (Future) */}
-              {results.links.length > 0 && (
-                <div className="search-section">
-                  <div className="search-section-title">Your Links</div>
-                  {results.links.map(link => (
-                    <div key={link.id} className="search-item" onClick={() => handleSelect(`/dashboard`)}>
-                      <LinkIcon size={16} className="search-item-icon-simple" />
-                      <div className="search-item-info">
-                        <span className="search-item-name">{link.shortUrl}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Future: Add Files and Links search sections here */}
 
             </div>
           ) : (

@@ -9,7 +9,11 @@ import styled from 'styled-components';
 const Container = styled.div`
   max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 1rem;
+  
+  @media (min-width: 768px) {
+    padding: 3rem 2rem;
+  }
 `;
 
 const Header = styled.div`
@@ -17,13 +21,18 @@ const Header = styled.div`
   margin-bottom: 4rem;
 
   h1 {
-    font-size: 3rem;
+    font-size: 2.5rem;
     font-weight: 800;
     margin-bottom: 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
+    gap: 0.75rem;
+
+    @media (min-width: 768px) {
+      font-size: 3.5rem;
+      gap: 1rem;
+    }
   }
 
   p {
@@ -36,8 +45,12 @@ const Header = styled.div`
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  
+  @media (min-width: 768px) {
+    gap: 1.5rem;
+  }
 `;
 
 const ToolCard = styled(Link)`
@@ -142,14 +155,11 @@ export default function Trending() {
   }, []);
 
   const handleMouseMove = (e) => {
-    const cards = document.getElementsByClassName('tool-card-hover');
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      card.style.setProperty('--mouse-x', `${x}px`);
-      card.style.setProperty('--mouse-y', `${y}px`);
-    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--mouse-x', `${x}px`);
+    e.currentTarget.style.setProperty('--mouse-y', `${y}px`);
   };
 
   const displayTools = useMemo(() => {
@@ -207,7 +217,7 @@ export default function Trending() {
   }
 
   return (
-    <Container onMouseMove={handleMouseMove}>
+    <Container>
       <SeoHead 
         title="Trending Tools" 
         description="Discover the most popular and highly used utilities on the platform right now."
@@ -226,7 +236,7 @@ export default function Trending() {
         {displayTools.map((tool) => {
           const Icon = tool.icon;
           return (
-            <ToolCard key={tool.id} to={tool.path} className="tool-card-hover" onClick={() => {
+            <ToolCard key={tool.id} to={tool.path} className="tool-card-hover" onMouseMove={handleMouseMove} onClick={() => {
               // Fire and forget usage tracking
               fetch(`${API_BASE_URL}/api/tools/usage`, {
                 method: 'POST',

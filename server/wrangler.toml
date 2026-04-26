@@ -11,8 +11,8 @@ migrations_dir = "migrations"
 
 [vars]
 R2_BUCKET_NAME = "multitoolhub-files"
-FRONTEND_URL = "http://localhost:5173"
-SHORT_DOMAIN = "http://localhost:5000"
+FRONTEND_URL = "https://www.multitoolhub.space"
+SHORT_DOMAIN = "https://multi-tool-backend.multitoolhub-api.workers.dev"
 JWT_SECRET = "f1a1764e5373b34199a94d8f67ddfbb5d90c8b5ef0b68e0def6685c0ffdf0006e49d083786789ed740e63d9dae6bb9951641734de91c011a4d7da72ad2ce50ab"
 RESEND_API_KEY = "re_your_key_here"
 FROM_EMAIL = "noreply@yourdomain.com"

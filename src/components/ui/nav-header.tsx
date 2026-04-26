@@ -8,6 +8,7 @@ import "./nav-header.css";
 
 const primaryLinks = [
   { label: 'Home', path: '/' },
+  { label: 'Trending', path: '/trending' },
   { label: 'Tools', path: '#', hasDropdown: true },
   { label: 'Guides', path: '/guides' },
 ];
