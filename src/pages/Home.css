@@ -20,9 +20,10 @@
 }
 
 .hero-title {
-  font-size: 4rem;
+  font-size: clamp(2.5rem, 8vw, 4rem);
   margin-bottom: 1.5rem;
   letter-spacing: -1px;
+  line-height: 1.1;
 }
 
 .hero-subtitle {

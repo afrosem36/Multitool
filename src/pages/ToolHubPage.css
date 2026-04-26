@@ -93,12 +93,153 @@
   gap: 0.75rem;
 }
 
+/* Mobile Category Bar */
+.mobile-category-bar {
+  display: none;
+  background: var(--bg-dark);
+  margin: -1.5rem -1rem 0;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.category-scroll {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 0.25rem;
+}
+
+.category-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.category-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.category-pill.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.card-favorite-btn {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  z-index: 10;
+  transition: transform 0.2s;
+}
+
+.card-favorite-btn:active {
+  transform: scale(1.2);
+}
+
+.tool-hub-card-header {
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-hub-card-title h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+
+.tool-hub-card-title p {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 @media (max-width: 768px) {
+  .mobile-category-bar {
+    display: block;
+  }
+
   .tool-hub-hero {
     flex-direction: column;
+    padding: 1.5rem;
+    gap: 1.25rem;
+    text-align: center;
+    align-items: center;
   }
 
   .tool-hub-summary {
     min-width: 100%;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .tool-hub-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .tool-hub-card {
+    padding: 1.25rem;
+    min-height: 140px;
+  }
+
+  .tool-hub-card-header {
+    flex-direction: row;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .tool-hub-card-icon {
+    margin-bottom: 0;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+  }
+
+  .tool-hub-card-title {
+    text-align: left;
+    padding-right: 2rem;
+  }
+
+  .tool-hub-card-title h3 {
+    margin-bottom: 0.2rem;
+  }
+
+  .tool-hub-card-title p {
+    margin-bottom: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .tool-hub-link {
+    width: 100%;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
   }
 }

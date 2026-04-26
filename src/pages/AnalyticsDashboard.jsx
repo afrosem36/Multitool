@@ -11,6 +11,11 @@ const Container = styled.div`
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+
+  @media (max-width: 768px) {
+    padding: 1rem;
+    padding-bottom: 5rem; /* Space for mobile floating actions */
+  }
 `;
 
 const Header = styled.div`
@@ -19,6 +24,9 @@ const Header = styled.div`
     font-size: 2.5rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
+    @media (max-width: 768px) {
+      font-size: 1.75rem;
+    }
   }
   p {
     color: var(--text-secondary);
@@ -30,6 +38,11 @@ const StatsGrid = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
   margin-bottom: 2rem;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
 `;
 
 const StatCard = styled.div`
@@ -40,6 +53,10 @@ const StatCard = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+
+  @media (max-width: 768px) {
+    padding: 1.25rem;
+  }
 
   .header {
     display: flex;
@@ -77,6 +94,10 @@ const ChartCard = styled.div`
   border-radius: 1rem;
   padding: 1.5rem;
   
+  @media (max-width: 768px) {
+    padding: 1rem;
+  }
+
   h3 {
     margin-bottom: 1.5rem;
     font-size: 1.1rem;
@@ -108,6 +129,10 @@ const TableWrapper = styled.div`
   border-radius: 1rem;
   overflow: hidden;
   margin-top: 1rem;
+
+  @media (max-width: 768px) {
+    border-radius: 0.75rem;
+  }
   
   table {
     width: 100%;
@@ -118,6 +143,10 @@ const TableWrapper = styled.div`
   th, td {
     padding: 1rem;
     border-bottom: 1px solid var(--border-color);
+    @media (max-width: 768px) {
+      padding: 0.75rem;
+      font-size: 0.9rem;
+    }
   }
   
   th {
@@ -149,6 +178,11 @@ const Toolbar = styled.div`
   margin-bottom: 1rem;
   flex-wrap: wrap;
   gap: 1rem;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
   
   .search-box {
     position: relative;
@@ -156,6 +190,10 @@ const Toolbar = styled.div`
     align-items: center;
     flex: 1;
     max-width: 400px;
+
+    @media (max-width: 768px) {
+      max-width: none;
+    }
     
     input {
       width: 100%;
@@ -176,6 +214,37 @@ const Toolbar = styled.div`
       left: 12px;
       color: var(--text-secondary);
     }
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+
+    @media (max-width: 768px) {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+`;
+
+const MobileFloatingBar = styled.div`
+  display: none;
+  @media (max-width: 768px) {
+    display: ${props => props.show ? 'flex' : 'none'};
+    position: fixed;
+    bottom: 80px;
+    left: 1rem;
+    right: 1rem;
+    background: var(--bg-card);
+    padding: 1rem;
+    border-radius: 1rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    border: 1px solid var(--border-color);
+    z-index: 100;
+    justify-content: space-between;
+    align-items: center;
+    animation: slideUp 0.3s ease-out;
   }
 `;
 
@@ -574,20 +643,15 @@ export default function AnalyticsDashboard() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            {selectedSlugs.length > 0 && (
-              <button className="btn-secondary" style={{ borderColor: '#ef4444', color: '#ef4444' }} onClick={() => deleteSlugs(selectedSlugs)} disabled={deleting}>
-                <Trash2 size={18} /> Delete Selected ({selectedSlugs.length})
-              </button>
-            )}
-            <button className="btn-secondary" style={{ borderColor: '#ef4444', color: '#ef4444' }} onClick={deleteAll} disabled={deleting}>
-              <Trash2 size={18} /> Delete All {searchParams.get('type') === 'files' ? 'Files' : 'Links'}
+          <div className="actions">
+            <button className="btn-secondary hidden-mobile" style={{ borderColor: '#ef4444', color: '#ef4444' }} onClick={deleteAll} disabled={deleting}>
+              <Trash2 size={18} /> Clear All
             </button>
             <button className="btn-secondary" onClick={exportCSV}>
-              <Download size={18} /> Export CSV
+              <Download size={18} /> CSV
             </button>
             <button className="btn-primary" onClick={exportXLSX}>
-              <FileSpreadsheet size={18} /> Export XLSX
+              <FileSpreadsheet size={18} /> XLSX
             </button>
           </div>
         </Toolbar>
@@ -757,6 +821,26 @@ export default function AnalyticsDashboard() {
           </TableWrapper>
         </div>
       )}
+      {/* Mobile Floating Actions */}
+      <MobileFloatingBar show={selectedSlugs.length > 0}>
+        <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{selectedSlugs.length} selected</span>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button 
+            className="btn-secondary" 
+            style={{ padding: '0.5rem 1rem', borderColor: '#ef4444', color: '#ef4444' }}
+            onClick={() => deleteSlugs(selectedSlugs)}
+          >
+            <Trash2 size={18} /> Delete
+          </button>
+          <button 
+            className="btn-icon" 
+            onClick={() => setSelectedSlugs([])}
+            style={{ background: 'var(--surface-color)' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </MobileFloatingBar>
     </Container>
   );
 }

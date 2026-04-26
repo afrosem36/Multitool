@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
+import BottomNav from './BottomNav';
+import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
 import { footerPages } from '../data/contentPages';
 import './Layout.css';
@@ -22,9 +24,10 @@ function getTimeAgo(dateString) {
 }
 
 const Layout = ({ children }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('');
-  const timeoutRef = useRef(null);
+  const location = useLocation();
 
   useEffect(() => {
     const buildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : null;
@@ -37,71 +40,76 @@ const Layout = ({ children }) => {
     }
   }, []);
 
-  const resetTimer = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    // Only auto-hide if it's currently open
-    if (isSidebarOpen) {
-      timeoutRef.current = setTimeout(() => {
-        setIsSidebarOpen(false);
-      }, 5000);
-    }
-  }, [isSidebarOpen]);
-
+  // Handle window resize for sidebar
   useEffect(() => {
-    // Attach listeners
-    window.addEventListener('mousemove', resetTimer);
-    window.addEventListener('keydown', resetTimer);
-    window.addEventListener('scroll', resetTimer);
-    window.addEventListener('click', resetTimer);
-
-    // Initial timer
-    resetTimer();
-
-    return () => {
-      window.removeEventListener('mousemove', resetTimer);
-      window.removeEventListener('keydown', resetTimer);
-      window.removeEventListener('scroll', resetTimer);
-      window.removeEventListener('click', resetTimer);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    const handleResize = () => {
+      if (window.innerWidth <= 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
     };
-  }, [resetTimer]);
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Sync sidebar state with location
+  useEffect(() => {
+    if (window.innerWidth <= 1024) {
+      setIsSidebarOpen(false);
+    }
+  }, [location.pathname]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
   };
 
+  // Pages that should NOT have the layout
+  const noLayoutPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
+  const isNoLayout = noLayoutPages.includes(location.pathname) || location.pathname.startsWith('/s/');
+
+  if (isNoLayout) return <>{children}</>;
+
   return (
     <div className="layout">
       <SeoManager />
       <Navbar onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
+      
       <div className="layout-shell">
         <div className={`sidebar-wrapper ${isSidebarOpen ? '' : 'hidden'}`}>
           <Sidebar />
         </div>
         <main className="main-content">
           {children}
+          
+          <footer className="footer glass-panel">
+            <div className="footer-inner">
+              <div className="footer-links">
+                {footerPages.map((page) => (
+                  <Link key={page.path} to={page.path} className="footer-link">
+                    {page.label}
+                  </Link>
+                ))}
+              </div>
+              <p>&copy; {new Date().getFullYear()} MultiTool. Browser-based PDF tools, text utilities, guides, and support pages in one workspace.</p>
+              {lastUpdated && (
+                <p className="last-updated-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                  {lastUpdated}
+                </p>
+              )}
+            </div>
+          </footer>
         </main>
       </div>
 
-      <footer className="footer glass-panel">
-        <div className="footer-inner">
-          <div className="footer-links">
-            {footerPages.map((page) => (
-              <Link key={page.path} to={page.path} className="footer-link">
-                {page.label}
-              </Link>
-            ))}
-          </div>
-          <p>&copy; {new Date().getFullYear()} MultiTool. Browser-based PDF tools, text utilities, guides, and support pages in one workspace.</p>
-          {lastUpdated && (
-            <p className="last-updated-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-              {lastUpdated}
-            </p>
-          )}
-        </div>
-      </footer>
+      {/* Mobile-only Navigation */}
+      <BottomNav onSearchOpen={() => setIsMobileSearchOpen(true)} />
+      
+      {/* Mobile-only Search Overlay */}
+      {isMobileSearchOpen && (
+        <MobileSearch onClose={() => setIsMobileSearchOpen(false)} />
+      )}
     </div>
   );
 };

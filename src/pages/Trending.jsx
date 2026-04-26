@@ -130,6 +130,18 @@ const allTools = [
   ...textTools, ...calculatorTools, ...excelTools, ...linkTools
 ];
 
+const ToolCardSkeleton = () => (
+  <ToolCard as="div" style={{ cursor: 'default' }}>
+    <ToolHeader>
+      <div className="skeleton" style={{ width: '48px', height: '48px', borderRadius: '12px' }} />
+      <div className="skeleton" style={{ width: '80px', height: '24px', borderRadius: '12px' }} />
+    </ToolHeader>
+    <div className="skeleton" style={{ width: '70%', height: '1.5rem', marginTop: '1rem', marginBottom: '0.5rem' }} />
+    <div className="skeleton" style={{ width: '100%', height: '3rem', marginBottom: '1.5rem' }} />
+    <div className="skeleton" style={{ width: '100px', height: '1.2rem', marginTop: 'auto' }} />
+  </ToolCard>
+);
+
 // Curated list for fallback
 const curatedToolsList = ['url-shortener', 'merge', 'image-compress', 'whatsapp-link-creator', 'pdf-to-jpg', 'qr-generator'];
 
@@ -210,8 +222,16 @@ export default function Trending() {
 
   if (loading) {
     return (
-      <Container style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <Loader2 size={48} className="spin text-gradient" />
+      <Container>
+        <Header>
+          <div className="skeleton" style={{ width: '300px', height: '4rem', margin: '0 auto 1rem', borderRadius: '12px' }} />
+          <div className="skeleton" style={{ width: '100%', maxWidth: '600px', height: '1.5rem', margin: '0 auto' }} />
+        </Header>
+        <Grid>
+          {[...Array(6)].map((_, i) => (
+            <ToolCardSkeleton key={i} />
+          ))}
+        </Grid>
       </Container>
     );
   }
