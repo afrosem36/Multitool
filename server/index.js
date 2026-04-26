@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { nanoid } from 'nanoid';
 import * as fs from 'fs';
@@ -21,9 +21,10 @@ app.use(express.json());
 
 const EMPTY_DB = { links: {}, analytics: {} };
 const MAX_SHARE_FILE_SIZE = 250 * 1024 * 1024;
-const AUDIO_VIDEO_EXTENSIONS = new Set([
+const AUDIO_VIDEO_IMAGE_EXTENSIONS = new Set([
   '.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.oga', '.weba',
-  '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.wmv', '.webm', '.mpeg', '.mpg', '.3gp'
+  '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.wmv', '.webm', '.mpeg', '.mpg', '.3gp',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'
 ]);
 
 // Set up local JSON fallback
@@ -193,12 +194,13 @@ function sanitizeFileName(name = 'file') {
 
 function isSupportedShareFile(originalName = '', mimeType = '') {
   const extension = path.extname(originalName).toLowerCase();
-  return mimeType.startsWith('audio/')
+  return mimeType.startsWith('image/')
+    || mimeType.startsWith('audio/')
     || mimeType.startsWith('video/')
     || mimeType === 'application/pdf'
     || mimeType === 'application/x-pdf'
     || extension === '.pdf'
-    || AUDIO_VIDEO_EXTENSIONS.has(extension);
+    || AUDIO_VIDEO_IMAGE_EXTENSIONS.has(extension);
 }
 
 function getShareValidationError({ originalName, mimeType, size }) {
@@ -215,7 +217,7 @@ function getShareValidationError({ originalName, mimeType, size }) {
   }
 
   if (!isSupportedShareFile(originalName, mimeType || '')) {
-    return 'Only audio, video, and PDF files are supported';
+    return 'Only images, audio, video, and PDF files are supported';
   }
 
   return null;
@@ -627,6 +629,81 @@ app.get('/api/share/analytics', asyncHandler(async (req, res) => {
       isVercel // Inform frontend about environment
     }
   });
+}));
+
+app.delete('/api/links', asyncHandler(async (req, res) => {
+  const { slugs } = req.body; // Array of slugs to delete
+  if (!Array.isArray(slugs) || slugs.length === 0) {
+    return res.status(400).json({ error: 'Slugs array is required' });
+  }
+
+  const db = await readDB();
+  const deletedKeys = [];
+  const slugsToDelete = slugs.filter(s => db.links[s]);
+
+  for (const slug of slugsToDelete) {
+    const linkInfo = db.links[slug];
+    // If it's a file share link, add R2 key to deletion list
+    if (linkInfo.r2Key) {
+      deletedKeys.push({ Key: linkInfo.r2Key });
+    }
+    
+    // Remove from DB
+    delete db.links[slug];
+    delete db.analytics[slug];
+  }
+
+  // Sync with Cloudflare R2 if there are objects to delete
+  if (shouldUseR2Db() && deletedKeys.length > 0) {
+    try {
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Delete: { Objects: deletedKeys }
+      }));
+    } catch (r2Error) {
+      console.error('Failed to delete objects from R2:', r2Error);
+      // We continue since DB is already updated, but warn the log
+    }
+  }
+
+  await writeDB(db);
+  res.json({ message: `Successfully deleted ${slugsToDelete.length} items` });
+}));
+
+app.delete('/api/links/all', asyncHandler(async (req, res) => {
+  const { type } = req.query; // 'files' or 'urls' or undefined for all
+  const db = await readDB();
+  const deletedKeys = [];
+  let count = 0;
+
+  Object.entries(db.links).forEach(([slug, linkInfo]) => {
+    const isFile = !!linkInfo.r2Key;
+    if (!type || (type === 'files' && isFile) || (type === 'urls' && !isFile)) {
+      if (linkInfo.r2Key) {
+        deletedKeys.push({ Key: linkInfo.r2Key });
+      }
+      delete db.links[slug];
+      delete db.analytics[slug];
+      count++;
+    }
+  });
+
+  if (shouldUseR2Db() && deletedKeys.length > 0) {
+    try {
+      // Delete in batches of 1000 (R2/S3 limit)
+      for (let i = 0; i < deletedKeys.length; i += 1000) {
+        await s3Client.send(new DeleteObjectsCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Delete: { Objects: deletedKeys.slice(i, i + 1000) }
+        }));
+      }
+    } catch (r2Error) {
+      console.error('Failed to clear objects from R2:', r2Error);
+    }
+  }
+
+  await writeDB(db);
+  res.json({ message: `Successfully deleted ${count} items` });
 }));
 
 // ------------------------------------------------------------------

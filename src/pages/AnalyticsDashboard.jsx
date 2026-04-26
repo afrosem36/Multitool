@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
-import { Activity, Users, Globe, Link as LinkIcon, Loader2, Search, ArrowDown, ArrowUp, Download, Link2, FileSpreadsheet, Info } from 'lucide-react';
+import { Activity, Users, Globe, Link as LinkIcon, Loader2, Search, ArrowDown, ArrowUp, Download, Link2, FileSpreadsheet, Info, Trash2, CheckSquare, X } from 'lucide-react';
 import SeoHead from '../components/seo/SEOHead';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -191,16 +191,24 @@ export default function AnalyticsDashboard() {
     return searchParams.get('search') || '';
   });
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+  const [selectedSlugs, setSelectedSlugs] = useState([]);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      const res = await fetch('/api/share/analytics');
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+      setData(d.data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/share/analytics')
-      .then(res => res.json())
-      .then(d => {
-        if (d.error) throw new Error(d.error);
-        setData(d.data);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -325,6 +333,63 @@ export default function AnalyticsDashboard() {
     XLSX.utils.book_append_sheet(wb, ws, isFiles ? "Shared Files" : "Analytics");
     XLSX.writeFile(wb, isFiles ? "shared_files_analytics.xlsx" : "url_analytics_export.xlsx");
     toast.success('XLSX Export downloaded!');
+  };
+
+  const deleteSlugs = async (slugs) => {
+    if (!window.confirm(`Are you sure you want to delete ${slugs.length} item(s)? This will also permanently remove files from Cloudflare R2 storage.`)) return;
+    
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/links', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slugs })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Delete failed');
+      
+      toast.success(d.message);
+      setSelectedSlugs([]);
+      fetchData();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteAll = async () => {
+    const type = searchParams.get('type') || 'urls';
+    const typeLabel = type === 'files' ? 'all SHARED FILES' : 'all SHORTENED URLs';
+    
+    if (!window.confirm(`CRITICAL ACTION: Are you sure you want to delete \${typeLabel}? This cannot be undone and will clear your cloud storage.`)) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/links/all?type=\${type}`, { method: 'DELETE' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Clear failed');
+      
+      toast.success(d.message);
+      setSelectedSlugs([]);
+      fetchData();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (slug) => {
+    setSelectedSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
+  };
+
+  const toggleSelectAll = (visibleSlugs) => {
+    if (selectedSlugs.length === visibleSlugs.length) {
+      setSelectedSlugs([]);
+    } else {
+      setSelectedSlugs(visibleSlugs);
+    }
   };
 
   if (loading) return (
@@ -495,7 +560,15 @@ export default function AnalyticsDashboard() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            {selectedSlugs.length > 0 && (
+              <button className="btn-secondary" style={{ borderColor: '#ef4444', color: '#ef4444' }} onClick={() => deleteSlugs(selectedSlugs)} disabled={deleting}>
+                <Trash2 size={18} /> Delete Selected ({selectedSlugs.length})
+              </button>
+            )}
+            <button className="btn-secondary" style={{ borderColor: '#ef4444', color: '#ef4444' }} onClick={deleteAll} disabled={deleting}>
+              <Trash2 size={18} /> Delete All {searchParams.get('type') === 'files' ? 'Files' : 'Links'}
+            </button>
             <button className="btn-secondary" onClick={exportCSV}>
               <Download size={18} /> Export CSV
             </button>
@@ -510,6 +583,13 @@ export default function AnalyticsDashboard() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: '40px' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filteredAndSortedLinks.filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName).length > 0 && selectedSlugs.length === filteredAndSortedLinks.filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName).length}
+                      onChange={() => toggleSelectAll(filteredAndSortedLinks.filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName).map(l => l.slug))}
+                    />
+                  </th>
                   <th onClick={() => handleSort('slug')}>Alias {sortConfig.key === 'slug' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
                   {searchParams.get('type') === 'files' ? (
                     <>
@@ -527,6 +607,7 @@ export default function AnalyticsDashboard() {
                   <th onClick={() => handleSort('downloadCount')}>Clicks {sortConfig.key === 'downloadCount' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
                   <th onClick={() => handleSort('createdAt')}>Created {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
                   <th onClick={() => handleSort('lastClicked')}>Last Clicked {sortConfig.key === 'lastClicked' && (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ display:'inline' }}/> : <ArrowDown size={14} style={{ display:'inline' }}/>)}</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -540,7 +621,14 @@ export default function AnalyticsDashboard() {
                   filteredAndSortedLinks
                     .filter(l => searchParams.get('type') === 'files' ? l.originalName : !l.originalName)
                     .map((link) => (
-                    <tr key={link.slug}>
+                    <tr key={link.slug} style={{ background: selectedSlugs.includes(link.slug) ? 'rgba(96, 165, 250, 0.05)' : 'none' }}>
+                      <td>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSlugs.includes(link.slug)}
+                          onChange={() => toggleSelect(link.slug)}
+                        />
+                      </td>
                       <td style={{ fontWeight: '500', color: 'var(--accent-primary)' }}>/s/{link.slug}</td>
                       {searchParams.get('type') === 'files' ? (
                         <>
@@ -562,6 +650,16 @@ export default function AnalyticsDashboard() {
                       <td style={{ fontFamily: 'monospace', fontSize: '1.1rem' }}>{link.downloadCount}</td>
                       <td>{new Date(link.createdAt || link.uploadedAt).toLocaleDateString()}</td>
                       <td>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString() : 'Never'}</td>
+                      <td>
+                        <button 
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.5rem' }}
+                          onClick={() => deleteSlugs([link.slug])}
+                          title="Delete"
+                          disabled={deleting}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}

@@ -4,8 +4,8 @@ import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, Ti
 import { Link } from 'react-router-dom';
 
 const MAX_FILE_SIZE = 250 * 1024 * 1024;
-const ACCEPTED_FILE_TYPES = 'audio/*,video/*,.pdf,application/pdf';
-const EXTENSION_FALLBACKS = ['.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.oga', '.weba', '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.wmv', '.webm', '.mpeg', '.mpg', '.3gp', '.pdf'];
+const ACCEPTED_FILE_TYPES = 'image/*,audio/*,video/*,.pdf,application/pdf';
+const EXTENSION_FALLBACKS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.oga', '.weba', '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.wmv', '.webm', '.mpeg', '.mpg', '.3gp', '.pdf'];
 const CUSTOM_UNITS = {
   seconds: 1,
   minutes: 60,
@@ -259,13 +259,14 @@ export default function FileShare() {
   };
 
   const validateFile = (selectedFile) => {
-    const isSupportedType = selectedFile.type.startsWith('audio/')
+    const isSupportedType = selectedFile.type.startsWith('image/')
+      || selectedFile.type.startsWith('audio/')
       || selectedFile.type.startsWith('video/')
       || selectedFile.type === 'application/pdf'
       || EXTENSION_FALLBACKS.some((extension) => selectedFile.name.toLowerCase().endsWith(extension));
 
     if (!isSupportedType) {
-      return 'Only audio, video, and PDF files are supported.';
+      return 'Only images, audio, video, and PDF files are supported.';
     }
 
     if (selectedFile.size > MAX_FILE_SIZE) {
@@ -457,7 +458,7 @@ export default function FileShare() {
               After expiry, visitors will see "Link expired" and be asked to contact the creator for access.
             </p>
             <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              Supports PDF, MP3, MP4, and most audio or video formats up to 250 MB.
+              Supports Images, PDF, MP3, MP4, and most media formats up to 250 MB.
             </p>
           </OptionCard>
 
@@ -472,7 +473,7 @@ export default function FileShare() {
             <UploadIcon />
             <h3>Drag & Drop your file here</h3>
             <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-              or click to browse audio, video, or PDF files (Max 250MB)
+              or click to browse images, audio, video, or PDF files (Max 250MB)
             </p>
             <HiddenInput
               type="file"
