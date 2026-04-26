@@ -1,7 +1,9 @@
 import React, { useState, useRef } from 'react';
 import styled from 'styled-components';
 import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import FormBuilder from '../components/FormBuilder';
+import { useAuth } from '../context/AuthContext';
 
 const MAX_FILE_SIZE = 250 * 1024 * 1024;
 const ACCEPTED_FILE_TYPES = 'image/*,audio/*,video/*,.pdf,application/pdf';
@@ -205,6 +207,8 @@ const Button = styled(Link)`
 `;
 
 export default function FileShare() {
+  const { token, user } = useAuth();
+  const location = useLocation();
   const expiryOptions = [
     { value: 'never', label: 'Never expire', seconds: 0 },
     { value: '1h', label: '1 hour', seconds: 3600 },
@@ -222,6 +226,7 @@ export default function FileShare() {
   const [expiryOption, setExpiryOption] = useState('never');
   const [customDuration, setCustomDuration] = useState('30');
   const [customUnit, setCustomUnit] = useState('minutes');
+  const [formConfig, setFormConfig] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   
@@ -303,9 +308,11 @@ export default function FileShare() {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('expiresInSeconds', String(expiresInSeconds || 0));
+    if (formConfig) formData.append('formConfig', JSON.stringify(formConfig));
 
     const response = await fetch('/api/share/upload', {
       method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: formData,
     });
 
@@ -321,7 +328,10 @@ export default function FileShare() {
     setProgress(5);
     const initResponse = await fetch('/api/share/upload-url', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({
         originalName: selectedFile.name,
         mimeType: selectedFile.type || 'application/octet-stream',
@@ -340,7 +350,10 @@ export default function FileShare() {
 
     const completeResponse = await fetch('/api/share/complete-upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({
         slug: initData.data.slug,
         key: initData.data.key,
@@ -348,6 +361,7 @@ export default function FileShare() {
         mimeType: selectedFile.type || 'application/octet-stream',
         size: selectedFile.size,
         expiresInSeconds,
+        formConfig
       }),
     });
 
@@ -385,19 +399,6 @@ export default function FileShare() {
       setShortUrl(data.shortUrl);
       setExpiresAt(data.expiresAt || null);
     } catch (err) {
-      try {
-        if (window.location.hostname === 'localhost') {
-          const fallbackData = await uploadThroughServer(selectedFile, expiresInSeconds);
-          setProgress(100);
-          setShortUrl(fallbackData.shortUrl);
-          setExpiresAt(fallbackData.expiresAt || null);
-          return;
-        }
-      } catch (fallbackError) {
-        setError(fallbackError.message);
-        return;
-      }
-
       setError(err.message);
     } finally {
       setUploading(false);
@@ -461,6 +462,13 @@ export default function FileShare() {
               Supports Images, PDF, MP3, MP4, and most media formats up to 250 MB.
             </p>
           </OptionCard>
+
+          {user && <FormBuilder onChange={setFormConfig} />}
+          {!user && (
+            <div style={{ background: 'rgba(99,102,241,0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <p style={{ color: 'var(--text-primary)', margin: 0 }}>Want to require visitor details (lead generation)? <Link to="/login" state={{ from: location.pathname }} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Log in</Link> to unlock this feature.</p>
+            </div>
+          )}
 
           <DropZone
             $isDragActive={isDragActive}

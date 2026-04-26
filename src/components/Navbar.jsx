@@ -1,22 +1,31 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Settings, Star, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X, Settings, Star, PanelLeftClose, PanelLeftOpen, User, LogOut } from 'lucide-react';
 import Switch from './ui/sky-toggle';
 import NavHeader from './ui/nav-header';
+import SearchBar from './SearchBar';
 import { toolSections } from '../data/toolCatalog';
 import { headerPages } from '../data/contentPages';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../context/AuthContext';
 import './Navbar.css';
 
 const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   const toggleMenu = () => setIsOpen(!isOpen);
 
   const isLinkActive = (path) =>
     location.pathname === path || (path === '/guides' && location.pathname.startsWith('/guides/'));
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <nav className="navbar glass-panel expanded">
@@ -36,7 +45,7 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
             <div className="logo-icon">
               <Settings size={24} color="var(--accent-primary)" />
             </div>
-            <span className="text-gradient logo-text">MultiTool</span>
+            <span className="text-gradient logo-text hidden-mobile">MultiTool</span>
           </Link>
         </div>
 
@@ -47,6 +56,11 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
           </div>
         </div>
         
+        {/* Search Bar (Shows on desktop and mobile if styled correctly) */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', maxWidth: '400px', margin: '0 1rem' }}>
+          <SearchBar />
+        </div>
+        
         <div className="navbar-actions-right hidden-mobile">
           <Link 
             to="/favorites" 
@@ -55,6 +69,21 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
           >
             <span className="nav-text">Favorites</span> <Star size={16} />
           </Link>
+
+          {user ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Link to="/analytics" className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem' }}>
+                Dashboard
+              </Link>
+              <button onClick={handleLogout} className="btn-icon" title="Logout">
+                <LogOut size={18} />
+              </button>
+            </div>
+          ) : (
+            <Link to="/login" className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <User size={16} /> Login
+            </Link>
+          )}
           
           <div className="theme-toggle-wrapper" title="Toggle Theme">
             <Switch 

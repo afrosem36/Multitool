@@ -82,20 +82,31 @@ const QrDecoder = () => {
     setCopied(false);
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
+      let stream;
+      try {
+        // Attempt to get the rear camera with ideal high resolution
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      } catch (err) {
+        console.warn("Primary camera request failed, attempting fallback...", err);
+        // Fallback to any available camera if the specific constraints fail
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
       streamRef.current = stream;
       setUseCamera(true);
       isScanning.current = true;
     } catch (err) {
-      console.error(err);
-      setError('Unable to access camera. Please ensure permissions are granted.');
+      console.error("Camera access failed completely:", err);
+      setError('Unable to access camera. Please ensure permissions are granted in your browser settings.');
     }
   };
 

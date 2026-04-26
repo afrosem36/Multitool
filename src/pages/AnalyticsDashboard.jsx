@@ -193,13 +193,26 @@ export default function AnalyticsDashboard() {
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const [selectedSlugs, setSelectedSlugs] = useState([]);
   const [deleting, setDeleting] = useState(false);
+  const [feedbackData, setFeedbackData] = useState(null);
 
   const fetchData = async () => {
     try {
-      const res = await fetch('/api/share/analytics');
+      setLoading(true);
+      const res = await fetch('/api/share/analytics', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` }
+      });
       const d = await res.json();
       if (d.error) throw new Error(d.error);
       setData(d.data);
+
+      // Also fetch feedback
+      const fbRes = await fetch('/api/feedback', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` }
+      });
+      if (fbRes.ok) {
+        const fbJson = await fbRes.json();
+        setFeedbackData(fbJson.data);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -674,7 +687,7 @@ export default function AnalyticsDashboard() {
         <div style={{ marginTop: '3rem' }}>
           <Header style={{ marginBottom: '1rem' }}>
             <h2>Collected Visitor Leads</h2>
-            <p>Contact information collected from visitors before they accessed your short links.</p>
+            <p>Data collected from visitors before they accessed your short links.</p>
           </Header>
 
           <Toolbar style={{ justifyContent: 'flex-end' }}>
@@ -686,10 +699,9 @@ export default function AnalyticsDashboard() {
               }
               const worksheetData = filteredLeads.map(l => ({
                 'Link Alias': l.slug,
-                'Visitor Name': l.name,
-                'Contact Info': l.contact,
                 'Time Collected': new Date(l.timestamp).toLocaleString(),
-                'IP Address': l.ip || 'Unknown'
+                'IP Address': l.ip || 'Unknown',
+                ...Object.entries(l.data || {}).reduce((acc, [k, v]) => ({ ...acc, [k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())]: v }), {})
               }));
               const ws = XLSX.utils.json_to_sheet(worksheetData);
               const wb = XLSX.utils.book_new();
@@ -706,26 +718,33 @@ export default function AnalyticsDashboard() {
               <table>
                 <thead>
                   <tr>
-                    <th>Visitor Name</th>
-                    <th>Contact Info</th>
-                    <th>Clicked Link</th>
+                    <th>Link Alias</th>
+                    <th>Collected Data</th>
                     <th>Time Collected</th>
                   </tr>
                 </thead>
                 <tbody>
                   {!data?.leads || data.leads.filter(l => l.slug.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                      <td colSpan="3" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                         No visitor leads collected yet for this query. Enable Data Collection when generating a link to start collecting leads.
                       </td>
                     </tr>
                   ) : (
                     data.leads.filter(l => l.slug.toLowerCase().includes(searchTerm.toLowerCase())).map((lead, index) => (
                       <tr key={index}>
-                        <td style={{ fontWeight: '500' }}>{lead.name}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{lead.contact}</td>
                         <td>
                           <span style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>/s/{lead.slug}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {Object.entries(lead.data || {}).map(([k, v]) => (
+                              <div key={k} style={{ fontSize: '0.9rem' }}>
+                                <span style={{ color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}:</span>{' '}
+                                <strong style={{ color: 'var(--text-primary)' }}>{v}</strong>
+                              </div>
+                            ))}
+                          </div>
                         </td>
                         <td>{new Date(lead.timestamp).toLocaleString()}</td>
                       </tr>

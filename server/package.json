@@ -1,26 +1,25 @@
 {
   "name": "multi-tool-backend",
   "version": "1.0.0",
-  "description": "Node.js backend for PDF processing via iLovePDF",
+  "description": "Cloudflare Worker backend for MultiTool",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "wrangler dev --port 5000",
+    "dev": "wrangler dev --port 5000",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.549.0",
     "@aws-sdk/s3-request-presigner": "^3.549.0",
-    "@ilovepdf/ilovepdf-nodejs": "latest",
     "axios": "^1.6.8",
     "cheerio": "^1.0.0-rc.12",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1",
-    "nanoid": "^5.0.7"
+    "hono": "^4.2.0",
+    "nanoid": "^5.0.7",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "wrangler": "^3.0.0"
   }
 }

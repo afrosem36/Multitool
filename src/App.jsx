@@ -80,11 +80,16 @@ const UrlShortener = React.lazy(() => import('./pages/UrlShortener'));
 const LeadGate = React.lazy(() => import('./pages/LeadGate'));
 const ExpiredLink = React.lazy(() => import('./pages/ExpiredLink'));
 
+// Auth Pages
+import { Login, Signup } from './pages/AuthPages';
+
+const Trending = React.lazy(() => import('./pages/Trending'));
+
 import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Suspense fallback={<PageLoader />}>
         <Routes>
           {/* Standalone route without Layout */}
@@ -96,7 +101,10 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
                 <Route path="/favorites" element={<FavoritesPage />} />
+                <Route path="/trending" element={<Trending />} />
             <Route path="/guides" element={<GuidesHubPage />} />
             <Route path="/pdf-tools" element={<ToolHubPage sectionId="pdf" />} />
             <Route path="/image-tools" element={<ToolHubPage sectionId="image" />} />
@@ -156,6 +164,7 @@ function App() {
               <>
                 <Route path="/share" element={<FileShare />} />
                 <Route path="/analytics" element={<AnalyticsDashboard />} />
+                <Route path="/dashboard" element={<AnalyticsDashboard />} />
               </>
             )}
             {FEATURE_FLAGS.ENABLE_HEIC_CONVERTER && (

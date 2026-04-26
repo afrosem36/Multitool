@@ -327,6 +327,7 @@ export const guideArticles = [
 
 export const headerPages = [
   { label: 'Home', path: '/' },
+  { label: 'Trending', path: '/trending' },
   { label: 'Guides', path: '/guides' },
   { label: 'PDF Tools', path: '/pdf-tools' },
   { label: 'Image Tools', path: '/image-tools' },

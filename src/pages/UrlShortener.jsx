@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Link, Clipboard, Check, Link as LinkIcon, RefreshCw, Trash2, ArrowRight, Database, User, Mail } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Clipboard, Check, Link as LinkIcon, RefreshCw, Trash2, ArrowRight, Database } from 'lucide-react';
 import SeoHead from '../components/seo/SEOHead';
 import { toast } from 'react-hot-toast';
-import Switch from '../components/ui/sky-toggle'; // using the same switch from Navbar
+import FormBuilder from '../components/FormBuilder';
+import { useAuth } from '../context/AuthContext';
 
 const UrlShortener = () => {
+  const { token, user } = useAuth();
+  const location = useLocation();
   const [longUrl, setLongUrl] = useState('');
   const [customSlug, setCustomSlug] = useState('');
-  const [isDataCollectionEnabled, setIsDataCollectionEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [history, setHistory] = useState([]);
   const [copiedSlug, setCopiedSlug] = useState(null);
+  const [formConfig, setFormConfig] = useState(null);
 
-  // Load history from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('urlShortenerHistory');
     if (saved) {
@@ -51,21 +54,19 @@ const UrlShortener = () => {
     }
 
     setIsLoading(true);
-    try {
-      const payload = { 
-        longUrl, 
-        customSlug: customSlug || undefined,
-        requiresDataCollection: isDataCollectionEnabled
-      };
 
+    try {
       const response = await fetch('/api/shorten', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ longUrl, customSlug: customSlug || undefined, formConfig }),
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to shorten URL');
       }
@@ -75,13 +76,13 @@ const UrlShortener = () => {
         shortUrl: data.data.shortUrl,
         longUrl,
         createdAt: new Date().toISOString(),
-        hasDataCollection: isDataCollectionEnabled
+        hasDataCollection: !!formConfig
       });
 
       toast.success('URL Shortened successfully!');
       setLongUrl('');
       setCustomSlug('');
-      setIsDataCollectionEnabled(false);
+      setFormConfig(null);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -174,35 +175,15 @@ const UrlShortener = () => {
                 </div>
               </div>
 
-              {/* Data Collection Toggle */}
-              <div style={{ 
-                padding: '1.5rem', 
-                background: isDataCollectionEnabled ? 'rgba(99, 102, 241, 0.05)' : 'rgba(0,0,0,0.1)', 
-                border: isDataCollectionEnabled ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid var(--border-color)',
-                borderRadius: '12px',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem',
-                cursor: 'pointer'
-              }} onClick={() => setIsDataCollectionEnabled(!isDataCollectionEnabled)}>
-                <input 
-                  type="checkbox" 
-                  checked={isDataCollectionEnabled} 
-                  onChange={(e) => setIsDataCollectionEnabled(e.target.checked)}
-                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <div>
-                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                    <Database size={18} color={isDataCollectionEnabled ? 'var(--primary-color)' : 'var(--text-secondary)'} />
-                    Enable Visitor Data Collection
-                  </h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-                    Require visitors to enter their Name and Contact Info before redirecting.
+              {user ? (
+                <FormBuilder onChange={setFormConfig} />
+              ) : (
+                <div style={{ background: 'rgba(99,102,241,0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                  <p style={{ color: 'var(--text-primary)', margin: 0 }}>
+                    Want to require visitor details (lead generation)? <Link to="/login" state={{ from: location.pathname }} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Log in</Link> to unlock this feature.
                   </p>
                 </div>
-              </div>
+              )}
 
               <button 
                 type="submit" 
