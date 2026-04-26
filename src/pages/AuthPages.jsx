@@ -9,16 +9,19 @@ const GoogleLoginButton = ({ onSuccess, onError, isLoading }) => {
   const googleButtonRef = React.useRef(null);
 
   React.useEffect(() => {
-    if (window.google && googleButtonRef.current) {
+    if (window.google && googleButtonRef.current && !window.googleInitialized) {
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: (response) => onSuccess(response.credential),
       });
+      window.googleInitialized = true;
+    }
 
+    if (window.google && googleButtonRef.current) {
       window.google.accounts.id.renderButton(googleButtonRef.current, {
         theme: 'outline',
         size: 'large',
-        width: '100%',
+        width: 250,
         text: 'continue_with',
         shape: 'rectangular',
       });
@@ -118,10 +121,10 @@ export const Login = () => {
         </form>
 
         <GoogleLoginButton 
-          onSuccess={async (credential) => {
+          onSuccess={async (token) => {
             setError('');
             setIsLoading(true);
-            const result = await loginWithGoogle(credential);
+            const result = await loginWithGoogle(token);
             setIsLoading(false);
             if (result.success) {
               const from = location.state?.from || '/dashboard';
@@ -241,10 +244,10 @@ export const Signup = () => {
         </form>
 
         <GoogleLoginButton 
-          onSuccess={async (credential) => {
+          onSuccess={async (token) => {
             setError('');
             setIsLoading(true);
-            const result = await loginWithGoogle(credential);
+            const result = await loginWithGoogle(token);
             setIsLoading(false);
             if (result.success) {
               const from = location.state?.from || '/dashboard';

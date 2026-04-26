@@ -79,11 +79,11 @@ export const AuthProvider = ({ children }) => {
     return { success: false, error: data.error || 'Registration failed' };
   };
 
-  const loginWithGoogle = async (credential) => {
+  const loginWithGoogle = async (token) => {
     const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential })
+      body: JSON.stringify({ token })
     });
     const data = await res.json();
     if (res.ok && data.data?.token) {

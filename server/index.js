@@ -77,39 +77,55 @@ const requireAuth = async (c, next) => {
   await next();
 };
 
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+});
+
 app.use('*', authMiddleware);
 
 app.post('/api/auth/google', async (c) => {
-  const { credential } = await c.req.json();
-  if (!credential) return c.json({ error: 'Google credential required' }, 400);
+  const { token } = await c.req.json();
+  if (!token) return c.json({ error: 'Google token required' }, 400);
 
   // Verify token with Google
-  const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
-  const googleData = await googleRes.json();
+  try {
+    const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+    const googleData = await googleRes.json();
 
-  if (!googleRes.ok || googleData.aud !== c.env.GOOGLE_CLIENT_ID) {
-    return c.json({ error: 'Invalid Google token' }, 401);
+    if (!googleRes.ok) {
+      console.error('Google Token Info Error:', googleData);
+      return c.json({ error: 'Invalid Google token' }, 401);
+    }
+
+    if (googleData.aud !== c.env.GOOGLE_CLIENT_ID) {
+      console.error('Google Client ID Mismatch. Expected:', c.env.GOOGLE_CLIENT_ID, 'Got:', googleData.aud);
+      return c.json({ error: 'Invalid Google token audience' }, 401);
+    }
+
+    const { email, sub: googleId, name } = googleData;
+    const sanitizedEmail = email.trim().toLowerCase();
+
+    // Find or create user
+    let user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(sanitizedEmail).first();
+
+    if (!user) {
+      const id = nanoid();
+      const dummyHash = bcrypt.hashSync(nanoid(), 10); // Random hash for Google users
+      await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
+        .bind(id, name || '', sanitizedEmail, dummyHash).run();
+      user = { id, email: sanitizedEmail, name: name || '' };
+    }
+
+    const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
+    const payload = { id: user.id, email: user.email, exp };
+    const token = await sign(payload, c.env.JWT_SECRET, "HS256");
+
+    return c.json({ data: { user: { id: user.id, email: user.email }, token } });
+  } catch (err) {
+    console.error('Google Auth Error:', err.message);
+    return c.json({ error: 'Auth service unavailable' }, 503);
   }
-
-  const { email, sub: googleId, name } = googleData;
-  const sanitizedEmail = email.trim().toLowerCase();
-
-  // Find or create user
-  let user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(sanitizedEmail).first();
-
-  if (!user) {
-    const id = nanoid();
-    const dummyHash = bcrypt.hashSync(nanoid(), 10); // Random hash for Google users
-    await c.env.DB.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)')
-      .bind(id, sanitizedEmail, dummyHash).run();
-    user = { id, email: sanitizedEmail };
-  }
-
-  const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
-  const payload = { id: user.id, email: user.email, exp };
-  const token = await sign(payload, c.env.JWT_SECRET, "HS256");
-
-  return c.json({ data: { user: { id: user.id, email: user.email }, token } });
 });
 
 
@@ -123,12 +139,12 @@ app.post('/api/auth/register', async (c) => {
 
   const email = rawEmail.trim().toLowerCase();
 
-  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  const existing = await c.env.multitool_db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   if (existing) return c.json({ error: 'Email already exists' }, 400);
 
   const id = nanoid();
   const hash = bcrypt.hashSync(password, 10);
-  await c.env.DB.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)')
+  await c.env.multitool_db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)')
     .bind(id, email, hash).run();
 
   const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
@@ -141,7 +157,7 @@ app.post('/api/auth/login', async (c) => {
   const { email: rawEmail, password } = await c.req.json();
   const email = rawEmail.trim().toLowerCase();
   
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+  const user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
   
   if (!user) {
     console.log('Login failed: User not found for email:', email);
@@ -186,13 +202,13 @@ app.post('/api/auth/forgot-password', async (c) => {
   
   if (!email) return c.json({ message: 'If that email exists a reset link has been sent' });
 
-  const user = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  const user = await c.env.multitool_db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   
   if (user) {
     const token = nanoid(32);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins
     
-    await c.env.DB.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)')
+    await c.env.multitool_db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)')
       .bind(token, user.id, expiresAt).run();
 
     const resetLink = `${c.env.FRONTEND_URL}/reset-password?token=${token}`;
@@ -225,7 +241,7 @@ app.post('/api/auth/forgot-password', async (c) => {
 
 app.get('/api/auth/verify-reset-token/:token', async (c) => {
   const token = c.req.param('token');
-  const reset = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
+  const reset = await c.env.multitool_db.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
   
   if (!reset) return c.json({ valid: false, error: 'Token expired or invalid' });
   
@@ -239,15 +255,15 @@ app.get('/api/auth/verify-reset-token/:token', async (c) => {
 app.post('/api/auth/reset-password', async (c) => {
   const { token, newPassword } = await c.req.json();
   
-  const reset = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
+  const reset = await c.env.multitool_db.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
   if (!reset || new Date(reset.expires_at).getTime() <= Date.now()) {
     return c.json({ error: 'Token expired or invalid' }, 400);
   }
   
   const hash = bcrypt.hashSync(newPassword, 10);
   
-  await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(hash, reset.user_id).run();
-  await c.env.DB.prepare('UPDATE password_resets SET used = 1 WHERE token = ?').bind(token).run();
+  await c.env.multitool_db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(hash, reset.user_id).run();
+  await c.env.multitool_db.prepare('UPDATE password_resets SET used = 1 WHERE token = ?').bind(token).run();
   
   return c.json({ message: 'Password reset successfully' });
 });
@@ -284,7 +300,7 @@ app.post('/api/share/upload', async (c) => {
     expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
   }
 
-  await c.env.DB.prepare(`
+  await c.env.multitool_db.prepare(`
     INSERT INTO links (slug, original_name, r2_key, mime_type, size, user_id, expires_at, form_config, requires_data_collection, gate_bg_key)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
@@ -331,10 +347,10 @@ app.post('/api/shorten', async (c) => {
   if (!longUrl) return c.json({ error: 'longUrl required' }, 400);
 
   const slug = customSlug || nanoid(8);
-  const existing = await c.env.DB.prepare('SELECT slug FROM links WHERE slug = ?').bind(slug).first();
+  const existing = await c.env.multitool_db.prepare('SELECT slug FROM links WHERE slug = ?').bind(slug).first();
   if (existing) return c.json({ error: 'Slug already exists' }, 400);
 
-  await c.env.DB.prepare(`
+  await c.env.multitool_db.prepare(`
     INSERT INTO links (slug, long_url, user_id, form_config, requires_data_collection, gate_bg_key)
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(
@@ -355,7 +371,7 @@ app.post('/api/shorten', async (c) => {
 
 app.get('/s/:slug', async (c) => {
   const slug = c.req.param('slug');
-  const link = await c.env.DB.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
+  const link = await c.env.multitool_db.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
 
   if (!link) return c.text('Link not found', 404);
 
@@ -365,14 +381,14 @@ app.get('/s/:slug', async (c) => {
   }
 
   // Analytics
-  await c.env.DB.prepare('UPDATE links SET download_count = download_count + 1 WHERE slug = ?').bind(slug).run();
+  await c.env.multitool_db.prepare('UPDATE links SET download_count = download_count + 1 WHERE slug = ?').bind(slug).run();
   
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
   const country = c.req.header('cf-ipcountry') || 'Unknown';
   const userAgent = c.req.header('user-agent') || '';
   const referer = c.req.header('referer') || '';
 
-  await c.env.DB.prepare(`
+  await c.env.multitool_db.prepare(`
     INSERT INTO analytics (slug, ip, user_agent, referer, country)
     VALUES (?, ?, ?, ?, ?)
   `).bind(slug, ip, userAgent, referer, country).run();
@@ -403,7 +419,7 @@ app.get('/s/:slug', async (c) => {
 // Gate config fetcher (Public)
 app.get('/api/s/:slug/config', async (c) => {
   const slug = c.req.param('slug');
-  const link = await c.env.DB.prepare('SELECT form_config FROM links WHERE slug = ?').bind(slug).first();
+  const link = await c.env.multitool_db.prepare('SELECT form_config FROM links WHERE slug = ?').bind(slug).first();
   if (!link) return c.json({ error: 'Not found' }, 404);
   return c.json({ data: { formConfig: link.form_config ? JSON.parse(link.form_config) : null } });
 });
@@ -412,22 +428,22 @@ app.get('/api/s/:slug/config', async (c) => {
 app.post('/api/s/:slug/submit', async (c) => {
   const slug = c.req.param('slug');
   const visitorData = await c.req.json();
-  const link = await c.env.DB.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
+  const link = await c.env.multitool_db.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
 
   if (!link) return c.json({ error: 'Not found' }, 404);
 
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
   
   // Find latest analytics row for this IP and slug, update it with visitor data
-  const latestAnalytics = await c.env.DB.prepare(`
+  const latestAnalytics = await c.env.multitool_db.prepare(`
     SELECT id FROM analytics WHERE slug = ? AND ip = ? ORDER BY timestamp DESC LIMIT 1
   `).bind(slug, ip).first();
 
   if (latestAnalytics) {
-    await c.env.DB.prepare('UPDATE analytics SET visitor_data = ? WHERE id = ?')
+    await c.env.multitool_db.prepare('UPDATE analytics SET visitor_data = ? WHERE id = ?')
       .bind(JSON.stringify(visitorData), latestAnalytics.id).run();
   } else {
-    await c.env.DB.prepare(`
+    await c.env.multitool_db.prepare(`
       INSERT INTO analytics (slug, ip, visitor_data) VALUES (?, ?, ?)
     `).bind(slug, ip, JSON.stringify(visitorData)).run();
   }
@@ -437,7 +453,7 @@ app.post('/api/s/:slug/submit', async (c) => {
 
 app.get('/api/s/:slug/background', async (c) => {
   const slug = c.req.param('slug');
-  const link = await c.env.DB.prepare('SELECT gate_bg_key FROM links WHERE slug = ?').bind(slug).first();
+  const link = await c.env.multitool_db.prepare('SELECT gate_bg_key FROM links WHERE slug = ?').bind(slug).first();
   
   if (!link || !link.gate_bg_key) return c.json({ data: null });
   
@@ -462,7 +478,7 @@ app.get('/api/share/analytics', requireAuth, async (c) => {
   const user = c.get('user');
   
   // Get all links for this user
-  const { results: links } = await c.env.DB.prepare('SELECT * FROM links WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all();
+  const { results: links } = await c.env.multitool_db.prepare('SELECT * FROM links WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all();
   
   if (links.length === 0) {
     return c.json({ data: { totalClicks: 0, uniqueVisitors: 0, topCountries: [], topReferers: [], sparkline: [], links: [], leads: [] } });
@@ -470,7 +486,7 @@ app.get('/api/share/analytics', requireAuth, async (c) => {
 
   const slugs = links.map(l => l.slug);
   // Get all analytics for these links
-  const { results: analytics } = await c.env.DB.prepare(`
+  const { results: analytics } = await c.env.multitool_db.prepare(`
     SELECT a.* 
     FROM analytics a 
     JOIN links l ON a.slug = l.slug 
@@ -538,7 +554,7 @@ app.delete('/api/links', requireAuth, async (c) => {
   if (!slugs || slugs.length === 0) return c.json({ error: 'Slugs required' }, 400);
 
   const placeholders = slugs.map(() => '?').join(',');
-  const { results: targetLinks } = await c.env.DB.prepare(`SELECT r2_key FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).all();
+  const { results: targetLinks } = await c.env.multitool_db.prepare(`SELECT r2_key FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).all();
 
   const keysToDelete = targetLinks.filter(l => l.r2_key).map(l => ({ Key: l.r2_key }));
   
@@ -550,7 +566,7 @@ app.delete('/api/links', requireAuth, async (c) => {
     })).catch(e => console.error("R2 deletion failed", e));
   }
 
-  await c.env.DB.prepare(`DELETE FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).run();
+  await c.env.multitool_db.prepare(`DELETE FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).run();
   
   return c.json({ message: 'Deleted successfully' });
 });
@@ -565,12 +581,12 @@ app.post('/api/feedback', async (c) => {
 
   const fullMessage = context ? `[Context: ${context}] ${message}` : message;
 
-  await c.env.DB.prepare('INSERT INTO feedback (email, message) VALUES (?, ?)').bind(email || '', fullMessage).run();
+  await c.env.multitool_db.prepare('INSERT INTO feedback (email, message) VALUES (?, ?)').bind(email || '', fullMessage).run();
   return c.json({ message: 'Feedback received' });
 });
 
 app.get('/api/feedback', requireAuth, async (c) => {
-  const { results: feedback } = await c.env.DB.prepare('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 100').all();
+  const { results: feedback } = await c.env.multitool_db.prepare('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 100').all();
   return c.json({ data: feedback });
 });
 
