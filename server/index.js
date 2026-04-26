@@ -95,12 +95,17 @@ app.get('/api/health', (c) => {
 app.use('*', authMiddleware);
 
 app.post('/api/auth/google', async (c) => {
+  console.log("🔥 HIT GOOGLE AUTH ROUTE");
   try {
     const body = await c.req.json().catch(() => null);
+    console.log("📦 BODY:", body);
+
     if (!body || !body.token) {
+      console.log("❌ No token received");
       return c.json({ error: 'Google token required' }, 400);
     }
 
+    console.log("🔑 Token received");
     const { token } = body;
 
     // 🔥 Check DB binding
@@ -111,10 +116,13 @@ app.post('/api/auth/google', async (c) => {
 
     // Verify token with Google
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+    console.log("🌐 Google response status:", googleRes.status);
+    
     const googleData = await googleRes.json();
+    console.log("👤 Google user:", googleData);
 
     if (!googleRes.ok) {
-      console.error('Google Token Info Error:', googleData);
+      console.log("❌ Invalid token");
       return c.json({ error: 'Invalid Google token', details: googleData }, 401);
     }
 
@@ -127,16 +135,18 @@ app.post('/api/auth/google', async (c) => {
     const name = googleData.name || googleData.given_name || "User";
     const sanitizedEmail = email.trim().toLowerCase();
 
+    console.log("💾 Saving user...");
     // Find or create user
     let user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(sanitizedEmail).first();
 
     if (!user) {
       const id = nanoid();
-      const dummyHash = bcrypt.hashSync(nanoid(), 10); // Random hash for Google users
+      const dummyHash = bcrypt.hashSync(nanoid(), 10);
       await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
         .bind(id, name, sanitizedEmail, dummyHash).run();
       user = { id, email: sanitizedEmail, name };
     }
+    console.log("✅ User saved");
 
     const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
     const payload = { id: user.id, email: user.email, exp };
@@ -150,7 +160,7 @@ app.post('/api/auth/google', async (c) => {
       } 
     });
   } catch (err) {
-    console.error('Google Auth Crash Error:', err.message);
+    console.log("💥 ERROR:", err);
     return c.json({ 
       error: 'Server error', 
       message: err.message 
@@ -631,7 +641,7 @@ app.post('/api/tools/usage', async (c) => {
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
   const country = c.req.header('cf-ipcountry') || 'Unknown';
 
-  await c.env.DB.prepare('INSERT INTO tool_usage (tool_id, ip, country) VALUES (?, ?, ?)')
+  await c.env.multitool_db.prepare('INSERT INTO tool_usage (tool_id, ip, country) VALUES (?, ?, ?)')
     .bind(toolId, ip, country).run();
 
   return c.json({ message: 'Usage recorded' });
@@ -639,7 +649,7 @@ app.post('/api/tools/usage', async (c) => {
 
 app.get('/api/tools/trending', async (c) => {
   // Get counts for the last 7 days
-  const { results } = await c.env.DB.prepare(`
+  const { results } = await c.env.multitool_db.prepare(`
     SELECT tool_id, COUNT(*) as usageCount 
     FROM tool_usage 
     WHERE timestamp >= date('now', '-7 days')
