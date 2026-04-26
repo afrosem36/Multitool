@@ -489,7 +489,8 @@ app.get('/s/:slug', asyncHandler(async (req, res) => {
       new GetObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME,
         Key: linkInfo.r2Key,
-        ResponseContentDisposition: `attachment; filename="${sanitizeFileName(linkInfo.originalName)}"`,
+        ResponseContentDisposition: `inline; filename="${sanitizeFileName(linkInfo.originalName)}"`,
+        ResponseContentType: linkInfo.mimeType,
       }),
       { expiresIn: 60 }
     );
