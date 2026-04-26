@@ -85,17 +85,27 @@ app.use('*', async (c, next) => {
 app.use('*', authMiddleware);
 
 app.post('/api/auth/google', async (c) => {
-  const { token } = await c.req.json();
-  if (!token) return c.json({ error: 'Google token required' }, 400);
-
-  // Verify token with Google
   try {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !body.token) {
+      return c.json({ error: 'Google token required' }, 400);
+    }
+
+    const { token } = body;
+
+    // 🔥 Check DB binding
+    if (!c.env.multitool_db) {
+      console.error('DB Binding Missing: multitool_db');
+      return c.json({ error: 'Database connection error' }, 500);
+    }
+
+    // Verify token with Google
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
     const googleData = await googleRes.json();
 
     if (!googleRes.ok) {
       console.error('Google Token Info Error:', googleData);
-      return c.json({ error: 'Invalid Google token' }, 401);
+      return c.json({ error: 'Invalid Google token', details: googleData }, 401);
     }
 
     if (googleData.aud !== c.env.GOOGLE_CLIENT_ID) {
@@ -119,12 +129,20 @@ app.post('/api/auth/google', async (c) => {
 
     const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
     const payload = { id: user.id, email: user.email, exp };
-    const token = await sign(payload, c.env.JWT_SECRET, "HS256");
+    const jwtToken = await sign(payload, c.env.JWT_SECRET, "HS256");
 
-    return c.json({ data: { user: { id: user.id, email: user.email }, token } });
+    return c.json({ 
+      data: { 
+        user: { id: user.id, email: user.email, name: user.name }, 
+        token: jwtToken 
+      } 
+    });
   } catch (err) {
-    console.error('Google Auth Error:', err.message);
-    return c.json({ error: 'Auth service unavailable' }, 503);
+    console.error('Google Auth Crash Error:', err.message);
+    return c.json({ 
+      error: 'Server error', 
+      message: err.message 
+    }, 500);
   }
 });
 
