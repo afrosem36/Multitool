@@ -97,74 +97,59 @@ app.use('*', authMiddleware);
 app.post('/api/auth/google', async (c) => {
   console.log("🔥 HIT GOOGLE AUTH ROUTE");
   try {
-    const body = await c.req.json().catch(() => null);
+    const body = await c.req.json();
+    const token = body.token;
     console.log("📦 BODY:", body);
 
-    if (!body || !body.token) {
+    if (!token) {
       console.log("❌ No token received");
-      return c.json({ error: 'Google token required' }, 400);
+      return c.json({ error: "Token missing" }, 400);
     }
 
     console.log("🔑 Token received");
-    const { token } = body;
-
-    // 🔥 Check DB binding
-    if (!c.env.multitool_db) {
-      console.error('DB Binding Missing: multitool_db');
-      return c.json({ error: 'Database connection error' }, 500);
-    }
-
-    // Verify token with Google
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
     console.log("🌐 Google response status:", googleRes.status);
     
     const googleData = await googleRes.json();
     console.log("👤 Google user:", googleData);
 
-    if (!googleRes.ok) {
+    if (googleData.error) {
       console.log("❌ Invalid token");
-      return c.json({ error: 'Invalid Google token', details: googleData }, 401);
-    }
-
-    if (googleData.aud !== c.env.GOOGLE_CLIENT_ID) {
-      console.error('Google Client ID Mismatch. Expected:', c.env.GOOGLE_CLIENT_ID, 'Got:', googleData.aud);
-      return c.json({ error: 'Invalid Google token audience' }, 401);
+      return c.json({ error: "Invalid Google token", details: googleData }, 401);
     }
 
     const email = googleData.email;
-    const name = googleData.name || googleData.given_name || "User";
+    const name = googleData.name || "User";
     const sanitizedEmail = email.trim().toLowerCase();
 
     console.log("💾 Saving user...");
-    // Find or create user
+    // We use nanoid() for the primary key 'id' to match your schema
     let user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(sanitizedEmail).first();
 
     if (!user) {
       const id = nanoid();
-      const dummyHash = bcrypt.hashSync(nanoid(), 10);
+      const dummyHash = bcrypt.hashSync(nanoid(), 10); // Required by schema NOT NULL
       await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
         .bind(id, name, sanitizedEmail, dummyHash).run();
-      user = { id, email: sanitizedEmail, name };
+      user = { id, name, email: sanitizedEmail };
     }
     console.log("✅ User saved");
 
-    const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
+    // Generate JWT token so the frontend stays logged in
+    const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
     const payload = { id: user.id, email: user.email, exp };
     const jwtToken = await sign(payload, c.env.JWT_SECRET, "HS256");
 
-    return c.json({ 
+    return c.json({
       success: true,
-      data: { 
-        user: { id: user.id, email: user.email, name: user.name }, 
-        token: jwtToken 
-      } 
+      data: {
+        token: jwtToken,
+        user: { id: user.id, email: user.email, name: user.name }
+      }
     });
   } catch (err) {
     console.log("💥 ERROR:", err);
-    return c.json({ 
-      error: 'Server error', 
-      message: err.message 
-    }, 500);
+    return c.json({ error: "Server error", message: err.message }, 500);
   }
 });
 
