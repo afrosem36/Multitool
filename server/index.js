@@ -82,6 +82,10 @@ app.use('*', async (c, next) => {
   c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 });
 
+app.get('/api/health', (c) => {
+  return c.json({ ok: true });
+});
+
 app.use('*', authMiddleware);
 
 app.post('/api/auth/google', async (c) => {
@@ -113,7 +117,8 @@ app.post('/api/auth/google', async (c) => {
       return c.json({ error: 'Invalid Google token audience' }, 401);
     }
 
-    const { email, sub: googleId, name } = googleData;
+    const email = googleData.email;
+    const name = googleData.name || googleData.given_name || "User";
     const sanitizedEmail = email.trim().toLowerCase();
 
     // Find or create user
@@ -123,8 +128,8 @@ app.post('/api/auth/google', async (c) => {
       const id = nanoid();
       const dummyHash = bcrypt.hashSync(nanoid(), 10); // Random hash for Google users
       await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
-        .bind(id, name || '', sanitizedEmail, dummyHash).run();
-      user = { id, email: sanitizedEmail, name: name || '' };
+        .bind(id, name, sanitizedEmail, dummyHash).run();
+      user = { id, email: sanitizedEmail, name };
     }
 
     const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
@@ -132,6 +137,7 @@ app.post('/api/auth/google', async (c) => {
     const jwtToken = await sign(payload, c.env.JWT_SECRET, "HS256");
 
     return c.json({ 
+      success: true,
       data: { 
         user: { id: user.id, email: user.email, name: user.name }, 
         token: jwtToken 
