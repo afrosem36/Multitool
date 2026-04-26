@@ -9,6 +9,13 @@ import './ToolHubPage.css';
 const ToolHubPage = ({ sectionId }) => {
   const section = findToolSectionById(sectionId);
   const { isFavorite, toggleFavorite } = useFavorites();
+  const gridRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (window.innerWidth < 768 && gridRef.current) {
+      gridRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [sectionId]);
 
   if (!section) {
     return <Navigate to="/" replace />;
@@ -36,7 +43,7 @@ const ToolHubPage = ({ sectionId }) => {
         </div>
       </div>
 
-      <div className="tool-hub-grid">
+      <div className="tool-hub-grid" ref={gridRef}>
         {section.tools.map((tool, index) => {
           const Icon = tool.icon;
 

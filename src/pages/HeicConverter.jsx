@@ -28,11 +28,11 @@ const Header = styled.div`
 `;
 
 const DropZone = styled.div`
-  border: 2px dashed \${props => props.$active ? 'var(--primary-color)' : 'var(--border-color)'};
+  border: 2px dashed ${props => props.$active ? 'var(--primary-color)' : 'var(--border-color)'};
   border-radius: 1rem;
   padding: 4rem 2rem;
   text-align: center;
-  background: \${props => props.$active ? 'rgba(236, 72, 153, 0.05)' : 'var(--surface-color)'};
+  background: ${props => props.$active ? 'rgba(236, 72, 153, 0.05)' : 'var(--surface-color)'};
   transition: all 0.2s ease;
   cursor: pointer;
 
@@ -148,9 +148,9 @@ const Button = styled.button`
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  background: \${props => props.$primary ? 'var(--primary-color)' : 'var(--surface-color)'};
-  color: \${props => props.$primary ? 'white' : 'var(--text-primary)'};
-  border: 1px solid \${props => props.$primary ? 'transparent' : 'var(--border-color)'};
+  background: ${props => props.$primary ? 'var(--primary-color)' : 'var(--surface-color)'};
+  color: ${props => props.$primary ? 'white' : 'var(--text-primary)'};
+  border: 1px solid ${props => props.$primary ? 'transparent' : 'var(--border-color)'};
   border-radius: 0.5rem;
   font-weight: 500;
   cursor: pointer;
@@ -168,8 +168,8 @@ const Button = styled.button`
 `;
 
 const Badge = styled.span`
-  background: \${props => props.$error ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'};
-  color: \${props => props.$error ? '#ef4444' : '#10b981'};
+  background: ${props => props.$error ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'};
+  color: ${props => props.$error ? '#ef4444' : '#10b981'};
   padding: 0.25rem 0.5rem;
   border-radius: 1rem;
   font-size: 0.75rem;

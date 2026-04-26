@@ -67,10 +67,18 @@
 
 .navbar-menu-center {
   display: flex;
-  justify-content: center;
-  flex: 1;
+  justify-content: flex-start;
+  margin-left: 1rem;
   transition: opacity 0.2s ease;
   white-space: nowrap;
+}
+
+.navbar-search-wrapper {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  max-width: 350px;
+  margin: 0 1.5rem;
 }
 
 .navbar-actions-right {

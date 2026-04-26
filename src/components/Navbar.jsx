@@ -56,8 +56,8 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
           </div>
         </div>
         
-        {/* Search Bar (Shows on desktop and mobile if styled correctly) */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', maxWidth: '400px', margin: '0 1rem' }}>
+        {/* Search Bar - sits inside the navbar bar */}
+        <div className="navbar-search-wrapper hidden-mobile">
           <SearchBar />
         </div>
         

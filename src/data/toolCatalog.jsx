@@ -37,7 +37,8 @@ import {
   Images,
   Wand2,
   FileImage,
-  Link as LinkIcon
+  Link as LinkIcon,
+  FileSpreadsheet
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -157,6 +158,14 @@ export const pdfTools = [
     path: '/to-word',
     icon: FileText,
     color: 'rgba(236, 72, 153, 0.1)'
+  },
+  {
+    id: 'excel-to-pdf',
+    name: 'Excel to PDF',
+    description: 'Convert Microsoft Excel spreadsheets into clean PDF documents.',
+    path: '/pdf/excel-to-pdf',
+    icon: FileSpreadsheet,
+    color: 'rgba(16, 185, 129, 0.1)'
   }
 ];
 

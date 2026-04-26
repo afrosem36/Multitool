@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 import { Link, useLocation } from 'react-router-dom';
 import { Clipboard, Check, Link as LinkIcon, RefreshCw, Trash2, ArrowRight, Database } from 'lucide-react';
 import SeoHead from '../components/seo/SEOHead';
@@ -15,6 +16,7 @@ const UrlShortener = () => {
   const [history, setHistory] = useState([]);
   const [copiedSlug, setCopiedSlug] = useState(null);
   const [formConfig, setFormConfig] = useState(null);
+  const [bgFile, setBgFile] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('urlShortenerHistory');
@@ -56,13 +58,32 @@ const UrlShortener = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/shorten', {
+      let gate_bg_key = null;
+      if (bgFile) {
+        const bgData = new FormData();
+        bgData.append('file', bgFile);
+        const bgRes = await fetch(`${API_BASE_URL}/api/upload-asset`, {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: bgData,
+        });
+        const bgResult = await bgRes.json();
+        if (!bgRes.ok) throw new Error(bgResult.error || 'Background upload failed');
+        gate_bg_key = bgResult.data.key;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/shorten`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ longUrl, customSlug: customSlug || undefined, formConfig }),
+        body: JSON.stringify({ 
+          longUrl, 
+          customSlug: customSlug || undefined, 
+          formConfig,
+          gate_bg_key 
+        }),
       });
 
       const data = await response.json();
@@ -83,6 +104,7 @@ const UrlShortener = () => {
       setLongUrl('');
       setCustomSlug('');
       setFormConfig(null);
+      setBgFile(null);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -176,7 +198,7 @@ const UrlShortener = () => {
               </div>
 
               {user ? (
-                <FormBuilder onChange={setFormConfig} />
+                <FormBuilder onChange={setFormConfig} onBackgroundUpload={setBgFile} />
               ) : (
                 <div style={{ background: 'rgba(99,102,241,0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                   <p style={{ color: 'var(--text-primary)', margin: 0 }}>

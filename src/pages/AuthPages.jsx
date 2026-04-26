@@ -2,14 +2,47 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GOOGLE_CLIENT_ID } from '../config';
 import './AuthStyles.css';
+
+const GoogleLoginButton = ({ onSuccess, onError, isLoading }) => {
+  const googleButtonRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (window.google && googleButtonRef.current) {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => onSuccess(response.credential),
+      });
+
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: '100%',
+        text: 'continue_with',
+        shape: 'rectangular',
+      });
+    }
+  }, [onSuccess]);
+
+  return (
+    <div style={{ width: '100%', marginTop: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', margin: '1rem 0' }}>
+        <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+        <span style={{ padding: '0 10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>OR</span>
+        <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+      </div>
+      <div ref={googleButtonRef} style={{ display: 'flex', justifyContent: 'center' }}></div>
+    </div>
+  );
+};
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -72,12 +105,33 @@ export const Login = () => {
                 required
               />
             </div>
+            <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
+              <Link to="/forgot-password" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Forgot your password?
+              </Link>
+            </div>
           </div>
 
           <button type="submit" className="btn-primary auth-submit" disabled={isLoading}>
             {isLoading ? 'Signing In...' : 'Sign In'} <ArrowRight size={18} />
           </button>
         </form>
+
+        <GoogleLoginButton 
+          onSuccess={async (credential) => {
+            setError('');
+            setIsLoading(true);
+            const result = await loginWithGoogle(credential);
+            setIsLoading(false);
+            if (result.success) {
+              const from = location.state?.from || '/dashboard';
+              navigate(from);
+            } else {
+              setError(result.error);
+            }
+          }}
+          isLoading={isLoading}
+        />
 
         <div className="auth-footer text-center">
           <p>Don't have an account? <Link to="/signup" state={location.state} className="text-gradient font-bold">Sign up here</Link></p>
@@ -93,7 +147,7 @@ export const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -185,6 +239,22 @@ export const Signup = () => {
             {isLoading ? 'Creating Account...' : 'Sign Up'} <ArrowRight size={18} />
           </button>
         </form>
+
+        <GoogleLoginButton 
+          onSuccess={async (credential) => {
+            setError('');
+            setIsLoading(true);
+            const result = await loginWithGoogle(credential);
+            setIsLoading(false);
+            if (result.success) {
+              const from = location.state?.from || '/dashboard';
+              navigate(from);
+            } else {
+              setError(result.error);
+            }
+          }}
+          isLoading={isLoading}
+        />
 
         <div className="auth-footer text-center">
           <p>Already have an account? <Link to="/login" state={location.state} className="text-gradient font-bold">Log in here</Link></p>

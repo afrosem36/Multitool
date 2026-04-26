@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { API_BASE_URL } from '../config';
 import styled from 'styled-components';
 import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -41,11 +42,11 @@ const Header = styled.div`
 `;
 
 const DropZone = styled.div`
-  border: 2px dashed \${props => props.$isDragActive ? 'var(--primary-color)' : 'var(--border-color)'};
+  border: 2px dashed ${props => props.$isDragActive ? 'var(--primary-color)' : 'var(--border-color)'};
   border-radius: 1rem;
   padding: 4rem 2rem;
   text-align: center;
-  background: \${props => props.$isDragActive ? 'rgba(96, 165, 250, 0.05)' : 'var(--surface-color)'};
+  background: ${props => props.$isDragActive ? 'rgba(96, 165, 250, 0.05)' : 'var(--surface-color)'};
   transition: all 0.2s ease;
   cursor: pointer;
 
@@ -227,6 +228,7 @@ export default function FileShare() {
   const [customDuration, setCustomDuration] = useState('30');
   const [customUnit, setCustomUnit] = useState('minutes');
   const [formConfig, setFormConfig] = useState(null);
+  const [bgFile, setBgFile] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   
@@ -281,97 +283,6 @@ export default function FileShare() {
     return null;
   };
 
-  const uploadToSignedUrl = (uploadUrl, selectedFile) => new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', uploadUrl);
-    xhr.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream');
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const percent = Math.round((event.loaded / event.total) * 90);
-      setProgress(Math.max(percent, 5));
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-        return;
-      }
-      reject(new Error('Direct upload to storage failed'));
-    };
-
-    xhr.onerror = () => reject(new Error('Direct upload to storage failed'));
-    xhr.send(selectedFile);
-  });
-
-  const uploadThroughServer = async (selectedFile, expiresInSeconds) => {
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('expiresInSeconds', String(expiresInSeconds || 0));
-    if (formConfig) formData.append('formConfig', JSON.stringify(formConfig));
-
-    const response = await fetch('/api/share/upload', {
-      method: 'POST',
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Upload failed');
-    }
-
-    return data.data;
-  };
-
-  const uploadDirectToR2 = async (selectedFile, expiresInSeconds) => {
-    setProgress(5);
-    const initResponse = await fetch('/api/share/upload-url', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({
-        originalName: selectedFile.name,
-        mimeType: selectedFile.type || 'application/octet-stream',
-        size: selectedFile.size,
-        expiresInSeconds,
-      }),
-    });
-
-    const initData = await initResponse.json();
-    if (!initResponse.ok) {
-      throw new Error(initData.error || 'Unable to prepare upload');
-    }
-
-    await uploadToSignedUrl(initData.data.uploadUrl, selectedFile);
-    setProgress(95);
-
-    const completeResponse = await fetch('/api/share/complete-upload', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({
-        slug: initData.data.slug,
-        key: initData.data.key,
-        originalName: selectedFile.name,
-        mimeType: selectedFile.type || 'application/octet-stream',
-        size: selectedFile.size,
-        expiresInSeconds,
-        formConfig
-      }),
-    });
-
-    const completeData = await completeResponse.json();
-    if (!completeResponse.ok) {
-      throw new Error(completeData.error || 'Unable to finish upload');
-    }
-
-    return completeData.data;
-  };
 
   const handleFile = async (selectedFile) => {
     const validationError = validateFile(selectedFile);
@@ -391,13 +302,42 @@ export default function FileShare() {
     setError(null);
     setShortUrl(null);
     setExpiresAt(null);
-    setProgress(0);
+    setProgress(10); // Start progress
 
     try {
-      const data = await uploadDirectToR2(selectedFile, expiresInSeconds);
+      let gate_bg_key = null;
+      if (bgFile) {
+        const bgData = new FormData();
+        bgData.append('file', bgFile);
+        const bgRes = await fetch(`${API_BASE_URL}/api/upload-asset`, {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: bgData,
+        });
+        const bgResult = await bgRes.json();
+        if (!bgRes.ok) throw new Error(bgResult.error || 'Background upload failed');
+        gate_bg_key = bgResult.data.key;
+      }
+      setProgress(40);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('expiresInSeconds', String(expiresInSeconds || 0));
+      if (formConfig) formData.append('formConfig', JSON.stringify(formConfig));
+      if (gate_bg_key) formData.append('gate_bg_key', gate_bg_key);
+
+      const response = await fetch(`${API_BASE_URL}/api/share/upload`, {
+        method: 'POST',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Upload failed');
+
       setProgress(100);
-      setShortUrl(data.shortUrl);
-      setExpiresAt(data.expiresAt || null);
+      setShortUrl(data.data.shortUrl);
+      setExpiresAt(data.data.expiresAt || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -463,7 +403,7 @@ export default function FileShare() {
             </p>
           </OptionCard>
 
-          {user && <FormBuilder onChange={setFormConfig} />}
+          {user && <FormBuilder onChange={setFormConfig} onBackgroundUpload={setBgFile} />}
           {!user && (
             <div style={{ background: 'rgba(99,102,241,0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
               <p style={{ color: 'var(--text-primary)', margin: 0 }}>Want to require visitor details (lead generation)? <Link to="/login" state={{ from: location.pathname }} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Log in</Link> to unlock this feature.</p>

@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCo
 import { Activity, Users, Globe, Link as LinkIcon, Loader2, Search, ArrowDown, ArrowUp, Download, Link2, FileSpreadsheet, Info, Trash2, CheckSquare, X } from 'lucide-react';
 import SeoHead from '../components/seo/SEOHead';
 import { toast } from 'react-hot-toast';
+import { API_BASE_URL } from '../config';
 import * as XLSX from 'xlsx';
 
 const Container = styled.div`
@@ -198,7 +199,7 @@ export default function AnalyticsDashboard() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/share/analytics', {
+      const res = await fetch(`${API_BASE_URL}/api/share/analytics`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` }
       });
       const d = await res.json();
@@ -206,7 +207,7 @@ export default function AnalyticsDashboard() {
       setData(d.data);
 
       // Also fetch feedback
-      const fbRes = await fetch('/api/feedback', {
+      const fbRes = await fetch(`${API_BASE_URL}/api/feedback`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` }
       });
       if (fbRes.ok) {
@@ -353,7 +354,7 @@ export default function AnalyticsDashboard() {
     
     setDeleting(true);
     try {
-      const res = await fetch('/api/links', {
+      const res = await fetch(`${API_BASE_URL}/api/links`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slugs })
@@ -375,11 +376,11 @@ export default function AnalyticsDashboard() {
     const type = searchParams.get('type') || 'urls';
     const typeLabel = type === 'files' ? 'all SHARED FILES' : 'all SHORTENED URLs';
     
-    if (!window.confirm(`CRITICAL ACTION: Are you sure you want to delete \${typeLabel}? This cannot be undone and will clear your cloud storage.`)) return;
+    if (!window.confirm(`CRITICAL ACTION: Are you sure you want to delete ${typeLabel}? This cannot be undone and will clear your cloud storage.`)) return;
 
     setDeleting(true);
     try {
-      const res = await fetch(`/api/links/all?type=\${type}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/links/all?type=${type}`, { method: 'DELETE' });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Clear failed');
       

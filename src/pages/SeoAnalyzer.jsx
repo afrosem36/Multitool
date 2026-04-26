@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { API_BASE_URL } from '../config';
 
 const GOAL_OPTIONS = ['Traffic', 'Conversions', 'Brand Awareness', 'Lead Generation'];
 
@@ -488,7 +489,7 @@ export default function SeoAnalyzer() {
     const url = form.websiteUrl.trim();
 
     try {
-      const response = await fetch('/api/seo-audit', {
+      const response = await fetch(`${API_BASE_URL}/api/seo-audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

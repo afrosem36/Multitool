@@ -1,39 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { User, Mail, Phone, ArrowRight, Loader2, Lock } from 'lucide-react';
+import { User, Mail, Phone, ArrowRight, Loader2, Lock, Type, Hash, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import SeoHead from '../components/seo/SEOHead';
+import { API_BASE_URL } from '../config';
 
 export default function LeadGate() {
   const { slug } = useParams();
   const [formData, setFormData] = useState({});
   const [config, setConfig] = useState(null);
+  const [backgroundUrl, setBackgroundUrl] = useState(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchConfig = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(`/api/s/${slug}/config`);
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Failed to load form');
+        // Fetch Config
+        const configRes = await fetch(`${API_BASE_URL}/api/s/${slug}/config`);
+        const configJson = await configRes.json();
+        if (!configRes.ok) throw new Error(configJson.error || 'Failed to load form');
         
-        const fetchedConfig = json.data.formConfig || {
+        const fetchedConfig = configJson.data.formConfig || {
           fields: [
-            { id: 'name', label: 'Full Name', type: 'text', required: true, icon: 'User' },
-            { id: 'email_or_phone', label: 'Email or Phone Number', type: 'text', required: true, icon: 'Mail' }
+            { id: 'name', label: 'Full Name', type: 'text', required: true }
           ],
           design: { background: '', buttonColor: 'var(--primary-color)' }
         };
         setConfig(fetchedConfig);
+
+        // Fetch Background
+        const bgRes = await fetch(`${API_BASE_URL}/api/s/${slug}/background`);
+        const bgJson = await bgRes.json();
+        if (bgRes.ok && bgJson.data?.backgroundUrl) {
+          setBackgroundUrl(bgJson.data.backgroundUrl);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
         setLoadingConfig(false);
       }
     };
-    fetchConfig();
+    fetchData();
   }, [slug]);
 
   const handleInputChange = (id, value) => {
@@ -46,29 +55,6 @@ export default function LeadGate() {
         toast.error(`Please fill out ${field.label}.`);
         return false;
       }
-      if (field.type === 'email' && formData[field.id]) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData[field.id])) {
-          toast.error(`Please enter a valid Email for ${field.label}.`);
-          return false;
-        }
-      }
-      if (field.type === 'tel' && formData[field.id]) {
-        const phoneRegex = /^\+?[1-9]\d{1,14}$/; // E.164 format
-        if (!phoneRegex.test(formData[field.id].replace(/[\s-]/g, ''))) {
-          toast.error(`Please enter a valid Phone Number for ${field.label}.`);
-          return false;
-        }
-      }
-      if (field.id === 'email_or_phone' && formData[field.id]) {
-        const val = formData[field.id].trim();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-        if (!emailRegex.test(val) && !phoneRegex.test(val.replace(/[\s-]/g, ''))) {
-          toast.error(`Please enter a valid Email or Phone Number.`);
-          return false;
-        }
-      }
     }
     return true;
   };
@@ -79,7 +65,7 @@ export default function LeadGate() {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/s/${slug}/submit`, {
+      const res = await fetch(`${API_BASE_URL}/api/s/${slug}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -98,75 +84,136 @@ export default function LeadGate() {
   };
 
   if (loadingConfig) {
-    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 className="spin" size={40} /></div>;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <Loader2 className="spin" size={40} color="var(--accent-primary)" />
+      </div>
+    );
   }
 
   if (error) {
-    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><h1>{error}</h1></div>;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', color: '#fff', padding: '2rem', textAlign: 'center' }}>
+        <div>
+          <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Oops!</h1>
+          <p style={{ opacity: 0.7 }}>{error}</p>
+        </div>
+      </div>
+    );
   }
 
-  const renderIcon = (iconName) => {
-    if (iconName === 'Mail') return <Mail size={18} />;
-    if (iconName === 'Phone') return <Phone size={18} />;
-    return <User size={18} />;
-  };
+  const isVideo = backgroundUrl && (backgroundUrl.includes('.mp4') || backgroundUrl.includes('.webm') || backgroundUrl.includes('video'));
+  const hasCustomBg = !!backgroundUrl || !!config.design?.background;
 
   return (
     <div style={{ 
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem',
-      background: config.design?.background || 'var(--bg-primary)',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
+      position: 'relative', overflow: 'hidden', background: 'var(--bg-primary)'
     }}>
-      <SeoHead title="Access Link" description="Please enter your details to access this link." />
+      <SeoHead title="Access Protected Link" description="Please provide the required information to access this content." />
+
+      {/* Background Layer */}
+      {backgroundUrl ? (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
+          {isVideo ? (
+            <video 
+              src={backgroundUrl} 
+              autoPlay 
+              muted 
+              loop 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            />
+          ) : (
+            <div style={{ 
+              width: '100%', height: '100%', 
+              backgroundImage: `url(${backgroundUrl})`, 
+              backgroundSize: 'cover', 
+              backgroundPosition: 'center' 
+            }} />
+          )}
+          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.3)' }} />
+        </div>
+      ) : config.design?.background ? (
+        <div style={{ 
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0,
+          background: config.design.background, backgroundSize: 'cover', backgroundPosition: 'center'
+        }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.4)' }} />
+        </div>
+      ) : null}
       
       <div className="glass-panel" style={{ 
-        maxWidth: '450px', width: '100%', padding: '3rem 2rem', textAlign: 'center',
-        background: config.design?.background ? 'rgba(255, 255, 255, 0.1)' : 'var(--bg-panel)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+        maxWidth: '500px', width: '100%', padding: '3rem 2.5rem', textAlign: 'center',
+        position: 'relative', zIndex: 1,
+        background: 'rgba(255, 255, 255, 0.05)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        borderRadius: '24px'
       }}>
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '2.5rem' }}>
           <div style={{ 
-            width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)', 
+            width: '70px', height: '70px', borderRadius: '20px', 
+            background: 'linear-gradient(135deg, var(--accent-primary), var(--primary-color))', 
             display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem',
-            color: config.design?.background ? '#fff' : 'var(--primary-color)'
+            boxShadow: '0 10px 20px rgba(99, 102, 241, 0.3)'
           }}>
-            <Lock size={30} />
+            <Lock size={32} color="#fff" />
           </div>
-          <h1 style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: config.design?.background ? '#fff' : 'var(--text-primary)' }}>Protected Link</h1>
-          <p style={{ color: config.design?.background ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}>
-            The creator of this link requires you to provide your details to continue.
+          <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '0.75rem', color: '#fff', letterSpacing: '-0.025em' }}>Protected Content</h1>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '1.05rem', lineHeight: '1.5' }}>
+            To view this content, please complete the form below.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', textAlign: 'left' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>
           {config.fields.map((field) => (
             <div key={field.id}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '500', color: config.design?.background ? '#fff' : 'var(--text-primary)' }}>
-                {field.label} {field.required && '*'}
+              <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.9rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>
+                {field.label} {field.required && <span style={{ color: '#ef4444' }}>*</span>}
               </label>
+              
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', top: '12px', left: '14px', color: config.design?.background ? 'rgba(255,255,255,0.6)' : 'var(--text-secondary)' }}>
-                  {renderIcon(field.icon)}
+                <div style={{ position: 'absolute', top: '14px', left: '16px', color: 'rgba(255,255,255,0.5)' }}>
+                  {field.type === 'number' ? <Hash size={18} /> : field.type === 'dropdown' ? <ChevronDown size={18} /> : <Type size={18} />}
                 </div>
-                <input 
-                  type={field.type === 'email' ? 'email' : field.type === 'tel' ? 'tel' : 'text'} 
-                  required={field.required}
-                  value={formData[field.id] || ''}
-                  onChange={(e) => handleInputChange(field.id, e.target.value)}
-                  placeholder={`Enter your ${field.label.toLowerCase()}`}
-                  style={{
-                    width: '100%', padding: '12px 14px 12px 42px', borderRadius: '8px',
-                    border: '1px solid rgba(255,255,255,0.3)', 
-                    background: config.design?.background ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.2)',
-                    color: '#fff', outline: 'none', fontSize: '1rem',
-                    transition: 'border-color 0.2s ease'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = config.design?.buttonColor || 'var(--accent-primary)'}
-                  onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.3)'}
-                />
+
+                {field.type === 'dropdown' ? (
+                  <select
+                    required={field.required}
+                    value={formData[field.id] || ''}
+                    onChange={(e) => handleInputChange(field.id, e.target.value)}
+                    style={{
+                      width: '100%', padding: '14px 16px 14px 46px', borderRadius: '12px',
+                      border: '1px solid rgba(255,255,255,0.1)', 
+                      background: 'rgba(0,0,0,0.3)',
+                      color: '#fff', outline: 'none', fontSize: '1rem',
+                      appearance: 'none', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="" disabled>Select an option</option>
+                    {field.options?.map(opt => (
+                      <option key={opt} value={opt} style={{ background: '#1e1e1e' }}>{opt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input 
+                    type={field.type === 'number' ? 'number' : 'text'} 
+                    required={field.required}
+                    value={formData[field.id] || ''}
+                    onChange={(e) => handleInputChange(field.id, e.target.value)}
+                    placeholder={`Enter ${field.label.toLowerCase()}`}
+                    style={{
+                      width: '100%', padding: '14px 16px 14px 46px', borderRadius: '12px',
+                      border: '1px solid rgba(255,255,255,0.1)', 
+                      background: 'rgba(0,0,0,0.3)',
+                      color: '#fff', outline: 'none', fontSize: '1rem',
+                      transition: 'all 0.2s'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = config.design?.buttonColor || 'var(--accent-primary)'}
+                    onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                  />
+                )}
               </div>
             </div>
           ))}
@@ -175,13 +222,17 @@ export default function LeadGate() {
             type="submit" 
             disabled={isLoading}
             style={{ 
-              marginTop: '1rem', padding: '14px', fontSize: '1.1rem', display: 'flex', justifyContent: 'center', gap: '0.5rem',
+              marginTop: '1.5rem', padding: '16px', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
               background: config.design?.buttonColor || 'var(--primary-color)',
-              color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold'
+              color: '#fff', border: 'none', borderRadius: '14px', cursor: 'pointer', fontWeight: '700',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
+              transition: 'all 0.2s'
             }}
+            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
           >
-            {isLoading ? <Loader2 size={20} className="spin" /> : (
-              <>Continue to Destination <ArrowRight size={20} /></>
+            {isLoading ? <Loader2 size={24} className="spin" /> : (
+              <>Access Link <ArrowRight size={22} /></>
             )}
           </button>
         </form>

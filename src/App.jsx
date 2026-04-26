@@ -79,6 +79,9 @@ const TimeUnitConverter = React.lazy(() => import('./pages/TimeUnitConverter'));
 const UrlShortener = React.lazy(() => import('./pages/UrlShortener'));
 const LeadGate = React.lazy(() => import('./pages/LeadGate'));
 const ExpiredLink = React.lazy(() => import('./pages/ExpiredLink'));
+const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
+const ExcelToPdf = React.lazy(() => import('./pages/tools/ExcelToPdf'));
 
 // Auth Pages
 import { Login, Signup } from './pages/AuthPages';
@@ -103,6 +106,8 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/favorites" element={<FavoritesPage />} />
                 <Route path="/trending" element={<Trending />} />
             <Route path="/guides" element={<GuidesHubPage />} />
@@ -129,6 +134,7 @@ function App() {
             <Route path="/word-to-pdf" element={<WordToPdf />} />
             <Route path="/to-jpg" element={<PdfToJpg />} />
             <Route path="/to-word" element={<PdfToWord />} />
+            <Route path="/pdf/excel-to-pdf" element={<ExcelToPdf />} />
             <Route path="/text/:toolId" element={<TextToolPage />} />
             
             {/* Excel Tools */}

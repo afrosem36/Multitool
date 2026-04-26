@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, Activity, Star, Loader2, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import SeoHead from '../components/seo/SEOHead';
+import { API_BASE_URL } from '../config';
 import { utilityTools, pdfTools, imageTools, textTools, calculatorTools, excelTools, linkTools } from '../data/toolCatalog';
 import styled from 'styled-components';
 
@@ -89,8 +90,8 @@ const ToolIcon = styled.div`
   align-items: center;
   justify-content: center;
   margin-bottom: 1rem;
-  background: \${props => props.color || 'var(--primary-color)'};
-  color: \${props => props.iconColor || 'var(--primary-color)'};
+  background: ${props => props.color || 'var(--primary-color)'};
+  color: ${props => props.iconColor || 'var(--primary-color)'};
 `;
 
 const ToolHeader = styled.div`
@@ -126,7 +127,7 @@ export default function Trending() {
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        const res = await fetch('/api/tools/trending');
+        const res = await fetch(`${API_BASE_URL}/api/tools/trending`);
         const json = await res.json();
         if (json.data) {
           setTrendingData(json.data);
@@ -227,7 +228,7 @@ export default function Trending() {
           return (
             <ToolCard key={tool.id} to={tool.path} className="tool-card-hover" onClick={() => {
               // Fire and forget usage tracking
-              fetch('/api/tools/usage', {
+              fetch(`${API_BASE_URL}/api/tools/usage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ toolId: tool.id })

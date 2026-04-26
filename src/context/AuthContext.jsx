@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL } from '../config';
 
 const AuthContext = createContext(null);
 
@@ -12,7 +13,7 @@ export const AuthProvider = ({ children }) => {
 
   const fetchUser = useCallback(async (currentToken) => {
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${currentToken}` }
       });
       const data = await res.json();
@@ -33,7 +34,8 @@ export const AuthProvider = ({ children }) => {
     if (token && token !== 'null') {
       headers.Authorization = `Bearer ${token}`;
     }
-    return fetch(path, { ...options, headers });
+    const fullPath = path.startsWith('/api') ? `${API_BASE_URL}${path}` : path;
+    return fetch(fullPath, { ...options, headers });
   }, [token]);
 
   useEffect(() => {
@@ -48,7 +50,7 @@ export const AuthProvider = ({ children }) => {
   }, [token, fetchUser]);
 
   const login = async (email, password) => {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -63,7 +65,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (email, password) => {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -77,12 +79,27 @@ export const AuthProvider = ({ children }) => {
     return { success: false, error: data.error || 'Registration failed' };
   };
 
+  const loginWithGoogle = async (credential) => {
+    const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential })
+    });
+    const data = await res.json();
+    if (res.ok && data.data?.token) {
+      setToken(data.data.token);
+      setUser(data.data.user);
+      return { success: true };
+    }
+    return { success: false, error: data.error || 'Google login failed' };
+  };
+
   const logout = () => {
     setToken(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, apiFetch }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );

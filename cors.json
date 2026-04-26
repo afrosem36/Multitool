@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "allowedOrigins": [
+        "http://localhost:5173",
+        "https://multitoolhub.space"
+      ],
+      "allowedMethods": [
+        "GET",
+        "PUT",
+        "POST",
+        "DELETE",
+        "HEAD"
+      ],
+      "allowedHeaders": [
+        "*"
+      ],
+      "exposeHeaders": [
+        "ETag"
+      ],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
