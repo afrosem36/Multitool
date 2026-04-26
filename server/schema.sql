@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS links (
     user_id TEXT, -- Foreign key to users(id), NULL if anonymous/legacy
     requires_data_collection BOOLEAN DEFAULT 0,
     form_config TEXT, -- JSON configuration for the lead gate form
+    gate_bg_key TEXT, -- R2 key for custom gate background
     download_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME,
@@ -55,3 +56,13 @@ CREATE TABLE IF NOT EXISTS tool_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_usage_tool_id ON tool_usage(tool_id);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+

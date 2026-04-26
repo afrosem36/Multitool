@@ -11,6 +11,7 @@ const app = new Hono();
 
 app.use('*', cors());
 
+
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
@@ -78,6 +79,40 @@ const requireAuth = async (c, next) => {
 
 app.use('*', authMiddleware);
 
+app.post('/api/auth/google', async (c) => {
+  const { credential } = await c.req.json();
+  if (!credential) return c.json({ error: 'Google credential required' }, 400);
+
+  // Verify token with Google
+  const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+  const googleData = await googleRes.json();
+
+  if (!googleRes.ok || googleData.aud !== c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ error: 'Invalid Google token' }, 401);
+  }
+
+  const { email, sub: googleId, name } = googleData;
+  const sanitizedEmail = email.trim().toLowerCase();
+
+  // Find or create user
+  let user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(sanitizedEmail).first();
+
+  if (!user) {
+    const id = nanoid();
+    const dummyHash = bcrypt.hashSync(nanoid(), 10); // Random hash for Google users
+    await c.env.DB.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)')
+      .bind(id, sanitizedEmail, dummyHash).run();
+    user = { id, email: sanitizedEmail };
+  }
+
+  const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
+  const payload = { id: user.id, email: user.email, exp };
+  const token = await sign(payload, c.env.JWT_SECRET, "HS256");
+
+  return c.json({ data: { user: { id: user.id, email: user.email }, token } });
+});
+
+
 // ==========================================
 // AUTHENTICATION ROUTES
 // ==========================================
@@ -97,7 +132,8 @@ app.post('/api/auth/register', async (c) => {
     .bind(id, email, hash).run();
 
   const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
-  const token = await sign({ id, email, exp }, c.env.JWT_SECRET, "HS256");
+  const payload = { id, email, exp };
+  const token = await sign(payload, c.env.JWT_SECRET, "HS256");
   return c.json({ data: { user: { id, email }, token } });
 });
 
@@ -123,7 +159,8 @@ app.post('/api/auth/login', async (c) => {
   }
 
   const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
-  const token = await sign({ id: user.id, email: user.email, exp }, c.env.JWT_SECRET, "HS256");
+  const payload = { id: user.id, email: user.email, exp };
+  const token = await sign(payload, c.env.JWT_SECRET, "HS256");
   return c.json({ data: { user: { id: user.id, email: user.email }, token } });
 });
 
@@ -143,56 +180,89 @@ app.post('/api/auth/test-token', async (c) => {
   }
 });
 
+app.post('/api/auth/forgot-password', async (c) => {
+  const { email: rawEmail } = await c.req.json();
+  const email = rawEmail?.trim().toLowerCase();
+  
+  if (!email) return c.json({ message: 'If that email exists a reset link has been sent' });
+
+  const user = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  
+  if (user) {
+    const token = nanoid(32);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins
+    
+    await c.env.DB.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(token, user.id, expiresAt).run();
+
+    const resetLink = `${c.env.FRONTEND_URL}/reset-password?token=${token}`;
+    
+    // Send email via Resend raw fetch
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${c.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: c.env.FROM_EMAIL,
+        to: email,
+        subject: 'Reset Your Password - MultiTool',
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background: #f9fafb; border-radius: 8px;">
+            <h2 style="color: #4f46e5;">Reset Your Password</h2>
+            <p>You requested a password reset for your MultiTool account. Click the button below to set a new password. This link will expire in 15 minutes.</p>
+            <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0;">Reset Password</a>
+            <p style="font-size: 14px; color: #6b7280;">If you didn't request this, you can safely ignore this email.</p>
+          </div>
+        `
+      })
+    });
+  }
+
+  return c.json({ message: 'If that email exists a reset link has been sent' });
+});
+
+app.get('/api/auth/verify-reset-token/:token', async (c) => {
+  const token = c.req.param('token');
+  const reset = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
+  
+  if (!reset) return c.json({ valid: false, error: 'Token expired or invalid' });
+  
+  if (new Date(reset.expires_at).getTime() <= Date.now()) {
+    return c.json({ valid: false, error: 'Token expired or invalid' });
+  }
+  
+  return c.json({ valid: true });
+});
+
+app.post('/api/auth/reset-password', async (c) => {
+  const { token, newPassword } = await c.req.json();
+  
+  const reset = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
+  if (!reset || new Date(reset.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Token expired or invalid' }, 400);
+  }
+  
+  const hash = bcrypt.hashSync(newPassword, 10);
+  
+  await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(hash, reset.user_id).run();
+  await c.env.DB.prepare('UPDATE password_resets SET used = 1 WHERE token = ?').bind(token).run();
+  
+  return c.json({ message: 'Password reset successfully' });
+});
+
 // ==========================================
 // LINK & FILE SHARE ROUTES
 // ==========================================
 
-app.post('/api/share/upload-url', async (c) => {
-  const { originalName, mimeType = 'application/octet-stream', size, expiresInSeconds } = await c.req.json();
-  
-  const validationError = getShareValidationError({ originalName, size });
-  if (validationError) return c.json({ error: validationError }, 400);
-
-  const slug = nanoid(8);
-  const key = `${slug}-${sanitizeFileName(originalName)}`;
-  
-  const s3Client = getS3Client(c.env);
-  const uploadUrl = await getSignedUrl(
-    s3Client,
-    new PutObjectCommand({ Bucket: c.env.R2_BUCKET_NAME, Key: key, ContentType: mimeType }),
-    { expiresIn: 600 }
-  );
-
-  return c.json({ data: { slug, key, uploadUrl, expiresInSeconds } });
-});
-
-app.post('/api/share/complete-upload', async (c) => {
-  const { slug, key, originalName, mimeType = 'application/octet-stream', size, expiresInSeconds, formConfig } = await c.req.json();
-  const user = c.get('user');
-
-  if (!slug || !key) return c.json({ error: 'Invalid reference' }, 400);
-
-  // Note: We skip HeadObject check here to save time, assuming client successfully uploaded to R2 directly.
-  const expiresAt = expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000).toISOString() : null;
-
-  await c.env.DB.prepare(`
-    INSERT INTO links (slug, original_name, r2_key, mime_type, size, user_id, form_config, requires_data_collection, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    slug, originalName, key, mimeType, size, 
-    user ? user.id : null, 
-    formConfig ? JSON.stringify(formConfig) : null,
-    formConfig ? 1 : 0,
-    expiresAt
-  ).run();
-
-  const shortDomain = getPublicOrigin(c);
-  return c.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
-});
 
 app.post('/api/share/upload', async (c) => {
   const body = await c.req.parseBody();
   const file = body['file'];
+  const expiresInSeconds = Number(body['expiresInSeconds']) || 0;
+  const formConfig = body['formConfig'];
+  const gate_bg_key = body['gate_bg_key'];
   const user = c.get('user');
   
   if (!file) return c.json({ error: 'No file uploaded' }, 400);
@@ -209,17 +279,53 @@ app.post('/api/share/upload', async (c) => {
     ContentType: file.type,
   }));
 
+  let expiresAt = null;
+  if (expiresInSeconds > 0) {
+    expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+  }
+
   await c.env.DB.prepare(`
-    INSERT INTO links (slug, original_name, r2_key, mime_type, size, user_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(slug, file.name, key, file.type, file.size, user ? user.id : null).run();
+    INSERT INTO links (slug, original_name, r2_key, mime_type, size, user_id, expires_at, form_config, requires_data_collection, gate_bg_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    slug, 
+    file.name, 
+    key, 
+    file.type, 
+    file.size, 
+    user ? user.id : null,
+    expiresAt,
+    formConfig || null,
+    formConfig ? 1 : 0,
+    gate_bg_key || null
+  ).run();
 
   const shortDomain = getPublicOrigin(c);
-  return c.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}` } });
+  return c.json({ data: { slug, shortUrl: `${shortDomain}/s/${slug}`, expiresAt } });
+});
+
+// Helper for raw asset uploads (backgrounds, etc)
+app.post('/api/upload-asset', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body['file'];
+  if (!file) return c.json({ error: 'No file' }, 400);
+
+  const key = `assets/${nanoid(12)}-${sanitizeFileName(file.name)}`;
+  const arrayBuffer = await file.arrayBuffer();
+  const s3Client = getS3Client(c.env);
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: c.env.R2_BUCKET_NAME,
+    Key: key,
+    Body: new Uint8Array(arrayBuffer),
+    ContentType: file.type,
+  }));
+
+  return c.json({ data: { key } });
 });
 
 app.post('/api/shorten', async (c) => {
-  const { longUrl, customSlug, formConfig } = await c.req.json();
+  const { longUrl, customSlug, formConfig, gate_bg_key } = await c.req.json();
   const user = c.get('user');
   
   if (!longUrl) return c.json({ error: 'longUrl required' }, 400);
@@ -229,13 +335,14 @@ app.post('/api/shorten', async (c) => {
   if (existing) return c.json({ error: 'Slug already exists' }, 400);
 
   await c.env.DB.prepare(`
-    INSERT INTO links (slug, long_url, user_id, form_config, requires_data_collection)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO links (slug, long_url, user_id, form_config, requires_data_collection, gate_bg_key)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).bind(
     slug, longUrl, 
     user ? user.id : null,
     formConfig ? JSON.stringify(formConfig) : null,
-    formConfig ? 1 : 0
+    formConfig ? 1 : 0,
+    gate_bg_key || null
   ).run();
 
   const shortDomain = getPublicOrigin(c);
@@ -326,6 +433,25 @@ app.post('/api/s/:slug/submit', async (c) => {
   }
 
   return c.json({ data: { longUrl: link.long_url } });
+});
+
+app.get('/api/s/:slug/background', async (c) => {
+  const slug = c.req.param('slug');
+  const link = await c.env.DB.prepare('SELECT gate_bg_key FROM links WHERE slug = ?').bind(slug).first();
+  
+  if (!link || !link.gate_bg_key) return c.json({ data: null });
+  
+  const s3Client = getS3Client(c.env);
+  const backgroundUrl = await getSignedUrl(
+    s3Client,
+    new GetObjectCommand({
+      Bucket: c.env.R2_BUCKET_NAME,
+      Key: link.gate_bg_key,
+    }),
+    { expiresIn: 3600 }
+  );
+  
+  return c.json({ data: { backgroundUrl } });
 });
 
 // ==========================================
