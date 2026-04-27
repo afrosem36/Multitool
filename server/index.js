@@ -753,4 +753,98 @@ app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
   });
 });
 
+app.post('/api/remove-bg', requireAuth, async (c) => {
+  const user = c.get('user');
+  const today = new Date().toISOString().split('T')[0];
+  const DAILY_LIMIT = 5; // AI image removal is more expensive
+  const TOOL_ID = 'remove-bg';
+
+  // Check quota
+  const quota = await c.env.multitool_db.prepare(
+    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+  ).bind(user.id, TOOL_ID, today).first();
+
+  const currentCount = quota?.count || 0;
+
+  if (currentCount >= DAILY_LIMIT) {
+    return c.json({
+      error: `Daily limit of ${DAILY_LIMIT} image removals reached. Resets at midnight UTC.`,
+      creditsUsed: currentCount,
+      creditsTotal: DAILY_LIMIT,
+    }, 429);
+  }
+
+  try {
+    const formData = await c.req.formData();
+    const imageFile = formData.get('image_file');
+
+    if (!imageFile) return c.json({ error: 'Image file required' }, 400);
+
+    const removeBgFormData = new FormData();
+    removeBgFormData.append('image_file', imageFile);
+    removeBgFormData.append('size', 'auto');
+
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: {
+        'X-Api-Key': c.env.REMOVE_BG_API_KEY,
+      },
+      body: removeBgFormData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = 'Failed to remove background';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.errors?.[0]?.title || errorMessage;
+      } catch (e) {}
+      return c.json({ error: errorMessage }, response.status);
+    }
+
+    const imageBlob = await response.blob();
+    
+    // Increment quota
+    await c.env.multitool_db.prepare(`
+      INSERT INTO tool_quotas (user_id, tool_id, date, count)
+      VALUES (?, ?, ?, 1)
+      ON CONFLICT (user_id, tool_id, date)
+      DO UPDATE SET count = count + 1
+    `).bind(user.id, TOOL_ID, today).run();
+
+    // Return the image as a response
+    return new Response(imageBlob, {
+      headers: {
+        'Content-Type': 'image/png',
+        'X-Credits-Used': (currentCount + 1).toString(),
+        'X-Credits-Total': DAILY_LIMIT.toString(),
+      },
+    });
+
+  } catch (err) {
+    console.error('remove-bg exception:', err.message);
+    return c.json({ error: `Exception: ${err.message}` }, 500);
+  }
+});
+
+app.get('/api/remove-bg/credits', requireAuth, async (c) => {
+  const user = c.get('user');
+  const today = new Date().toISOString().split('T')[0];
+  const DAILY_LIMIT = 5;
+
+  const quota = await c.env.multitool_db.prepare(
+    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+  ).bind(user.id, 'remove-bg', today).first();
+
+  const used = quota?.count || 0;
+  return c.json({
+    data: {
+      creditsUsed: used,
+      creditsRemaining: DAILY_LIMIT - used,
+      creditsTotal: DAILY_LIMIT,
+      resetsAt: 'midnight UTC',
+    }
+  });
+});
+
 export default app;

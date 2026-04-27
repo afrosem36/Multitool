@@ -1,17 +1,51 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Download, Trash2, Key, ChevronLeft, RefreshCw, AlertCircle, ImageIcon } from 'lucide-react';
+import { Upload, Download, Trash2, Key, ChevronLeft, RefreshCw, AlertCircle, ImageIcon, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import RelatedTools from '../../components/shared/RelatedTools';
+import { useAuth } from '../../context/AuthContext';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function BackgroundRemover() {
+  const { user, token } = useAuth();
   const [file, setFile] = useState(null);
   const [originalUrl, setOriginalUrl] = useState('');
   const [resultUrl, setResultUrl] = useState('');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('remove-bg-api-key') || '');
   const [isProcessing, setIsProcessing] = useState(false);
   const [sliderPos, setSliderPos] = useState(50);
+  
+  // Credit state
+  const [credits, setCredits] = useState({ used: 0, total: 5, remaining: 5 });
+  const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+
+  useEffect(() => {
+    if (user && token) {
+      fetchCredits();
+    }
+  }, [user, token]);
+
+  const fetchCredits = async () => {
+    setIsLoadingCredits(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/remove-bg/credits`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.data) {
+        setCredits({
+          used: data.data.creditsUsed,
+          total: data.data.creditsTotal,
+          remaining: data.data.creditsRemaining
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch credits:', err);
+    } finally {
+      setIsLoadingCredits(false);
+    }
+  };
 
   const handleFileUpload = (e) => {
     const uploadedFile = e.target.files[0];
@@ -23,38 +57,33 @@ export default function BackgroundRemover() {
     }
   };
 
-  const saveApiKey = (e) => {
-    const key = e.target.value.trim();
-    setApiKey(key);
-    localStorage.setItem('remove-bg-api-key', key);
-  };
-
   const removeBackground = async () => {
-    if (!apiKey) return toast.error('Please enter your remove.bg API key');
+    if (!user) return toast.error('Please login to use this tool');
     if (!file) return toast.error('Please upload an image first');
+    if (credits.remaining <= 0) return toast.error('You have reached your daily limit');
 
     setIsProcessing(true);
     const formData = new FormData();
     formData.append('image_file', file);
-    formData.append('size', 'auto');
 
     try {
-      const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+      const response = await fetch(`${API_BASE_URL}/api/remove-bg`, {
         method: 'POST',
         headers: {
-          'X-Api-Key': apiKey,
+          'Authorization': `Bearer ${token}`,
         },
         body: formData,
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.errors?.[0]?.title || 'Failed to remove background');
+        throw new Error(errorData.error || 'Failed to remove background');
       }
 
       const blob = await response.blob();
       setResultUrl(URL.createObjectURL(blob));
       toast.success('Background removed successfully!');
+      fetchCredits(); // Update credits
     } catch (err) {
       console.error(err);
       toast.error(err.message);
@@ -79,26 +108,47 @@ export default function BackgroundRemover() {
 
       <ToolHeader 
         title="AI Background Remover" 
-        description="Instantly remove backgrounds from your photos using AI. High quality transparent PNG results in seconds. Powered by remove.bg API."
+        description="Instantly remove backgrounds from your photos using AI. High quality transparent PNG results in seconds. Free for every user (5/day)."
       />
 
-      {!apiKey && (
-        <div className="glass-panel" style={{ padding: '2rem', marginBottom: '2rem', border: '1px solid rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.05)' }}>
-          <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Key size={24} color="var(--accent-primary)" /> API Key Required
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-            To use this tool, you need a free API key from <a href="https://www.remove.bg/api" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>remove.bg</a>. You get 50 free previews every month!
-          </p>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <input 
-              type="password" 
-              placeholder="Enter your remove.bg API key" 
-              value={apiKey}
-              onChange={saveApiKey}
-              style={{ flex: 1, padding: '0.85rem 1.25rem', borderRadius: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', color: 'white', outline: 'none' }}
+      {/* Credit Status Bar */}
+      {user ? (
+        <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '2rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ padding: '0.4rem', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.2)' }}>
+                <RefreshCw size={18} color="var(--accent-primary)" />
+              </div>
+              <span style={{ fontWeight: '600' }}>Daily AI Quota</span>
+            </div>
+            <span style={{ fontSize: '0.9rem', color: credits.remaining === 0 ? '#ef4444' : 'var(--text-secondary)' }}>
+              {credits.remaining} / {credits.total} credits remaining
+            </span>
+          </div>
+          <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+            <div 
+              style={{ 
+                height: '100%', 
+                width: `${(credits.remaining / credits.total) * 100}%`, 
+                background: credits.remaining <= 1 ? 'linear-gradient(90deg, #ef4444, #f87171)' : 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+                transition: 'width 0.5s ease'
+              }} 
             />
-            <button onClick={() => toast.success('API Key saved locally')} className="btn-primary">Save Key</button>
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Info size={12} /> Credits reset every 24 hours at midnight UTC.
+          </p>
+        </div>
+      ) : (
+        <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <AlertCircle color="#f59e0b" />
+            <div>
+              <p style={{ fontWeight: '600' }}>Authentication Required</p>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                Please <Link to="/login" style={{ color: '#f59e0b', textDecoration: 'underline' }}>Login</Link> to use the AI Background Remover.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -110,9 +160,10 @@ export default function BackgroundRemover() {
               className="glass-panel" 
               style={{ 
                 padding: '5rem 2rem', border: '2px dashed var(--border-color)', 
-                textAlign: 'center', cursor: 'pointer'
+                textAlign: 'center', cursor: 'pointer',
+                opacity: !user ? 0.6 : 1
               }}
-              onClick={() => document.getElementById('image-upload').click()}
+              onClick={() => user && document.getElementById('image-upload').click()}
             >
               <input type="file" id="image-upload" hidden accept="image/*" onChange={handleFileUpload} />
               <Upload size={48} color="var(--accent-primary)" style={{ marginBottom: '1.5rem' }} />
@@ -129,11 +180,13 @@ export default function BackgroundRemover() {
               </div>
               <button 
                 onClick={removeBackground} 
-                disabled={isProcessing || !apiKey}
+                disabled={isProcessing || !user || credits.remaining === 0}
                 className="btn-primary" 
                 style={{ width: '100%', padding: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', fontSize: '1.1rem' }}
               >
-                {isProcessing ? <RefreshCw size={20} className="spin" /> : <><RefreshCw size={20} /> Remove Background</>}
+                {isProcessing ? <RefreshCw size={20} className="spin" /> : (
+                  credits.remaining === 0 ? 'Limit Reached' : <><RefreshCw size={20} /> Remove Background</>
+                )}
               </button>
             </div>
           )}
@@ -181,7 +234,7 @@ export default function BackgroundRemover() {
                 <>
                   <RefreshCw size={48} className="spin" color="var(--accent-primary)" style={{ marginBottom: '1.5rem' }} />
                   <h3>AI is working...</h3>
-                  <p>Removing background using remove.bg API. This usually takes 5-10 seconds.</p>
+                  <p>Removing background using AI. This usually takes 5-10 seconds.</p>
                 </>
               ) : (
                 <>
@@ -190,15 +243,6 @@ export default function BackgroundRemover() {
                 </>
               )}
             </div>
-          )}
-
-          {apiKey && (
-             <div className="glass-panel" style={{ padding: '1rem 1.5rem' }}>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                 <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>API Key: ••••••••••••</span>
-                 <button onClick={() => { setApiKey(''); localStorage.removeItem('remove-bg-api-key'); }} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem' }}>Change Key</button>
-               </div>
-             </div>
           )}
         </div>
       </div>
