@@ -1,9 +1,5 @@
 .tool-sidebar {
-  position: sticky;
-  top: 6.5rem;
   padding: 1.25rem;
-  max-height: calc(100vh - 7rem);
-  overflow-y: auto;
 }
 
 .tool-sidebar::-webkit-scrollbar {

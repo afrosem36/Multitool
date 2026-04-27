@@ -6,6 +6,7 @@ import {
   Info, CheckCircle2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AdBanner from '../../components/shared/AdBanner';
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../../config';
 import { useAuth } from '../../context/AuthContext';
@@ -674,6 +675,8 @@ export default function TextToSql() {
 
         </div>
       </div>
+
+      <AdBanner position="belowTool" />
 
       {/* Mobile responsive */}
       <style>{`

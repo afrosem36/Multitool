@@ -1,101 +1,123 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ADS_CONFIG } from '../../config';
+import NativeBannerAd from './NativeBannerAd';
 import './AdBanner.css';
 
-const AdBanner = ({ position = 'belowTool', className = '', delay = 1500 }) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
+const POSITION_CONFIGS = {
+  top: { minHeight: 90, maxWidth: 970, className: 'is-banner' },
+  sidebar: { minHeight: 250, maxWidth: 300, className: 'is-rectangle' },
+  belowTool: { minHeight: 280, maxWidth: 970, className: 'is-banner' },
+  belowToolMobile: { minHeight: 280, maxWidth: 480, className: 'is-mobile' },
+  toolFooter: { minHeight: 140, maxWidth: 970, className: 'is-banner' },
+  footer: { minHeight: 90, maxWidth: 970, className: 'is-banner' },
+};
+
+const DEFAULT_LABELS = {
+  top: 'Sponsored placement',
+  sidebar: 'Recommended partner',
+  belowTool: 'Advertisement',
+  belowToolMobile: 'Advertisement',
+  toolFooter: 'Sponsored',
+  footer: 'Sponsored message',
+};
+
+function getIdleScheduler() {
+  if (typeof window === 'undefined') return (cb) => cb();
+  return window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1));
+}
+
+const AdBanner = ({ position = 'belowTool', className = '', label }) => {
+  const containerRef = useRef(null);
   const adRef = useRef(null);
+  const adUnitId = useId();
+  const [isReady, setIsReady] = useState(false);
+  const shouldUseNativeBanner = true;
 
-  // Example configurations for different positions
-  const configs = {
-    top: { minHeight: '90px', maxWidth: '728px', label: 'Top Banner' },
-    sidebar: { minHeight: '250px', maxWidth: '300px', label: 'Sidebar Ad' },
-    belowTool: { minHeight: '250px', maxWidth: '728px', label: 'Main Ad' },
-    belowToolMobile: { minHeight: '250px', maxWidth: '100%', label: 'Mobile Main Ad' },
-    footer: { minHeight: '90px', maxWidth: '970px', label: 'Footer Banner' },
-    sticky: { minHeight: '50px', maxWidth: '100%', label: 'Sticky Banner' },
-  };
+  const slot = ADS_CONFIG.slots[position] || '';
+  const config = POSITION_CONFIGS[position] || POSITION_CONFIGS.belowTool;
+  const displayLabel = label || DEFAULT_LABELS[position] || DEFAULT_LABELS.belowTool;
+  const canRenderNetworkAd = ADS_CONFIG.enabled && ADS_CONFIG.client && slot;
 
-  const config = configs[position] || configs.belowTool;
-
-  useEffect(() => {
-    // 1. Frequency Control: Don't show ads if visited very recently (e.g., within last 5 minutes)
-    // This is just an example, could be adjusted for more/less aggressive monetization
-    const lastAdSeen = localStorage.getItem('last_ad_seen');
-    const now = Date.now();
-    // if (lastAdSeen && (now - parseInt(lastAdSeen)) < 300000) { // 5 mins
-    //   return;
-    // }
-
-    // 2. Delay Load for better SEO and initial UX
-    const timer = setTimeout(() => {
-      setIsVisible(true);
-      localStorage.setItem("last_ad_seen", Date.now().toString());
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [delay]);
+  const adKey = useMemo(
+    () => `ad-slot-${position}-${slot || 'placeholder'}-${adUnitId.replace(/:/g, '')}`,
+    [adUnitId, position, slot]
+  );
 
   useEffect(() => {
-    if (isVisible && adRef.current) {
-      // 3. Using a sandboxed iframe to prevent redirects and protect responsiveness
-      const iframe = document.createElement("iframe");
-      iframe.style.width = "100%";
-      iframe.style.height = "100%";
-      iframe.style.border = "none";
-      iframe.style.overflow = "hidden";
-      iframe.sandbox = "allow-scripts allow-forms allow-popups allow-same-origin";
-      
-      const adHtml = `
-        <html>
-          <head>
-            <style>body { margin: 0; display: flex; justify-content: center; align-items: center; overflow: hidden; }</style>
-          </head>
-          <body>
-            <script>
-              (function(wzszveg){
-                var d = document,
-                    s = d.createElement('script'),
-                    l = d.scripts[d.scripts.length - 1];
-                s.settings = wzszveg || {};
-                s.src = "//shameful-farm.com/bJX-Ves.dFGplL0yYuWAck/iedml9/uaZ/UFl/kTP/TZYR5wOuTxM/wmNijAUdtqNkjMk/5EMozzA/2iOFQH";
-                s.async = true;
-                s.referrerPolicy = 'no-referrer-when-downgrade';
-                l.parentNode.insertBefore(s, l);
-              })({})
-            </script>
-          </body>
-        </html>
-      `;
-      
-      iframe.srcdoc = adHtml;
-      adRef.current.appendChild(iframe);
-      setIsLoaded(true);
+    if (shouldUseNativeBanner) {
+      return undefined;
     }
-  }, [isVisible]);
 
-  if (!isVisible) return <div className={`ad-skeleton ad-${position}`} style={{ minHeight: config.minHeight }} />;
+    if (!canRenderNetworkAd || !containerRef.current) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsReady(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '240px 0px' }
+    );
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [canRenderNetworkAd, shouldUseNativeBanner]);
+
+  useEffect(() => {
+    if (shouldUseNativeBanner) {
+      return;
+    }
+
+    if (!canRenderNetworkAd || !isReady || !adRef.current || adRef.current.dataset.loaded === 'true') {
+      return;
+    }
+
+    const schedule = getIdleScheduler();
+    const run = () => {
+      try {
+        window.adsbygoogle = window.adsbygoogle || [];
+        window.adsbygoogle.push({});
+        adRef.current.dataset.loaded = 'true';
+      } catch (error) {
+        console.error('Ad slot render failed:', error);
+      }
+    };
+
+    schedule(run);
+  }, [canRenderNetworkAd, isReady, shouldUseNativeBanner]);
+
+  if (shouldUseNativeBanner) {
+    return <NativeBannerAd className={className} label={displayLabel} />;
+  }
 
   return (
-    <div 
-      className={`ad-container ad-${position} ${className} glass-panel ${isLoaded ? 'loaded' : ''}`} 
-      style={{ 
-        minHeight: config.minHeight,
-        maxWidth: config.maxWidth,
-        margin: (position === 'sidebar' || position === 'sticky') ? '0' : '1.5rem auto'
-      }}
+    <section
+      ref={containerRef}
+      className={`ad-container ad-${position} ${config.className} ${className}`.trim()}
+      style={{ maxWidth: `${config.maxWidth}px`, minHeight: `${config.minHeight}px` }}
+      aria-label={displayLabel}
     >
-      <div className="ad-inner" ref={adRef}>
-        <div className="ad-label">Advertisement</div>
-        <div className="ad-content">
-          <div className="ad-placeholder-text">
-            {config.label}
-            <br />
-            <small>Premium Optimized Unit</small>
+      <div className="ad-shell">
+        <div className="ad-shell-header">{displayLabel}</div>
+        {canRenderNetworkAd ? (
+          <ins
+            key={adKey}
+            ref={adRef}
+            className="adsbygoogle ad-unit"
+            style={{ display: 'block' }}
+            data-ad-client={ADS_CONFIG.client}
+            data-ad-slot={slot}
+            data-ad-format={position === 'sidebar' ? 'rectangle' : 'auto'}
+            data-full-width-responsive={position === 'sidebar' ? 'false' : 'true'}
+          />
+        ) : (
+          <div className="ad-fallback">
+            <span>Ad slot reserved</span>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </section>
   );
 };
 

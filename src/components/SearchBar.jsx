@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, File, Link as LinkIcon, Wrench } from 'lucide-react';
+import { Search, X, Wrench } from 'lucide-react';
 import {
   pdfTools, imageTools, textTools, calculatorTools, utilityTools, excelTools, linkTools
 } from '../data/toolCatalog';
@@ -98,10 +98,11 @@ const SearchBar = () => {
                   {results.tools.map(tool => {
                     const Icon = tool.icon || Wrench;
                     return (
-                      <div 
+                      <button
                         key={tool.id} 
                         className="search-item"
-                        onClick={() => handleSelect(tool.path)}
+                        type="button"
+                        onMouseDown={() => handleSelect(tool.path)}
                       >
                         <div className="search-item-icon" style={{ background: tool.color }}>
                           <Icon size={16} color="var(--text-primary)" />
@@ -110,7 +111,7 @@ const SearchBar = () => {
                           <span className="search-item-name">{tool.name}</span>
                           <span className="search-item-desc">{tool.category}</span>
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

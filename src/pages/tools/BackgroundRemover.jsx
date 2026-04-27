@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Download, Trash2, Key, ChevronLeft, RefreshCw, AlertCircle, ImageIcon, Info } from 'lucide-react';
+import { Upload, Download, Trash2, ChevronLeft, RefreshCw, AlertCircle, ImageIcon, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import RelatedTools from '../../components/shared/RelatedTools';
+import AdBanner from '../../components/shared/AdBanner';
 import { useAuth } from '../../context/AuthContext';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_BASE_URL } from '../../config';
 
 export default function BackgroundRemover() {
   const { user, token } = useAuth();
@@ -25,6 +25,13 @@ export default function BackgroundRemover() {
       fetchCredits();
     }
   }, [user, token]);
+
+  useEffect(() => {
+    return () => {
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+    };
+  }, [originalUrl, resultUrl]);
 
   const fetchCredits = async () => {
     setIsLoadingCredits(true);
@@ -50,6 +57,8 @@ export default function BackgroundRemover() {
   const handleFileUpload = (e) => {
     const uploadedFile = e.target.files[0];
     if (uploadedFile) {
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
       setFile(uploadedFile);
       setOriginalUrl(URL.createObjectURL(uploadedFile));
       setResultUrl('');
@@ -81,6 +90,7 @@ export default function BackgroundRemover() {
       }
 
       const blob = await response.blob();
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(blob));
       toast.success('Background removed successfully!');
       fetchCredits(); // Update credits
@@ -122,7 +132,7 @@ export default function BackgroundRemover() {
               <span style={{ fontWeight: '600' }}>Daily AI Quota</span>
             </div>
             <span style={{ fontSize: '0.9rem', color: credits.remaining === 0 ? '#ef4444' : 'var(--text-secondary)' }}>
-              {credits.remaining} / {credits.total} credits remaining
+              {isLoadingCredits ? 'Refreshing credits...' : `${credits.remaining} / ${credits.total} credits remaining`}
             </span>
           </div>
           <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
@@ -153,7 +163,7 @@ export default function BackgroundRemover() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '2rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {!originalUrl ? (
             <div 
@@ -174,7 +184,13 @@ export default function BackgroundRemover() {
             <div className="glass-panel" style={{ padding: '2rem' }}>
               <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', background: '#000', marginBottom: '1.5rem' }}>
                 <img src={originalUrl} alt="Original" style={{ width: '100%', display: 'block' }} />
-                <button onClick={() => { setFile(null); setOriginalUrl(''); setResultUrl(''); }} style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: 'white', padding: '0.5rem', borderRadius: '50%', cursor: 'pointer' }}>
+                <button onClick={() => {
+                  if (originalUrl) URL.revokeObjectURL(originalUrl);
+                  if (resultUrl) URL.revokeObjectURL(resultUrl);
+                  setFile(null);
+                  setOriginalUrl('');
+                  setResultUrl('');
+                }} style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: 'white', padding: '0.5rem', borderRadius: '50%', cursor: 'pointer' }}>
                   <Trash2 size={18} />
                 </button>
               </div>
@@ -191,6 +207,8 @@ export default function BackgroundRemover() {
             </div>
           )}
         </div>
+
+        <AdBanner position="belowTool" />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {resultUrl ? (

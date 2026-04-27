@@ -1,12 +1,34 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
+import AdBanner from './shared/AdBanner';
 import { footerPages } from '../data/contentPages';
+import {
+  calculatorTools,
+  excelTools,
+  imageTools,
+  linkTools,
+  pdfTools,
+  textTools,
+  utilityTools,
+} from '../data/toolCatalog';
 import './Layout.css';
+
+const TOOL_PAGE_PATHS = new Set([
+  ...pdfTools.map((tool) => tool.path),
+  ...imageTools.map((tool) => tool.path),
+  ...textTools.map((tool) => tool.path),
+  ...calculatorTools.map((tool) => tool.path),
+  ...utilityTools.map((tool) => tool.path),
+  ...excelTools.map((tool) => tool.path),
+  ...linkTools.map((tool) => tool.path),
+  '/utilities/unit-converter',
+  '/time-converter',
+]);
 
 function getTimeAgo(dateString) {
   if (!dateString) return '';
@@ -23,8 +45,8 @@ function getTimeAgo(dateString) {
   return `Last updated: ${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
 }
 
-const Layout = ({ children }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
+const Layout = () => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth > 1024);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('');
   const location = useLocation();
@@ -35,7 +57,7 @@ const Layout = ({ children }) => {
       setLastUpdated(getTimeAgo(buildTime));
       const interval = setInterval(() => {
         setLastUpdated(getTimeAgo(buildTime));
-      }, 10000); // Update every 10 seconds
+      }, 60000); // Update every 60 seconds
       return () => clearInterval(interval);
     }
   }, []);
@@ -68,8 +90,9 @@ const Layout = ({ children }) => {
   // Pages that should NOT have the layout
   const noLayoutPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
   const isNoLayout = noLayoutPages.includes(location.pathname) || location.pathname.startsWith('/s/');
+  const isToolPage = TOOL_PAGE_PATHS.has(location.pathname);
 
-  if (isNoLayout) return <>{children}</>;
+  if (isNoLayout) return <Outlet />;
 
   return (
     <div className="layout">
@@ -79,10 +102,22 @@ const Layout = ({ children }) => {
       <div className="layout-shell">
         <div className={`sidebar-wrapper ${isSidebarOpen ? '' : 'hidden'}`}>
           <Sidebar />
+          <AdBanner position="sidebar" />
         </div>
         <main className="main-content">
-          {children}
-          
+          <Outlet />
+
+          {isToolPage && (
+            <div className="layout-tool-ad-strip">
+              <AdBanner
+                key={location.pathname}
+                position="toolFooter"
+                className="layout-tool-ad"
+                label="Sponsored"
+              />
+            </div>
+          )}
+
           <footer className="footer glass-panel">
             <div className="footer-inner">
               <div className="footer-links">
@@ -92,9 +127,9 @@ const Layout = ({ children }) => {
                   </Link>
                 ))}
               </div>
-              <p>&copy; {new Date().getFullYear()} MultiTool. Browser-based PDF tools, text utilities, guides, and support pages in one workspace.</p>
+              <p>&copy; {new Date().getFullYear()} MultiTool</p>
               {lastUpdated && (
-                <p className="last-updated-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                <p className="last-updated-text" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                   {lastUpdated}
                 </p>
               )}
@@ -110,6 +145,7 @@ const Layout = ({ children }) => {
       {isMobileSearchOpen && (
         <MobileSearch onClose={() => setIsMobileSearchOpen(false)} />
       )}
+
     </div>
   );
 };

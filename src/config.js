@@ -6,6 +6,17 @@ export const FEATURE_FLAGS = {
   ENABLE_SEO_HARDENING: true
 };
 
+export const ADS_CONFIG = {
+  enabled: import.meta.env.VITE_ENABLE_ADS !== 'false',
+  client: import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-7503234817085638',
+  slots: {
+    top: import.meta.env.VITE_ADSENSE_SLOT_TOP || '',
+    sidebar: import.meta.env.VITE_ADSENSE_SLOT_SIDEBAR || '',
+    belowTool: import.meta.env.VITE_ADSENSE_SLOT_BELOW_TOOL || '',
+    belowToolMobile: import.meta.env.VITE_ADSENSE_SLOT_MOBILE || '',
+    footer: import.meta.env.VITE_ADSENSE_SLOT_FOOTER || '',
+  },
+};
 
 export const GOOGLE_CLIENT_ID = "710387274824-2dhqh5ghh02kh68i08na79vn9k3d90bv.apps.googleusercontent.com";
 

@@ -7,6 +7,51 @@ export default defineConfig({
   define: {
     __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+
+          if (id.includes('react-router-dom') || id.includes('react-dom') || id.includes('\\react\\') || id.includes('/react/')) {
+            return 'vendor-react';
+          }
+
+          if (id.includes('pdf-lib') || id.includes('pdfjs-dist') || id.includes('jspdf')) {
+            return 'vendor-pdf';
+          }
+
+          if (id.includes('html2pdf.js') || id.includes('html2canvas')) {
+            return 'vendor-html-export';
+          }
+
+          if (id.includes('heic2any')) {
+            return 'vendor-heic';
+          }
+
+          if (id.includes('xlsx')) {
+            return 'vendor-xlsx';
+          }
+
+          if (id.includes('recharts')) {
+            return 'vendor-charts';
+          }
+
+          if (id.includes('framer-motion')) {
+            return 'vendor-motion';
+          }
+
+          if (id.includes('mammoth') || id.includes('docx')) {
+            return 'vendor-docs';
+          }
+
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api/astrology': {

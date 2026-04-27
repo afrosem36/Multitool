@@ -1,0 +1,111 @@
+.ad-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 1rem auto;
+}
+
+.ad-shell {
+  width: 100%;
+  min-height: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-color) 90%, transparent);
+  overflow: hidden;
+}
+
+.ad-shell-header {
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ad-unit,
+.ad-fallback {
+  width: 100%;
+  min-height: inherit;
+}
+
+.ad-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+}
+
+.ad-top {
+  margin-top: 0;
+}
+
+.ad-sidebar {
+  margin: 1.25rem 0 0;
+}
+
+.ad-belowTool {
+  margin: 2rem auto 0;
+}
+
+.ad-native {
+  margin: 2rem auto 0;
+  max-width: 970px;
+}
+
+.native-ad-shell {
+  min-height: auto;
+}
+
+.native-ad-body {
+  padding: 0.75rem;
+  min-height: 140px;
+}
+
+.native-ad-frame {
+  width: 100%;
+  min-height: 140px;
+  border: 0;
+  display: block;
+  background: transparent;
+}
+
+.ad-footer {
+  margin: 1.5rem auto 0.5rem;
+}
+
+.ad-belowToolMobile {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .ad-sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .ad-container {
+    margin: 0.85rem auto;
+  }
+
+  .ad-shell {
+    border-radius: 10px;
+  }
+
+  .native-ad-body {
+    padding: 0.6rem;
+  }
+
+  .ad-belowToolMobile {
+    display: flex;
+  }
+
+  .ad-top {
+    margin-top: 0.25rem;
+  }
+}

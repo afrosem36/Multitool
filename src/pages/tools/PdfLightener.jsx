@@ -4,6 +4,7 @@ import { FileUp, Download, Zap, RefreshCw, ChevronLeft, FileText, AlertTriangle,
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
+import AdBanner from '../../components/shared/AdBanner';
 import RelatedTools from '../../components/shared/RelatedTools';
 
 export default function PdfLightener() {
@@ -179,6 +180,8 @@ export default function PdfLightener() {
             </div>
           )}
         </div>
+
+        <AdBanner position="belowTool" />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {isProcessing && (

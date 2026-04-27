@@ -1,21 +1,26 @@
 .layout {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
 }
 
 .layout-shell {
   width: min(1400px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 1.5rem 0 2rem;
+  padding: 1.25rem 0 1.5rem;
   display: flex;
   gap: 1.5rem;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .sidebar-wrapper {
   width: 280px;
   flex-shrink: 0;
+  position: sticky;
+  top: 6.5rem;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  will-change: transform, opacity;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin 0.3s;
 }
 
@@ -23,7 +28,7 @@
   width: 0px;
   opacity: 0;
   overflow: hidden;
-  margin-right: -1.5rem; /* Remove the gap visually */
+  margin-right: -1.5rem;
 }
 
 .main-content {
@@ -34,32 +39,38 @@
   transition: flex 0.3s ease;
 }
 
+.layout-tool-ad-strip {
+  margin-top: 1.75rem;
+}
+
+.layout-tool-ad {
+  margin: 0 auto;
+}
+
 .footer {
-  margin-top: auto;
-  padding: 1.5rem 0;
+  margin-top: 1.5rem;
+  padding: 0.7rem 0;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
-  border-radius: 16px 16px 0 0;
-  border-bottom: none;
-  border-left: none;
-  border-right: none;
-  width: min(1400px, calc(100% - 2rem));
-  margin-left: auto;
-  margin-right: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  width: 100%;
 }
 
 .footer-inner {
-  display: grid;
-  gap: 0.8rem;
-  padding: 0 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.9rem;
 }
 
 .footer-links {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .footer-link {
@@ -72,6 +83,7 @@
   }
   .sidebar-wrapper {
     width: 100%;
+    position: static;
     max-height: 100vh;
     transition: all 0.3s ease;
   }
@@ -90,7 +102,7 @@
 @media (max-width: 768px) {
   .layout-shell {
     width: min(100% - 1rem, 1400px);
-    padding-top: 1rem;
+    padding-top: 0.85rem;
     gap: 1rem;
   }
 
@@ -103,10 +115,15 @@
   }
 
   .footer {
-    width: min(100% - 1rem, 1400px);
+    width: 100%;
+    margin-top: 1.25rem;
+  }
+
+  .layout-tool-ad-strip {
+    margin-top: 1.25rem;
   }
 
   .footer-inner {
-    padding: 0 1rem;
+    padding: 0 0.75rem;
   }
 }
