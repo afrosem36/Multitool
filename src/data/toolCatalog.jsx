@@ -38,7 +38,13 @@ import {
   Wand2,
   FileImage,
   Link as LinkIcon,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Crop,
+  Database,
+  Keyboard,
+  Zap,
+  Sparkles,
+  FileCode
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -83,7 +89,47 @@ export const utilityTools = [
     path: '/seo-analyzer',
     icon: Search,
     color: 'rgba(16, 185, 129, 0.1)'
-  }] : [])
+  }] : []),
+  {
+    id: 'json-formatter',
+    name: 'JSON Formatter & Validator',
+    description: 'Clean, format, and validate your JSON data instantly with syntax highlighting.',
+    path: '/tools/json-formatter',
+    icon: FileCode,
+    color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'data-converter',
+    name: 'Data Format Converter',
+    description: 'Seamlessly convert between JSON, CSV, XML, YAML, and TOML.',
+    path: '/tools/data-converter',
+    icon: ArrowRightLeft,
+    color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
+    id: 'sql-formatter',
+    name: 'SQL Query Formatter',
+    description: 'Beautify your raw SQL queries with proper indentation and keyword highlighting.',
+    path: '/tools/sql-formatter',
+    icon: Database,
+    color: 'rgba(139, 92, 246, 0.1)'
+  },
+  {
+    id: 'text-to-sql',
+    name: 'AI Text-to-SQL Generator',
+    description: 'Convert plain English questions into optimized SQL queries instantly.',
+    path: '/tools/text-to-sql',
+    icon: Sparkles,
+    color: 'rgba(245, 158, 11, 0.1)'
+  },
+  {
+    id: 'typing-test',
+    name: 'Typing Speed Test',
+    description: 'Test your WPM and accuracy with a printable certificate result.',
+    path: '/tools/typing-test',
+    icon: Keyboard,
+    color: 'rgba(16, 185, 129, 0.1)'
+  }
 ];
 
 export const pdfTools = [
@@ -166,6 +212,14 @@ export const pdfTools = [
     path: '/pdf/excel-to-pdf',
     icon: FileSpreadsheet,
     color: 'rgba(16, 185, 129, 0.1)'
+  },
+  {
+    id: 'pdf-lightener',
+    name: 'PDF Lightener',
+    description: 'Aggressively reduce PDF file size by stripping metadata and optimizing structure.',
+    path: '/tools/pdf-lightener',
+    icon: Zap,
+    color: 'rgba(249, 115, 22, 0.1)'
   }
 ];
 
@@ -233,7 +287,23 @@ export const imageTools = [
     path: '/image/heic-to-jpg',
     icon: Images,
     color: 'rgba(236, 72, 153, 0.1)'
-  }] : [])
+  }] : []),
+  {
+    id: 'passport-photo',
+    name: 'Passport Photo Cropper',
+    description: 'Crop your photos to official passport dimensions for UK, US, and other regions.',
+    path: '/tools/passport-photo',
+    icon: Crop,
+    color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'background-remover',
+    name: 'AI Background Remover',
+    description: 'Instantly remove backgrounds from your photos using AI and get a transparent PNG.',
+    path: '/tools/background-remover',
+    icon: Eraser,
+    color: 'rgba(16, 185, 129, 0.1)'
+  }
 ];
 
 export const textTools = [
@@ -356,6 +426,14 @@ export const textTools = [
     color: 'rgba(168, 85, 247, 0.1)',
     sampleInput: 'repeat me',
     actionLabel: 'Repeat Words'
+  },
+  {
+    id: 'font-preview',
+    name: 'Google Font Previewer',
+    description: 'Type your text and see it instantly rendered across 40+ popular Google Fonts.',
+    path: '/tools/font-preview',
+    icon: Type,
+    color: 'rgba(59, 130, 246, 0.1)'
   }
 ];
 

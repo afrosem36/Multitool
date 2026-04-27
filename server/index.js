@@ -85,10 +85,10 @@ app.use('*', async (c, next) => {
 app.get('/api/health', (c) => {
   const envKeys = Object.keys(c.env || {});
   console.log('Environment Keys:', envKeys);
-  return c.json({ 
-    ok: true, 
+  return c.json({
+    ok: true,
     envKeys,
-    hasDb: !!c.env.multitool_db 
+    hasDb: !!c.env.multitool_db
   });
 });
 
@@ -109,7 +109,7 @@ app.post('/api/auth/google', async (c) => {
     console.log("🔑 Token received");
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
     console.log("🌐 Google response status:", googleRes.status);
-    
+
     const googleData = await googleRes.json();
     console.log("👤 Google user:", googleData);
 
@@ -181,9 +181,9 @@ app.post('/api/auth/register', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email: rawEmail, password } = await c.req.json();
   const email = rawEmail.trim().toLowerCase();
-  
+
   const user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
-  
+
   if (!user) {
     console.log('Login failed: User not found for email:', email);
     return c.json({ error: 'Invalid email or password' }, 401);
@@ -224,20 +224,20 @@ app.post('/api/auth/test-token', async (c) => {
 app.post('/api/auth/forgot-password', async (c) => {
   const { email: rawEmail } = await c.req.json();
   const email = rawEmail?.trim().toLowerCase();
-  
+
   if (!email) return c.json({ message: 'If that email exists a reset link has been sent' });
 
   const user = await c.env.multitool_db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-  
+
   if (user) {
     const token = nanoid(32);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins
-    
+
     await c.env.multitool_db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)')
       .bind(token, user.id, expiresAt).run();
 
     const resetLink = `${c.env.FRONTEND_URL}/reset-password?token=${token}`;
-    
+
     // Send email via Resend raw fetch
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -267,29 +267,29 @@ app.post('/api/auth/forgot-password', async (c) => {
 app.get('/api/auth/verify-reset-token/:token', async (c) => {
   const token = c.req.param('token');
   const reset = await c.env.multitool_db.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
-  
+
   if (!reset) return c.json({ valid: false, error: 'Token expired or invalid' });
-  
+
   if (new Date(reset.expires_at).getTime() <= Date.now()) {
     return c.json({ valid: false, error: 'Token expired or invalid' });
   }
-  
+
   return c.json({ valid: true });
 });
 
 app.post('/api/auth/reset-password', async (c) => {
   const { token, newPassword } = await c.req.json();
-  
+
   const reset = await c.env.multitool_db.prepare('SELECT * FROM password_resets WHERE token = ? AND used = 0').bind(token).first();
   if (!reset || new Date(reset.expires_at).getTime() <= Date.now()) {
     return c.json({ error: 'Token expired or invalid' }, 400);
   }
-  
+
   const hash = bcrypt.hashSync(newPassword, 10);
-  
+
   await c.env.multitool_db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(hash, reset.user_id).run();
   await c.env.multitool_db.prepare('UPDATE password_resets SET used = 1 WHERE token = ?').bind(token).run();
-  
+
   return c.json({ message: 'Password reset successfully' });
 });
 
@@ -305,7 +305,7 @@ app.post('/api/share/upload', async (c) => {
   const formConfig = body['formConfig'];
   const gate_bg_key = body['gate_bg_key'];
   const user = c.get('user');
-  
+
   if (!file) return c.json({ error: 'No file uploaded' }, 400);
 
   const slug = nanoid(8);
@@ -329,11 +329,11 @@ app.post('/api/share/upload', async (c) => {
     INSERT INTO links (slug, original_name, r2_key, mime_type, size, user_id, expires_at, form_config, requires_data_collection, gate_bg_key)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
-    slug, 
-    file.name, 
-    key, 
-    file.type, 
-    file.size, 
+    slug,
+    file.name,
+    key,
+    file.type,
+    file.size,
     user ? user.id : null,
     expiresAt,
     formConfig || null,
@@ -368,7 +368,7 @@ app.post('/api/upload-asset', async (c) => {
 app.post('/api/shorten', async (c) => {
   const { longUrl, customSlug, formConfig, gate_bg_key } = await c.req.json();
   const user = c.get('user');
-  
+
   if (!longUrl) return c.json({ error: 'longUrl required' }, 400);
 
   const slug = customSlug || nanoid(8);
@@ -379,7 +379,7 @@ app.post('/api/shorten', async (c) => {
     INSERT INTO links (slug, long_url, user_id, form_config, requires_data_collection, gate_bg_key)
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(
-    slug, longUrl, 
+    slug, longUrl,
     user ? user.id : null,
     formConfig ? JSON.stringify(formConfig) : null,
     formConfig ? 1 : 0,
@@ -407,7 +407,7 @@ app.get('/s/:slug', async (c) => {
 
   // Analytics
   await c.env.multitool_db.prepare('UPDATE links SET download_count = download_count + 1 WHERE slug = ?').bind(slug).run();
-  
+
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
   const country = c.req.header('cf-ipcountry') || 'Unknown';
   const userAgent = c.req.header('user-agent') || '';
@@ -458,7 +458,7 @@ app.post('/api/s/:slug/submit', async (c) => {
   if (!link) return c.json({ error: 'Not found' }, 404);
 
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
-  
+
   // Find latest analytics row for this IP and slug, update it with visitor data
   const latestAnalytics = await c.env.multitool_db.prepare(`
     SELECT id FROM analytics WHERE slug = ? AND ip = ? ORDER BY timestamp DESC LIMIT 1
@@ -479,9 +479,9 @@ app.post('/api/s/:slug/submit', async (c) => {
 app.get('/api/s/:slug/background', async (c) => {
   const slug = c.req.param('slug');
   const link = await c.env.multitool_db.prepare('SELECT gate_bg_key FROM links WHERE slug = ?').bind(slug).first();
-  
+
   if (!link || !link.gate_bg_key) return c.json({ data: null });
-  
+
   const s3Client = getS3Client(c.env);
   const backgroundUrl = await getSignedUrl(
     s3Client,
@@ -491,7 +491,7 @@ app.get('/api/s/:slug/background', async (c) => {
     }),
     { expiresIn: 3600 }
   );
-  
+
   return c.json({ data: { backgroundUrl } });
 });
 
@@ -501,10 +501,10 @@ app.get('/api/s/:slug/background', async (c) => {
 
 app.get('/api/share/analytics', requireAuth, async (c) => {
   const user = c.get('user');
-  
+
   // Get all links for this user
   const { results: links } = await c.env.multitool_db.prepare('SELECT * FROM links WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all();
-  
+
   if (links.length === 0) {
     return c.json({ data: { totalClicks: 0, uniqueVisitors: 0, topCountries: [], topReferers: [], sparkline: [], links: [], leads: [] } });
   }
@@ -564,8 +564,8 @@ app.get('/api/share/analytics', requireAuth, async (c) => {
     data: {
       totalClicks,
       uniqueVisitors: visitors.size,
-      topCountries: Object.entries(countries).map(([name, value]) => ({ name, value })).sort((a,b)=>b.value-a.value).slice(0,5),
-      topReferers: Object.entries(referers).map(([name, value]) => ({ name, value })).sort((a,b)=>b.value-a.value).slice(0,5),
+      topCountries: Object.entries(countries).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5),
+      topReferers: Object.entries(referers).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5),
       sparkline: Object.entries(clicksOverTime).map(([date, clicks]) => ({ date, clicks })),
       links: linksWithStats,
       leads
@@ -582,7 +582,7 @@ app.delete('/api/links', requireAuth, async (c) => {
   const { results: targetLinks } = await c.env.multitool_db.prepare(`SELECT r2_key FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).all();
 
   const keysToDelete = targetLinks.filter(l => l.r2_key).map(l => ({ Key: l.r2_key }));
-  
+
   if (keysToDelete.length > 0) {
     const s3Client = getS3Client(c.env);
     await s3Client.send(new DeleteObjectsCommand({
@@ -592,7 +592,7 @@ app.delete('/api/links', requireAuth, async (c) => {
   }
 
   await c.env.multitool_db.prepare(`DELETE FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).run();
-  
+
   return c.json({ message: 'Deleted successfully' });
 });
 
@@ -643,6 +643,114 @@ app.get('/api/tools/trending', async (c) => {
   `).all();
 
   return c.json({ data: results });
+});
+
+app.post('/api/text-to-sql', requireAuth, async (c) => {
+  const user = c.get('user');
+  const today = new Date().toISOString().split('T')[0];
+  const DAILY_LIMIT = 20;
+  const TOOL_ID = 'text-to-sql';
+
+  // Check quota
+  const quota = await c.env.multitool_db.prepare(
+    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+  ).bind(user.id, TOOL_ID, today).first();
+
+  const currentCount = quota?.count || 0;
+
+  if (currentCount >= DAILY_LIMIT) {
+    return c.json({
+      error: `Daily limit of ${DAILY_LIMIT} credits reached. Resets at midnight UTC.`,
+      creditsUsed: currentCount,
+      creditsTotal: DAILY_LIMIT,
+      resetsAt: 'midnight UTC',
+    }, 429);
+  }
+
+  const { question, schema } = await c.req.json();
+  if (!question || !schema) return c.json({ error: 'Question and schema required' }, 400);
+
+  try {
+    // Perform request with simple retry on rate limit (429)
+    const fetchWithRetry = async (retry = 0) => {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${c.env.GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          max_tokens: 200,
+          temperature: 0.1,
+          messages: [
+            { role: 'system', content: 'You are a SQL expert. Reply with ONLY the SQL query. No explanation, no markdown, no backticks, no commentary whatsoever.' },
+            { role: 'user', content: `Database schema:\n${schema}\n\nConvert this to SQL:\n"${question}"` }
+          ]
+        })
+      });
+
+      if (res.status === 429 && retry < 1) {
+        await new Promise(r => setTimeout(r, 3000));
+        return fetchWithRetry(retry + 1);
+      }
+      return res;
+    };
+
+    const response = await fetchWithRetry();
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      try {
+        const err = JSON.parse(responseText);
+        return c.json({ error: `Groq error: ${err?.error?.message || response.status}` }, 500);
+      } catch (e) {
+        return c.json({ error: `Groq error (${response.status}): ${responseText.substring(0, 100)}` }, 500);
+      }
+    }
+
+    const data = JSON.parse(responseText);
+    const sql = data.choices?.[0]?.message?.content?.trim();
+    if (!sql) return c.json({ error: 'Groq returned empty response' }, 500);
+
+    // Increment quota
+    await c.env.multitool_db.prepare(`
+      INSERT INTO tool_quotas (user_id, tool_id, date, count)
+      VALUES (?, ?, ?, 1)
+      ON CONFLICT (user_id, tool_id, date)
+      DO UPDATE SET count = count + 1
+    `).bind(user.id, TOOL_ID, today).run();
+
+    return c.json({
+      data: { sql },
+      creditsUsed: currentCount + 1,
+      creditsTotal: DAILY_LIMIT,
+    });
+
+  } catch (err) {
+    console.error('text-to-sql exception:', err.message);
+    return c.json({ error: `Exception: ${err.message}` }, 500);
+  }
+});
+
+app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
+  const user = c.get('user');
+  const today = new Date().toISOString().split('T')[0];
+  const DAILY_LIMIT = 20;
+
+  const quota = await c.env.multitool_db.prepare(
+    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+  ).bind(user.id, 'text-to-sql', today).first();
+
+  const used = quota?.count || 0;
+  return c.json({
+    data: {
+      creditsUsed: used,
+      creditsRemaining: DAILY_LIMIT - used,
+      creditsTotal: DAILY_LIMIT,
+      resetsAt: 'midnight UTC',
+    }
+  });
 });
 
 export default app;

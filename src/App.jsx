@@ -82,6 +82,15 @@ const ExpiredLink = React.lazy(() => import('./pages/ExpiredLink'));
 const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const ExcelToPdf = React.lazy(() => import('./pages/tools/ExcelToPdf'));
+const FontPreview = React.lazy(() => import('./pages/tools/FontPreview'));
+const PassportPhotoCropper = React.lazy(() => import('./pages/tools/PassportPhotoCropper'));
+const JsonFormatter = React.lazy(() => import('./pages/tools/JsonFormatter'));
+const DataConverter = React.lazy(() => import('./pages/tools/DataConverter'));
+const SqlFormatter = React.lazy(() => import('./pages/tools/SqlFormatter'));
+const TextToSql = React.lazy(() => import('./pages/tools/TextToSql'));
+const TypingSpeedTest = React.lazy(() => import('./pages/tools/TypingSpeedTest'));
+const PdfLightener = React.lazy(() => import('./pages/tools/PdfLightener'));
+const BackgroundRemover = React.lazy(() => import('./pages/tools/BackgroundRemover'));
 
 // Auth Pages
 import { Login, Signup } from './pages/AuthPages';
@@ -164,6 +173,17 @@ function App() {
             <Route path="/utilities/unit-converter" element={<UnitConverter />} />
             <Route path="/utilities/url-shortener" element={<UrlShortener />} />
             <Route path="/demo/sky-toggle" element={<SkyToggleDemo />} />
+
+            {/* New Tools */}
+            <Route path="/tools/font-preview" element={<FontPreview />} />
+            <Route path="/tools/passport-photo" element={<PassportPhotoCropper />} />
+            <Route path="/tools/json-formatter" element={<JsonFormatter />} />
+            <Route path="/tools/data-converter" element={<DataConverter />} />
+            <Route path="/tools/sql-formatter" element={<SqlFormatter />} />
+            <Route path="/tools/text-to-sql" element={<TextToSql />} />
+            <Route path="/tools/typing-test" element={<TypingSpeedTest />} />
+            <Route path="/tools/pdf-lightener" element={<PdfLightener />} />
+            <Route path="/tools/background-remover" element={<BackgroundRemover />} />
 
             {/* Feature Flags */}
             {FEATURE_FLAGS.ENABLE_FILE_SHARING && (
