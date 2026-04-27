@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
-import AdBanner from './shared/AdBanner';
+import AdSenseUnit from './shared/AdSenseUnit';
 import { footerPages } from '../data/contentPages';
 import {
   calculatorTools,
@@ -102,18 +102,18 @@ const Layout = () => {
       <div className="layout-shell">
         <div className={`sidebar-wrapper ${isSidebarOpen ? '' : 'hidden'}`}>
           <Sidebar />
-          <AdBanner position="sidebar" />
+          <AdSenseUnit slot="1234567890" format="rectangle" responsive="false" />
         </div>
         <main className="main-content">
           <Outlet />
 
           {isToolPage && (
             <div className="layout-tool-ad-strip">
-              <AdBanner
-                key={location.pathname}
-                position="toolFooter"
-                className="layout-tool-ad"
-                label="Sponsored"
+              <AdSenseUnit
+                slot="9876543210"
+                format="auto"
+                responsive="true"
+                style={{ display: "block", minHeight: 140 }}
               />
             </div>
           )}
