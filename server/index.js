@@ -11,25 +11,40 @@ app.options('*', (c) => {
   const origin = c.req.header('Origin') || '';
   const allowed = [
     'https://www.multitoolhub.space',
-    'http://localhost:5173'
+    'https://www.multitoolhub.com',
+    'https://multi-tool-hub.pages.dev',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
   ];
+  
+  // Also allow any vercel subdomain for flexibility during preview/prod
+  const isVercel = origin.endsWith('.vercel.app');
 
   return c.body(null, 204, {
-    'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : 'http://localhost:5173',
+    'Access-Control-Allow-Origin': (allowed.includes(origin) || isVercel) ? origin : 'https://www.multitoolhub.com',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Allow-Credentials': 'true',
     'Vary': 'Origin',
   });
 });
 
 app.use('*', cors({
-  origin: [
-    'https://www.multitoolhub.space',
-    'http://localhost:5173'
-  ],
+  origin: (origin) => {
+    const allowed = [
+      'https://www.multitoolhub.space',
+      'https://www.multitoolhub.com',
+      'https://multi-tool-hub.pages.dev',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173'
+    ];
+    if (allowed.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
+      return origin;
+    }
+    return 'https://www.multitoolhub.com';
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
 }));
 
