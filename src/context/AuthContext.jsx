@@ -3,6 +3,24 @@ import { API_BASE_URL } from '../config';
 /* @refresh reset */
 const AuthContext = createContext(null);
 
+const parseJsonResponse = async (res) => {
+  const text = await res.text();
+  let data;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    console.error('Invalid JSON:', text);
+    throw new Error('Server error');
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+
+  return data;
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => {
@@ -16,8 +34,8 @@ export const AuthProvider = ({ children }) => {
       const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${currentToken}` }
       });
-      const data = await res.json();
-      if (res.ok && data.data?.user) {
+      const data = await parseJsonResponse(res);
+      if (data.data?.user) {
         setUser(data.data.user);
       } else {
         setToken(null);
@@ -50,48 +68,63 @@ export const AuthProvider = ({ children }) => {
   }, [token, fetchUser]);
 
   const login = async (email, password) => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
-    if (res.ok && data.data?.token) {
-      setToken(data.data.token);
-      setUser(data.data.user);
-      return { success: true };
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.data?.token) {
+        localStorage.setItem('auth_token', data.data.token);
+        setToken(data.data.token);
+        setUser(data.data.user);
+        return { success: true };
+      }
+      return { success: false, error: 'Login failed' };
+    } catch (error) {
+      return { success: false, error: error.message || 'Login failed' };
     }
-    return { success: false, error: data.error || 'Login failed' };
   };
 
   const register = async (email, password) => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
-    if (res.ok && data.data?.token) {
-      setToken(data.data.token);
-      setUser(data.data.user);
-      return { success: true };
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.data?.token) {
+        localStorage.setItem('auth_token', data.data.token);
+        setToken(data.data.token);
+        setUser(data.data.user);
+        return { success: true };
+      }
+      return { success: false, error: 'Registration failed' };
+    } catch (error) {
+      return { success: false, error: error.message || 'Registration failed' };
     }
-    return { success: false, error: data.error || 'Registration failed' };
   };
 
   const loginWithGoogle = async (token) => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
-    });
-    const data = await res.json();
-    if (res.ok && data.data?.token) {
-      setToken(data.data.token);
-      setUser(data.data.user);
-      return { success: true };
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.data?.token) {
+        localStorage.setItem('auth_token', data.data.token);
+        setToken(data.data.token);
+        setUser(data.data.user);
+        return { success: true };
+      }
+      return { success: false, error: 'Google login failed' };
+    } catch (error) {
+      return { success: false, error: error.message || 'Google login failed' };
     }
-    return { success: false, error: data.error || 'Google login failed' };
   };
 
   const logout = () => {

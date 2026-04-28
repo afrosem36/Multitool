@@ -67,6 +67,7 @@ const JsonFormatter = React.lazy(() => import('./pages/tools/JsonFormatter'));
 const DataConverter = React.lazy(() => import('./pages/tools/DataConverter'));
 const SqlFormatter = React.lazy(() => import('./pages/tools/SqlFormatter'));
 const TextToSql = React.lazy(() => import('./pages/tools/TextToSql'));
+const AudioTranscription = React.lazy(() => import('./pages/tools/AudioTranscription'));
 const TypingSpeedTest = React.lazy(() => import('./pages/tools/TypingSpeedTest'));
 const PdfLightener = React.lazy(() => import('./pages/tools/PdfLightener'));
 const BackgroundRemover = React.lazy(() => import('./pages/tools/BackgroundRemover'));
@@ -162,6 +163,9 @@ function AppRoutes() {
         <Route path="/tools/data-converter" element={<DataConverter />} />
         <Route path="/tools/sql-formatter" element={<SqlFormatter />} />
         <Route path="/tools/text-to-sql" element={<TextToSql />} />
+        {FEATURE_FLAGS.enableTranscription && (
+          <Route path="/tools/audio-transcription" element={<AudioTranscription />} />
+        )}
         <Route path="/tools/typing-test" element={<TypingSpeedTest />} />
         <Route path="/tools/pdf-lightener" element={<PdfLightener />} />
         <Route path="/tools/background-remover" element={<BackgroundRemover />} />

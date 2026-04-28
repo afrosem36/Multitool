@@ -44,7 +44,8 @@ import {
   Keyboard,
   Zap,
   Sparkles,
-  FileCode
+  FileCode,
+  AudioLines
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -122,6 +123,14 @@ export const utilityTools = [
     icon: Sparkles,
     color: 'rgba(245, 158, 11, 0.1)'
   },
+  ...(FEATURE_FLAGS.enableTranscription ? [{
+    id: 'audio-transcription',
+    name: 'Audio Transcription',
+    description: 'Upload audio, require login, and turn speech into text with Groq Whisper.',
+    path: '/tools/audio-transcription',
+    icon: AudioLines,
+    color: 'rgba(56, 189, 248, 0.12)'
+  }] : []),
   {
     id: 'typing-test',
     name: 'Typing Speed Test',

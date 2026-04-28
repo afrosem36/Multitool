@@ -65,6 +65,43 @@ function getFrontendOrigin(c) {
   return c.env.FRONTEND_URL || 'http://localhost:5173';
 }
 
+function getDb(env) {
+  return env.multitool_db || env.DB;
+}
+
+function getTodayUtcDate() {
+  return new Date().toISOString().split('T')[0];
+}
+
+async function checkUserQuota(db, userId, toolId) {
+  const today = getTodayUtcDate();
+  const quota = await db.prepare(
+    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+  ).bind(userId, toolId, today).first();
+
+  return quota?.count || 0;
+}
+
+async function incrementUserQuota(db, userId, toolId) {
+  const today = getTodayUtcDate();
+  await db.prepare(`
+    INSERT INTO tool_quotas (user_id, tool_id, date, count)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT (user_id, tool_id, date)
+    DO UPDATE SET count = count + 1
+  `).bind(userId, toolId, today).run();
+}
+
+function getRequiredEnvValue(env, key) {
+  const value = env[key];
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function containsDevanagari(text = '') {
+  return /[\u0900-\u097F]/.test(text);
+}
+
 function sanitizeFileName(name = 'file') {
   const parts = name.split('.');
   const extension = parts.length > 1 ? `.${parts.pop()}` : '';
@@ -210,6 +247,7 @@ app.post('/api/auth/register', async (c) => {
 
 app.post('/api/auth/login', async (c) => {
   const { email: rawEmail, password } = await c.req.json();
+  if (!rawEmail || !password) return c.json({ error: 'Email and password required' }, 400);
   const email = rawEmail.trim().toLowerCase();
 
   const user = await c.env.multitool_db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
@@ -668,18 +706,193 @@ app.get('/api/tools/trending', async (c) => {
   return c.json({ data: results });
 });
 
+app.get('/api/transcribe/credits', requireAuth, async (c) => {
+  const user = c.get('user');
+  const DAILY_LIMIT = 10;
+  const TOOL_ID = 'transcribe';
+  const db = getDb(c.env);
+
+  const used = await checkUserQuota(db, user.id, TOOL_ID);
+
+  return c.json({
+    data: {
+      creditsUsed: used,
+      creditsRemaining: Math.max(0, DAILY_LIMIT - used),
+      creditsTotal: DAILY_LIMIT,
+      resetsAt: 'midnight UTC',
+    }
+  });
+});
+
+app.post('/api/transcribe', async (c) => {
+  try {
+    const user = c.get('user');
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const db = getDb(c.env);
+    const formData = await c.req.formData();
+    const file = formData.get('file');
+    const rawOutputLanguage = String(formData.get('outputLanguage') || 'english').toLowerCase();
+    const allowedOutputLanguages = new Set(['english', 'hinglish', 'original']);
+    const outputLanguage = allowedOutputLanguages.has(rawOutputLanguage) ? rawOutputLanguage : 'english';
+
+    if (!file) {
+      return c.json({ error: 'Audio file required' }, 400);
+    }
+
+    const TOOL_ID = 'transcribe';
+    const DAILY_LIMIT = 10;
+    const usage = await checkUserQuota(db, user.id, TOOL_ID);
+    const groqApiKey = getRequiredEnvValue(c.env, 'GROQ_API_KEY');
+
+    if (usage >= DAILY_LIMIT) {
+      return c.json({
+        error: 'Daily limit reached',
+        creditsUsed: usage,
+        creditsTotal: DAILY_LIMIT,
+        resetsAt: 'midnight UTC',
+      }, 429);
+    }
+
+    if (!groqApiKey || groqApiKey === 'your-groq-key-here') {
+      return c.json({ error: 'Groq API key is not configured correctly' }, 500);
+    }
+
+    const groqForm = new FormData();
+    groqForm.append('file', file);
+    groqForm.append('model', 'whisper-large-v3');
+
+    const response = await fetch(
+      'https://api.groq.com/openai/v1/audio/transcriptions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${groqApiKey}`
+        },
+        body: groqForm
+      }
+    );
+
+    const rawText = await response.text();
+    let data;
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      console.error('Groq transcription returned invalid JSON:', rawText);
+      return c.json({ error: 'Transcription failed' }, 500);
+    }
+
+    if (!response.ok) {
+      console.error('Groq Error:', data);
+      const message = data?.error?.message || 'Transcription failed';
+      if (response.status === 401) {
+        return c.json({ error: 'Groq API key is invalid or expired' }, 500);
+      }
+      return c.json({ error: message }, 500);
+    }
+
+    const originalTranscript = data.text || '';
+    let finalTranscript = originalTranscript;
+
+    const runGroqChat = async (systemPrompt, userPrompt) => {
+      const convertResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${groqApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          temperature: 0.3,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ]
+        })
+      });
+
+      const convertText = await convertResponse.text();
+      if (!convertResponse.ok) {
+        throw new Error(convertText || 'Post-processing failed');
+      }
+
+      const convertData = convertText ? JSON.parse(convertText) : {};
+      return convertData?.choices?.[0]?.message?.content?.trim() || '';
+    };
+
+    // English option translates meaning into natural English output.
+    if (outputLanguage === 'english' && originalTranscript) {
+      try {
+        const translated = await runGroqChat(
+          'Translate the given Hindi or Hinglish text to clear natural English. Preserve meaning and intent. Output only translated English text.',
+          originalTranscript
+        );
+        if (translated) {
+          finalTranscript = translated;
+        }
+      } catch (translationError) {
+        console.error('English translation exception:', translationError);
+      }
+    }
+
+    // If the user asks for Hinglish, convert once automatically with fallback.
+    if (outputLanguage === 'hinglish' && originalTranscript) {
+      try {
+        const convertToHinglish = async (strict = false) =>
+          runGroqChat(
+            strict
+              ? 'Transliterate Hindi text to Hinglish using only Roman letters (a-z), numbers, spaces, and punctuation. Do not output Devanagari. Do not translate meaning. Output only the converted text.'
+              : 'Convert this Hindi text into Hinglish (Roman script). Do NOT translate meaning. Keep same words, just convert script naturally.',
+            originalTranscript
+          );
+
+        let converted = await convertToHinglish(false);
+
+        // Retry once with stricter Roman-only instructions if Devanagari remains.
+        if (converted && containsDevanagari(converted)) {
+          converted = await convertToHinglish(true);
+        }
+
+        if (converted && !containsDevanagari(converted)) {
+          finalTranscript = converted;
+        } else {
+          console.error('Hinglish conversion produced non-Roman output; falling back to original transcript.');
+        }
+      } catch (conversionError) {
+        console.error('Hinglish conversion exception:', conversionError);
+      }
+    }
+
+    await incrementUserQuota(db, user.id, TOOL_ID);
+
+    return c.json({
+      data: {
+        transcript: finalTranscript
+      },
+      creditsUsed: usage + 1,
+      creditsTotal: DAILY_LIMIT,
+      resetsAt: 'midnight UTC',
+    });
+
+  } catch (err) {
+    console.error('Transcription error:', err);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 app.post('/api/text-to-sql', requireAuth, async (c) => {
   const user = c.get('user');
-  const today = new Date().toISOString().split('T')[0];
   const DAILY_LIMIT = 20;
   const TOOL_ID = 'text-to-sql';
+  const db = getDb(c.env);
+  const groqApiKey = getRequiredEnvValue(c.env, 'GROQ_API_KEY');
 
   // Check quota
-  const quota = await c.env.multitool_db.prepare(
-    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
-  ).bind(user.id, TOOL_ID, today).first();
-
-  const currentCount = quota?.count || 0;
+  const currentCount = await checkUserQuota(db, user.id, TOOL_ID);
 
   if (currentCount >= DAILY_LIMIT) {
     return c.json({
@@ -692,6 +905,9 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
 
   const { question, schema } = await c.req.json();
   if (!question || !schema) return c.json({ error: 'Question and schema required' }, 400);
+  if (!groqApiKey || groqApiKey === 'your-groq-key-here') {
+    return c.json({ error: 'Groq API key is not configured correctly' }, 500);
+  }
 
   try {
     // Perform request with simple retry on rate limit (429)
@@ -700,7 +916,7 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${c.env.GROQ_API_KEY}`
+          'Authorization': `Bearer ${groqApiKey}`
         },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
@@ -737,12 +953,7 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
     if (!sql) return c.json({ error: 'Groq returned empty response' }, 500);
 
     // Increment quota
-    await c.env.multitool_db.prepare(`
-      INSERT INTO tool_quotas (user_id, tool_id, date, count)
-      VALUES (?, ?, ?, 1)
-      ON CONFLICT (user_id, tool_id, date)
-      DO UPDATE SET count = count + 1
-    `).bind(user.id, TOOL_ID, today).run();
+    await incrementUserQuota(db, user.id, TOOL_ID);
 
     return c.json({
       data: { sql },
@@ -758,14 +969,9 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
 
 app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
   const user = c.get('user');
-  const today = new Date().toISOString().split('T')[0];
   const DAILY_LIMIT = 20;
-
-  const quota = await c.env.multitool_db.prepare(
-    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
-  ).bind(user.id, 'text-to-sql', today).first();
-
-  const used = quota?.count || 0;
+  const db = getDb(c.env);
+  const used = await checkUserQuota(db, user.id, 'text-to-sql');
   return c.json({
     data: {
       creditsUsed: used,
@@ -778,16 +984,12 @@ app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
 
 app.post('/api/remove-bg', requireAuth, async (c) => {
   const user = c.get('user');
-  const today = new Date().toISOString().split('T')[0];
   const DAILY_LIMIT = 5; // AI image removal is more expensive
   const TOOL_ID = 'remove-bg';
+  const db = getDb(c.env);
 
   // Check quota
-  const quota = await c.env.multitool_db.prepare(
-    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
-  ).bind(user.id, TOOL_ID, today).first();
-
-  const currentCount = quota?.count || 0;
+  const currentCount = await checkUserQuota(db, user.id, TOOL_ID);
 
   if (currentCount >= DAILY_LIMIT) {
     return c.json({
@@ -823,12 +1025,7 @@ app.post('/api/remove-bg', requireAuth, async (c) => {
     const arrayBuffer = await imageBlob.arrayBuffer();
 
     // Increment quota
-    await c.env.multitool_db.prepare(`
-      INSERT INTO tool_quotas (user_id, tool_id, date, count)
-      VALUES (?, ?, ?, 1)
-      ON CONFLICT (user_id, tool_id, date)
-      DO UPDATE SET count = count + 1
-    `).bind(user.id, TOOL_ID, today).run();
+    await incrementUserQuota(db, user.id, TOOL_ID);
 
     return new Response(arrayBuffer, {
       headers: {
@@ -844,14 +1041,9 @@ app.post('/api/remove-bg', requireAuth, async (c) => {
 
 app.get('/api/remove-bg/credits', requireAuth, async (c) => {
   const user = c.get('user');
-  const today = new Date().toISOString().split('T')[0];
   const DAILY_LIMIT = 5;
-
-  const quota = await c.env.multitool_db.prepare(
-    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
-  ).bind(user.id, 'remove-bg', today).first();
-
-  const used = quota?.count || 0;
+  const db = getDb(c.env);
+  const used = await checkUserQuota(db, user.id, 'remove-bg');
   return c.json({
     data: {
       creditsUsed: used,

@@ -5,6 +5,7 @@ export const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export const FEATURE_FLAGS = {
+  enableTranscription: true,
   enableTools: true,
   enableSharing: true,
   enableAnalytics: true,
