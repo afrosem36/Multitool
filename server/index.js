@@ -3,29 +3,44 @@ import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
-import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-app.use('*', cors());
+app.options('*', (c) => {
+  const origin = c.req.header('Origin') || '';
+  const allowed = [
+    'https://www.multitoolhub.space',
+    'http://localhost:5173'
+  ];
+
+  return c.body(null, 204, {
+    'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : 'http://localhost:5173',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
+  });
+});
+
+app.use('*', cors({
+  origin: [
+    'https://www.multitoolhub.space',
+    'http://localhost:5173'
+  ],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
+app.get('/favicon.ico', (c) => {
+  return c.text('', 204);
+});
 
 
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
-
-const getS3Client = (env) => {
-  return new S3Client({
-    region: "auto",
-    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: env.R2_ACCESS_KEY_ID,
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-    },
-  });
-};
 
 function getPublicOrigin(c) {
   return c.env.SHORT_DOMAIN || 'http://localhost:5000';
@@ -312,13 +327,10 @@ app.post('/api/share/upload', async (c) => {
   const key = `${slug}-${sanitizeFileName(file.name)}`;
   const arrayBuffer = await file.arrayBuffer();
 
-  const s3Client = getS3Client(c.env);
-  await s3Client.send(new PutObjectCommand({
-    Bucket: c.env.R2_BUCKET_NAME,
-    Key: key,
-    Body: new Uint8Array(arrayBuffer),
-    ContentType: file.type,
-  }));
+  // R2 Native Put
+  await c.env.MY_BUCKET.put(key, arrayBuffer, {
+    httpMetadata: { contentType: file.type }
+  });
 
   let expiresAt = null;
   if (expiresInSeconds > 0) {
@@ -353,14 +365,11 @@ app.post('/api/upload-asset', async (c) => {
 
   const key = `assets/${nanoid(12)}-${sanitizeFileName(file.name)}`;
   const arrayBuffer = await file.arrayBuffer();
-  const s3Client = getS3Client(c.env);
 
-  await s3Client.send(new PutObjectCommand({
-    Bucket: c.env.R2_BUCKET_NAME,
-    Key: key,
-    Body: new Uint8Array(arrayBuffer),
-    ContentType: file.type,
-  }));
+  // R2 Native Put
+  await c.env.MY_BUCKET.put(key, arrayBuffer, {
+    httpMetadata: { contentType: file.type }
+  });
 
   return c.json({ data: { key } });
 });
@@ -424,18 +433,17 @@ app.get('/s/:slug', async (c) => {
   }
 
   if (link.r2_key) {
-    const s3Client = getS3Client(c.env);
-    const downloadUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: c.env.R2_BUCKET_NAME,
-        Key: link.r2_key,
-        ResponseContentDisposition: `inline; filename="${sanitizeFileName(link.original_name)}"`,
-        ResponseContentType: link.mime_type,
-      }),
-      { expiresIn: 60 }
-    );
-    return c.redirect(downloadUrl);
+    // R2 Native Get
+    const object = await c.env.MY_BUCKET.get(link.r2_key);
+    if (!object) return c.text('File not found in storage', 404);
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('etag', object.httpEtag);
+    headers.set('Content-Disposition', `inline; filename="${sanitizeFileName(link.original_name)}"`);
+    headers.set('Content-Type', link.mime_type || 'application/octet-stream');
+
+    return new Response(object.body, { headers });
   }
 
   return c.redirect(link.long_url);
@@ -482,17 +490,20 @@ app.get('/api/s/:slug/background', async (c) => {
 
   if (!link || !link.gate_bg_key) return c.json({ data: null });
 
-  const s3Client = getS3Client(c.env);
-  const backgroundUrl = await getSignedUrl(
-    s3Client,
-    new GetObjectCommand({
-      Bucket: c.env.R2_BUCKET_NAME,
-      Key: link.gate_bg_key,
-    }),
-    { expiresIn: 3600 }
-  );
+  // For background images, we serve them directly or proxy them
+  return c.json({ data: { backgroundUrl: `${getPublicOrigin(c)}/api/assets/${link.gate_bg_key}` } });
+});
 
-  return c.json({ data: { backgroundUrl } });
+// Serve assets from R2
+app.get('/api/assets/:key{.+}', async (c) => {
+  const key = c.req.param('key');
+  const object = await c.env.MY_BUCKET.get(key);
+  if (!object) return c.text('Not found', 404);
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  return new Response(object.body, { headers });
 });
 
 // ==========================================
@@ -581,14 +592,11 @@ app.delete('/api/links', requireAuth, async (c) => {
   const placeholders = slugs.map(() => '?').join(',');
   const { results: targetLinks } = await c.env.multitool_db.prepare(`SELECT r2_key FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).all();
 
-  const keysToDelete = targetLinks.filter(l => l.r2_key).map(l => ({ Key: l.r2_key }));
-
-  if (keysToDelete.length > 0) {
-    const s3Client = getS3Client(c.env);
-    await s3Client.send(new DeleteObjectsCommand({
-      Bucket: c.env.R2_BUCKET_NAME,
-      Delete: { Objects: keysToDelete }
-    })).catch(e => console.error("R2 deletion failed", e));
+  // R2 Native Delete
+  for (const link of targetLinks) {
+    if (link.r2_key) {
+      await c.env.MY_BUCKET.delete(link.r2_key).catch(e => console.error("R2 deletion failed", e));
+    }
   }
 
   await c.env.multitool_db.prepare(`DELETE FROM links WHERE user_id = ? AND slug IN (${placeholders})`).bind(user.id, ...slugs).run();
@@ -782,9 +790,8 @@ app.post('/api/remove-bg', requireAuth, async (c) => {
 
     const removeBgFormData = new FormData();
     removeBgFormData.append('image_file', imageFile);
-    removeBgFormData.append('size', 'auto');
 
-    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+    const res = await fetch('https://api.remove.bg/v1.0/removebg', {
       method: 'POST',
       headers: {
         'X-Api-Key': c.env.REMOVE_BG_API_KEY,
@@ -792,18 +799,14 @@ app.post('/api/remove-bg', requireAuth, async (c) => {
       body: removeBgFormData,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = 'Failed to remove background';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.errors?.[0]?.title || errorMessage;
-      } catch (e) {}
-      return c.json({ error: errorMessage }, response.status);
+    if (!res.ok) {
+      const errText = await res.text();
+      return c.json({ error: `Remove.bg error: ${errText}` }, 500);
     }
 
-    const imageBlob = await response.blob();
-    
+    const imageBlob = await res.blob();
+    const arrayBuffer = await imageBlob.arrayBuffer();
+
     // Increment quota
     await c.env.multitool_db.prepare(`
       INSERT INTO tool_quotas (user_id, tool_id, date, count)
@@ -812,12 +815,9 @@ app.post('/api/remove-bg', requireAuth, async (c) => {
       DO UPDATE SET count = count + 1
     `).bind(user.id, TOOL_ID, today).run();
 
-    // Return the image as a response
-    return new Response(imageBlob, {
+    return new Response(arrayBuffer, {
       headers: {
         'Content-Type': 'image/png',
-        'X-Credits-Used': (currentCount + 1).toString(),
-        'X-Credits-Total': DAILY_LIMIT.toString(),
       },
     });
 
