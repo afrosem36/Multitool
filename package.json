@@ -1,3 +1,4 @@
+
 {
   "name": "multi-tool-web-app",
   "private": true,
@@ -20,7 +21,6 @@
     "@vercel/analytics": "^2.0.1",
     "docx": "^8.5.0",
     "file-saver": "^2.0.5",
-    "framer-motion": "^12.38. Ascync0",
     "heic2any": "^0.0.4",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
