@@ -7,7 +7,18 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-
+app.options('*', (c) => {
+  const origin = c.req.header('Origin');
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': origin || 'https://www.multitoolhub.space',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      'Access-Control-Allow-Credentials': 'true'
+    }
+  });
+});
 
 app.use('*', cors({
   origin: (origin) => {
@@ -23,7 +34,7 @@ app.use('*', cors({
       return origin; // ✅ echo back correct origin
     }
 
-    return origin || '*'; // safer fallback
+    return null; // ✅ NEVER "*"
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
