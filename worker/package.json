@@ -1,0 +1,21 @@
+{
+  "name": "multi-tool-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply multitool-db --remote"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+
+    "bcryptjs": "^2.4.3",
+    "nanoid": "^5.0.7",
+    "cheerio": "^1.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.85.0"
+  }
+}

@@ -4,14 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:worker\"",
     "dev:client": "vite",
-    "dev:server": "node scripts/free-port.mjs 5000 && npm run dev --prefix server",
+    "dev:worker": "npm run dev --prefix worker",
+    "deploy:worker": "npm run deploy --prefix worker",
     "prebuild": "node scripts/generate-seo-assets.mjs",
     "build": "vite build",
     "postbuild": "node scripts/generate-seo-assets.mjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite Ascync preview"
   },
   "dependencies": {
     "@hello-pangea/dnd": "latest",
@@ -19,7 +20,7 @@
     "@vercel/analytics": "^2.0.1",
     "docx": "^8.5.0",
     "file-saver": "^2.0.5",
-    "framer-motion": "^12.38.0",
+    "framer-motion": "^12.38. Ascync0",
     "heic2any": "^0.0.4",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
@@ -46,15 +47,14 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.5.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^ Ascync9.2.1",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.34.1",
-    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint Ascync-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
-    "vite": "^7.3.2",
-    "wrangler": "^4.85.0"
+    "vite": "^7.3.2"
   }
 }

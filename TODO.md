@@ -1,14 +1,31 @@
-# CORS Fix TODO
+# Cloudflare Workers Monorepo Fix - TODO
 
-## Plan Steps
-- [x] Step 1: Add explicit preflight handler to server/index.js (TOP, after Hono init)
-- [x] Step 2: Replace CORS config in server/index.js 
-- [x] Step 3: Add credentials: 'include' to src/utils/api.js apiFetch
-- [ ] Step 4: Test locally (wrangler dev + frontend)
-- [x] Step 5: Deploy wrangler deploy
-- [x] Step 6: Verify login works (no CORS errors)
+## Approved Plan Steps (Completed ✓ / Pending ☐)
 
-Current: Deploy command running: `cd server; wrangler deploy` (PowerShell compatible)
+**1. Create worker/ directory structure** ✓
+- `worker/src/index.js` (move server/index.js)
+- `worker/package.json` 
+- `worker/wrangler.toml`
+- `worker/migrations/` (move from server/migrations/)
 
+**2. Create frontend fixes** ✓
+- `public/_headers` (COOP headers)
 
-celae
+**3. Update root package.json** ✓
+- Add `dev:worker`, `deploy:worker` scripts
+- Update/remove `dev:server`
+- Remove `wrangler` from root devDependencies
+
+**4. Cleanup** ☐
+- Remove old `server/` Worker files
+
+**5. Install & Deploy** ☐
+```
+cd worker && npm install
+npx wrangler secret put [keys...]
+npx wrangler deploy
+cd .. && npm run build
+```
+
+**Progress: 3/5 steps complete**
+
