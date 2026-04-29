@@ -1,33 +1,13 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
+import { cors } from 'hono/cors';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-app.options('*', (c) => {
-  const origin = c.req.header('Origin') || '';
-  const allowed = [
-    'https://www.multitoolhub.space',
-    'https://www.multitoolhub.com',
-    'https://multi-tool-hub.pages.dev',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
-  ];
-  
-  // Also allow any vercel subdomain for flexibility during preview/prod
-  const isVercel = origin.endsWith('.vercel.app');
 
-  return c.body(null, 204, {
-    'Access-Control-Allow-Origin': (allowed.includes(origin) || isVercel) ? origin : 'https://www.multitoolhub.com',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true',
-    'Vary': 'Origin',
-  });
-});
 
 app.use('*', cors({
   origin: (origin) => {
@@ -43,7 +23,7 @@ app.use('*', cors({
       return origin; // ✅ echo back correct origin
     }
 
-    return null; // ❌ do NOT return wrong domain
+    return origin || '*'; // safer fallback
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -117,8 +97,8 @@ function getShareValidationError({ originalName, size }) {
   return null;
 }
 
-// Authentication Middleware
-const authMiddleware = async (c, next) => {
+// Cloudflare Access JWT validation middleware
+const cloudflareAccessMiddleware = async (c, next) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     c.set('user', null);
@@ -135,16 +115,15 @@ const authMiddleware = async (c, next) => {
   await next();
 };
 
+const authMiddleware = cloudflareAccessMiddleware;
+
 const requireAuth = async (c, next) => {
   const user = c.get('user');
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
   await next();
 };
 
-app.use('*', async (c, next) => {
-  await next();
-  c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-});
+app.use('*', authMiddleware);
 
 app.get('/api/health', (c) => {
   const envKeys = Object.keys(c.env || {});
@@ -155,8 +134,6 @@ app.get('/api/health', (c) => {
     hasDb: !!c.env.multitool_db
   });
 });
-
-app.use('*', authMiddleware);
 
 app.post('/api/auth/google', async (c) => {
   console.log("🔥 HIT GOOGLE AUTH ROUTE");
@@ -200,6 +177,10 @@ app.post('/api/auth/google', async (c) => {
     console.log("✅ User saved");
 
     // Generate JWT token so the frontend stays logged in
+    if (!c.env.JWT_SECRET) {
+      console.error("JWT_SECRET missing");
+      return c.json({ error: "Server misconfigured" }, 500);
+    }
     const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
     const payload = { id: user.id, email: user.email, exp };
     const jwtToken = await sign(payload, c.env.JWT_SECRET, "HS256");
@@ -217,7 +198,6 @@ app.post('/api/auth/google', async (c) => {
   }
 });
 
-
 // ==========================================
 // AUTHENTICATION ROUTES
 // ==========================================
@@ -233,8 +213,7 @@ app.post('/api/auth/register', async (c) => {
 
   const id = nanoid();
   const hash = bcrypt.hashSync(password, 10);
-  await c.env.multitool_db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)')
-    .bind(id, email, hash).run();
+  await c.env.multitool_db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').bind(id, email, hash).run();
 
   const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
   const payload = { id, email, exp };
@@ -361,7 +340,6 @@ app.post('/api/auth/reset-password', async (c) => {
 // ==========================================
 // LINK & FILE SHARE ROUTES
 // ==========================================
-
 
 app.post('/api/share/upload', async (c) => {
   const body = await c.req.parseBody();
@@ -684,8 +662,7 @@ app.post('/api/tools/usage', async (c) => {
   const ip = c.req.header('cf-connecting-ip') || 'Unknown';
   const country = c.req.header('cf-ipcountry') || 'Unknown';
 
-  await c.env.multitool_db.prepare('INSERT INTO tool_usage (tool_id, ip, country) VALUES (?, ?, ?)')
-    .bind(toolId, ip, country).run();
+  await c.env.multitool_db.prepare('INSERT INTO tool_usage (tool_id, ip, country) VALUES (?, ?, ?)').bind(toolId, ip, country).run();
 
   return c.json({ message: 'Usage recorded' });
 });
@@ -1051,4 +1028,10 @@ app.get('/api/remove-bg/credits', requireAuth, async (c) => {
   });
 });
 
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+});
+
 export default app;
+

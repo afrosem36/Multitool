@@ -1,18 +1,21 @@
 name = "multi-tool-backend"
 main = "index.js"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-04-29"
 compatibility_flags = ["nodejs_compat"]
 
+# D1 Database
 [[d1_databases]]
 binding = "multitool_db"
 database_name = "multitool-db"
 database_id = "4a6dd45c-d5d2-4394-a960-fa2fa13c25c5"
 migrations_dir = "migrations"
 
+# R2 Storage
 [[r2_buckets]]
 binding = "MY_BUCKET"
 bucket_name = "multitoolhub-files"
 
+# Non-sensitive variables (OK to keep here)
 [vars]
 R2_BUCKET_NAME = "multitoolhub-files"
 FRONTEND_URL = "https://www.multitoolhub.space"
