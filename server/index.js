@@ -38,20 +38,17 @@ app.use('*', cors({
       'http://localhost:5173',
       'http://127.0.0.1:5173'
     ];
-    if (allowed.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
-      return origin;
+
+    if (origin && (allowed.includes(origin) || origin.endsWith('.vercel.app'))) {
+      return origin; // ✅ echo back correct origin
     }
-    return 'https://www.multitoolhub.com';
+
+    return null; // ❌ do NOT return wrong domain
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
 }));
-
-app.get('/favicon.ico', (c) => {
-  return c.text('', 204);
-});
-
 
 // ==========================================
 // UTILITY FUNCTIONS
