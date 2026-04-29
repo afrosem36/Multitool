@@ -123,7 +123,8 @@ const requireAuth = async (c, next) => {
   await next();
 };
 
-app.use('*', authMiddleware);
+// Auth middleware AFTER CORS (skip OPTIONS preflight)
+app.use('/api/*', authMiddleware);
 
 app.get('/api/health', (c) => {
   const envKeys = Object.keys(c.env || {});
