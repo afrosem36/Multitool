@@ -306,8 +306,7 @@ app.post('/api/auth/forgot-password', async (c) => {
     const token = nanoid(32);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-    await c.env.multitool_db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)'),
-    .bind(token, user.id, expiresAt).run();
+    await c.env.multitool_db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)')\n      .bind(token, user.id, expiresAt).run();
 
     const resetLink = `${c.env.FRONTEND_URL}/reset-password?token=${token}`;
 
