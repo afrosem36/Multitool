@@ -7,9 +7,9 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-app.options('*', cors())
 
-app.use('*', cors({
+
+app.use('*', async (c, next) => {\n  const origin = c.req.header('Origin');\n\n  // Handle preflight\n  if (c.req.method === 'OPTIONS') {\n    return new Response(null, {\n      status: 204,\n      headers: {\n        'Access-Control-Allow-Origin': origin || 'https://www.multitoolhub.space',\n        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',\n        'Access-Control-Allow-Headers': 'Content-Type, Authorization',\n        'Access-Control-Allow-Credentials': 'true'\n      }\n    });\n  }\n\n  await next();\n\n  // Add headers to ALL responses\n  c.header('Access-Control-Allow-Origin', origin || 'https://www.multitoolhub.space');\n  c.header('Access-Control-Allow-Credentials', 'true');\n});
   origin: (origin) => {
     const allowed = [
       'https://www.multitoolhub.space',
