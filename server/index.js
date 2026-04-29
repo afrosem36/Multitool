@@ -7,37 +7,23 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-app.options('*', (c) => {
-  const origin = c.req.header('Origin');
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': origin || 'https://www.multitoolhub.space',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    }
-  });
-});
+app.options('*', cors())
 
 app.use('*', cors({
   origin: (origin) => {
     const allowed = [
       'https://www.multitoolhub.space',
-      'https://www.multitoolhub.com',
-      'https://multi-tool-hub.pages.dev',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173'
-    ];
+      'http://localhost:5173'
+    ]
 
-    if (origin && (allowed.includes(origin) || origin.endsWith('.vercel.app'))) {
-      return origin; // ✅ echo back correct origin
+    if (origin && allowed.includes(origin)) {
+      return origin
     }
 
-    return null; // ✅ NEVER "*"
+    return null
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
 
