@@ -215,6 +215,10 @@ app.post('/api/auth/register', async (c) => {
   const hash = bcrypt.hashSync(password, 10);
   await c.env.multitool_db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').bind(id, email, hash).run();
 
+  if (!c.env.JWT_SECRET) {
+    console.error("JWT_SECRET missing");
+    return c.json({ error: "Server misconfigured" }, 500);
+  }
   const exp = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
   const payload = { id, email, exp };
   const token = await sign(payload, c.env.JWT_SECRET, "HS256");
