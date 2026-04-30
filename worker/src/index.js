@@ -7,59 +7,67 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-const ALLOWED_ORIGINS = [
-  'https://www.multitoolhub.space',
-  'https://multitoolhub.space',
-  'https://multitoolhub.vercel.app',
-  'http://localhost:5173',
-  'http://localhost:5174',
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://www.multitoolhub.space",
+  "https://multitoolhub.space"
 ];
+
+function corsHeaders(origin) {
+  if (allowedOrigins.includes(origin)) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    };
+  }
+  return {};
+}
+
+// Helper function to add CORS to responses
+function corsResponse(c, data, status = 200) {
+  const origin = c.req.header('Origin');
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders(origin),
+    },
+  });
+}
 
 // Explicit OPTIONS preflight — must come BEFORE cors() middleware
 app.options('*', (c) => {
-  const origin = c.req.header('Origin') || '';
+  const origin = c.req.header('Origin');
   return new Response(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin':      ALLOWED_ORIGINS.includes(origin) ? origin : '',
-      'Access-Control-Allow-Methods':     'GET,POST,PUT,DELETE,OPTIONS',
-      'Access-Control-Allow-Headers':     'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Max-Age':           '86400',
-    },
+    headers: corsHeaders(origin),
   });
 });
 
 // CORS for all other requests
 app.use('*', cors({
   origin: (origin) => {
+    const allowed = [
+      'https://www.multitoolhub.space',
+      'https://multitoolhub.space',
+      'https://multitoolhub.vercel.app',
+      'http://localhost:5173'
+    ];
+
     if (!origin) return '';
-    return ALLOWED_ORIGINS.includes(origin) ? origin : null;
+
+    if (allowed.includes(origin)) {
+      return origin;
+    }
+
+    return null; // ❌ NO fallback
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
-
-// Global error handler
-app.use('*', async (c, next) => {
-  try {
-    await next();
-  } catch (err) {
-    console.error('🔥 Worker crash:', err);
-    const origin = c.req.header('Origin') || '';
-    const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-    return new Response(JSON.stringify({ error: 'Internal error' }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': allowOrigin,
-        'Access-Control-Allow-Credentials': 'true',
-      }
-    });
-  }
-});
-
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
@@ -159,7 +167,7 @@ app.use('/api/*', authMiddleware);
 app.get('/api/health', (c) => {
   const envKeys = Object.keys(c.env || {});
   console.log('Environment Keys:', envKeys);
-  return c.json({
+  return corsResponse(c, {
     ok: true,
     envKeys,
     hasDb: !!c.env.multitool_db
