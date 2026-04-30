@@ -10,17 +10,35 @@ const app = new Hono();
 const ALLOWED_ORIGINS = [
   'https://www.multitoolhub.space',
   'https://multitoolhub.space',
+  'https://multitoolhub.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
 ];
 
-// CORS — handled by Hono's built-in middleware (works correctly on CF edge)
+// Explicit OPTIONS preflight — must come BEFORE cors() middleware
+app.options('*', (c) => {
+  const origin = c.req.header('Origin') || '';
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin':      ALLOWED_ORIGINS.includes(origin) ? origin : '',
+      'Access-Control-Allow-Methods':     'GET,POST,PUT,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers':     'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Max-Age':           '86400',
+    },
+  });
+});
+
+// CORS for all other requests
 app.use('*', cors({
-  origin: (origin) => ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+  origin: (origin) => {
+    if (!origin) return '';
+    return ALLOWED_ORIGINS.includes(origin) ? origin : null;
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  maxAge: 86400,
 }));
 
 // Global error handler
