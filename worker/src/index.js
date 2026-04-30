@@ -47,27 +47,28 @@ app.options('*', (c) => {
 });
 
 // CORS for all other requests
-app.use('*', cors({
-  origin: (origin) => {
-    const allowed = [
-      'https://www.multitoolhub.space',
-      'https://multitoolhub.space',
-      'https://multitoolhub.vercel.app',
-      'http://localhost:5173'
-    ];
+app.use('*', async (c, next) => {
+  const origin = c.req.header('Origin');
 
-    if (!origin) return '';
+  const allowedOrigins = [
+    "http://localhost:5173",
+    "https://www.multitoolhub.space",
+    "https://multitoolhub.space"
+  ];
 
-    if (allowed.includes(origin)) {
-      return origin;
-    }
+  if (allowedOrigins.includes(origin)) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Access-Control-Allow-Credentials", "true");
+    c.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
 
-    return null; // ❌ NO fallback
-  },
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, { status: 204 });
+  }
+
+  await next();
+});
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
