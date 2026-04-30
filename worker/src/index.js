@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
@@ -6,46 +7,39 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-// Custom CORS middleware - FIRST
-app.use('*', async (c, next) => {
-  const origin = c.req.header('Origin');
+const ALLOWED_ORIGINS = [
+  'https://www.multitoolhub.space',
+  'https://multitoolhub.space',
+  'http://localhost:5173',
+  'http://localhost:5174',
+];
 
-  // Handle preflight
-  if (c.req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': origin || 'https://www.multitoolhub.space',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Credentials': 'true'
-      }
-    });
-  }
+// CORS — handled by Hono's built-in middleware (works correctly on CF edge)
+app.use('*', cors({
+  origin: (origin) => ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,
+}));
 
-  await next();
-
-  // Add headers to ALL responses
-  c.header('Access-Control-Allow-Origin', origin || 'https://www.multitoolhub.space');
-  c.header('Access-Control-Allow-Credentials', 'true');
-});
-
-// Error handler - LAST
+// Global error handler
 app.use('*', async (c, next) => {
   try {
     await next();
   } catch (err) {
     console.error('🔥 Worker crash:', err);
+    const origin = c.req.header('Origin') || '';
+    const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
     return new Response(JSON.stringify({ error: 'Internal error' }), {
       status: 500,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
-        'Access-Control-Allow-Credentials': 'true'
+        'Access-Control-Allow-Origin': allowOrigin,
+        'Access-Control-Allow-Credentials': 'true',
       }
     });
   }
-  c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 });
 
 // ==========================================
@@ -487,6 +481,112 @@ app.post('/api/feedback', async (c) => {
   if (!message) return c.json({ error: 'Message required' }, 400);
   await db.prepare('INSERT INTO feedback (email, message) VALUES (?, ?)').bind(email || null, message).run();
   return c.json({ success: true });
+});
+
+// ==========================================
+// TRANSCRIPTION ROUTES
+// ==========================================
+
+const TRANSCRIBE_TOOL_ID  = 'transcription';
+const TRANSCRIBE_DAILY_MAX = 10;
+
+app.get('/api/transcribe/credits', requireAuth, async (c) => {
+  const db     = getDb(c.env);
+  const user   = c.get('user');
+  const used   = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+  const remaining = Math.max(0, TRANSCRIBE_DAILY_MAX - used);
+  return c.json({
+    data: {
+      creditsUsed:      used,
+      creditsRemaining: remaining,
+      creditsTotal:     TRANSCRIBE_DAILY_MAX,
+    }
+  });
+});
+
+app.post('/api/transcribe', requireAuth, async (c) => {
+  const db   = getDb(c.env);
+  const user = c.get('user');
+
+  // Check quota
+  const used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+  if (used >= TRANSCRIBE_DAILY_MAX) {
+    return c.json({ error: 'Daily transcription limit reached. Resets at midnight.' }, 429);
+  }
+
+  const groqKey = c.env.GROQ_API_KEY;
+  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
+
+  let formData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: 'Invalid form data' }, 400);
+  }
+
+  const file           = formData.get('file');
+  const outputLanguage = formData.get('outputLanguage') || 'english';
+  const model          = formData.get('model') || 'whisper-large-v3-turbo';
+
+  if (!file || typeof file === 'string') {
+    return c.json({ error: 'Audio file required' }, 400);
+  }
+
+  // Build Groq Whisper request
+  const groqForm = new FormData();
+  groqForm.append('file', file);
+  groqForm.append('model', model);
+  groqForm.append('response_format', 'json');
+  if (outputLanguage === 'english') groqForm.append('language', 'en');
+
+  let groqRes;
+  try {
+    groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${groqKey}` },
+      body:    groqForm,
+    });
+  } catch (err) {
+    return c.json({ error: 'Failed to reach Groq API', detail: err.message }, 502);
+  }
+
+  const groqData = await groqRes.json();
+  if (!groqRes.ok) {
+    return c.json({ error: groqData?.error?.message || 'Groq transcription failed' }, groqRes.status);
+  }
+
+  await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+  const newUsed = used + 1;
+
+  return c.json({
+    data:          { transcript: groqData.text || '' },
+    creditsUsed:   newUsed,
+    creditsTotal:  TRANSCRIBE_DAILY_MAX,
+  });
+});
+
+// ==========================================
+// GROQ CHAT PROXY (used by speaker diarization)
+// ==========================================
+
+app.post('/api/groq/chat', requireAuth, async (c) => {
+  const groqKey = c.env.GROQ_API_KEY;
+  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
+
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method:  'POST',
+    headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+
+  const data = await groqRes.json();
+  if (!groqRes.ok) return c.json({ error: data?.error?.message || 'Groq chat failed' }, groqRes.status);
+  return c.json(data);
 });
 
 export default app;

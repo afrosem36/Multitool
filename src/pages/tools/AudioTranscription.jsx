@@ -42,7 +42,7 @@ const RETRY_ATTEMPTS = 3;
 const RETRY_DELAYS   = [1000, 2500, 5000];
 
 // Fast cheap Groq LLM used for the diarization pass
-const GROQ_DIARIZE_MODEL = 'llama3-8b-8192';
+const GROQ_DIARIZE_MODEL = 'llama-3.1-8b-instant';
 
 const FILLER_WORDS = /\b(um+|uh+|hmm+|like|you know|i mean|sort of|kind of|basically|literally|actually|honestly|right\??|okay\??|so+|well+|anyway)\b/gi;
 
@@ -58,7 +58,7 @@ const SPEAKER_COLORS = [
 const TRANSCRIPTION_MODES = [
   { value: 'cheetah', label: 'Cheetah', emoji: '🐆', badge: 'Fastest',       desc: 'Quick draft — best for short clear audio',    model: 'whisper-large-v3-turbo'     },
   { value: 'dolphin', label: 'Dolphin', emoji: '🐬', badge: 'Balanced',      desc: 'Smart balance of speed and accuracy',          model: 'whisper-large-v3'           },
-  { value: 'whale',   label: 'Whale',   emoji: '🐳', badge: 'Most Accurate', desc: 'Full power — best for complex / noisy audio',  model: 'distil-whisper-large-v3-en' },
+  { value: 'whale',   label: 'Whale',   emoji: '🐳', badge: 'Most Accurate', desc: 'Full power — best for complex / noisy audio',  model: 'whisper-large-v3' },
 ];
 
 const OUTPUT_LANGUAGES = [
@@ -72,6 +72,84 @@ const EXPORT_FORMATS = [
   { value: 'srt',  label: 'Subtitles (.srt)',   icon: MessageSquare },
   { value: 'json', label: 'JSON + metadata',   icon: Hash          },
 ];
+
+// ─── QA Mode ──────────────────────────────────────────────────────────────────
+const LIMIT_SHORT_MAX      = 5;   // ≤10 min calls per day
+const LIMIT_LONG_MAX       = 3;   // >10 min calls per day
+const DURATION_THRESHOLD_M = 10;  // minutes boundary
+
+const DEFAULT_QA_PARAMS = [
+  { name: 'Greeting',           marks: 10 },
+  { name: 'Call Opening',       marks: 10 },
+  { name: 'Situation Handling', marks: 20 },
+  { name: 'Closing',            marks: 10 },
+];
+
+function getTodayKey()            { return new Date().toISOString().split('T')[0]; }
+function usageKey(uid, t)         { return `qa_usage_${uid}_${t}_${getTodayKey()}`; }
+function getUsageCount(uid, t)    { return parseInt(localStorage.getItem(usageKey(uid, t)) || '0', 10); }
+function incrementUsage(uid, t)   { localStorage.setItem(usageKey(uid, t), (getUsageCount(uid, t) + 1).toString()); }
+function loadQATemplates()        { try { return JSON.parse(localStorage.getItem('qa_templates') || '[]'); } catch { return []; } }
+function saveQATemplate(n, params){ const ts = loadQATemplates().filter(t => t.name !== n); ts.push({ name: n, params }); localStorage.setItem('qa_templates', JSON.stringify(ts)); }
+
+async function getAudioDurationMin(file) {
+  return new Promise(resolve => {
+    const url   = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(audio.duration / 60); };
+    audio.onerror          = () => { URL.revokeObjectURL(url); resolve(0); };
+  });
+}
+
+function buildChatGPTUrl(transcriptText, params) {
+  const total       = params.reduce((s, p) => s + (Number(p.marks) || 0), 0);
+  const paramsList  = params.map(p => `- ${p.name}: ${p.marks} marks`).join('\n');
+  const outputLines = params.map(p => `- Parameter: ${p.name} → Score: X / ${p.marks} → Feedback: ...`).join('\n');
+
+  const prompt = `You are a professional call quality analyst. Below is a real customer call transcript. Your task is to evaluate the quality of the call based on defined QA parameters.
+
+----------------------------------------
+📞 CALL TRANSCRIPT:
+${transcriptText}
+----------------------------------------
+
+📊 QA PARAMETERS (with max marks):
+${paramsList}
+
+Total Marks: ${total}
+----------------------------------------
+
+📝 INSTRUCTIONS:
+1. Evaluate the call for EACH parameter individually.
+2. Assign a score for each parameter (out of the given marks).
+3. Provide a brief explanation for each score.
+4. Calculate the TOTAL score.
+5. Highlight key strengths of the call.
+6. Identify mistakes or missed opportunities.
+7. Suggest clear improvements.
+
+----------------------------------------
+📌 OUTPUT FORMAT:
+Return your response in this structured format:
+
+${outputLines}
+
+----------------------------------------
+🏁 FINAL SUMMARY:
+- Total Score: X / ${total}
+- Overall Performance: (Excellent / Good / Needs Improvement)
+- Key Strengths:
+- Areas to Improve:
+- Actionable Suggestions:
+
+----------------------------------------
+Important:
+- Be objective and fair
+- Do not skip any parameter
+- Keep feedback concise but meaningful`;
+
+  return `https://chat.openai.com/?q=${encodeURIComponent(prompt)}`;
+}
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
 async function hashFile(file) {
@@ -454,6 +532,13 @@ export default function AudioTranscription() {
   const [replaceTerm, setReplaceTerm] = useState('');
   const [showDiff, setShowDiff]     = useState(false);
 
+  // ── QA Parameters ──
+  const [qaParams, setQaParams]             = useState(DEFAULT_QA_PARAMS);
+  const [qaTemplateName, setQaTemplateName] = useState('');
+  const [savedTemplates, setSavedTemplates] = useState(loadQATemplates);
+  const [audioDurMin, setAudioDurMin]       = useState(0);
+  const [chatGptUrl, setChatGptUrl]         = useState('');
+
   // ── Credits ──
   const [credits, setCredits]                   = useState({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT });
   const [isLoadingCredits, setIsLoadingCredits] = useState(false);
@@ -473,6 +558,15 @@ export default function AudioTranscription() {
 
   // ── Sync editable text with transcript ──
   useEffect(() => { setEditableText(transcript); }, [transcript]);
+
+  // ── Auto-generate ChatGPT URL whenever QA mode, params, or transcript changes ──
+  useEffect(() => {
+    if (qaMode && qaParams.length > 0 && transcript) {
+      setChatGptUrl(buildChatGPTUrl(transcript, qaParams));
+    } else {
+      setChatGptUrl('');
+    }
+  }, [qaMode, qaParams, transcript]);
 
   // ── Re-run text engine when source or options change ──
   useEffect(() => {
@@ -508,6 +602,7 @@ export default function AudioTranscription() {
     setRawTranscript('');
     setDiarizedSource('');
     toast.success('Audio file ready');
+    getAudioDurationMin(f).then(setAudioDurMin);
     const hash = await hashFile(f);
     setFileHash(hash);
     if (sessionCache.has(hash)) {
@@ -567,6 +662,21 @@ export default function AudioTranscription() {
       return;
     }
 
+    // ── Daily call-length limits ──
+    if (user) {
+      const callType   = audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short';
+      const maxAllowed = callType === 'long' ? LIMIT_LONG_MAX : LIMIT_SHORT_MAX;
+      const usedToday  = getUsageCount(user.id || user.email, callType);
+      if (usedToday >= maxAllowed) {
+        toast.error(
+          callType === 'long'
+            ? `Daily limit reached: max ${LIMIT_LONG_MAX} long calls (>${DURATION_THRESHOLD_M} min) per day. Resets at midnight.`
+            : `Daily limit reached: max ${LIMIT_SHORT_MAX} short calls (≤${DURATION_THRESHOLD_M} min) per day. Resets at midnight.`
+        );
+        return;
+      }
+    }
+
     setIsTranscribing(true);
     setProgress(5);
     setProgressLabel('Pre-flight checks…');
@@ -588,6 +698,7 @@ export default function AudioTranscription() {
       const raw = data?.data?.transcript || '';
       setRawTranscript(raw);
       sessionCache.set(fileHash, raw);
+      if (user) incrementUsage(user.id || user.email, audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short');
 
       if (typeof data.creditsUsed === 'number') {
         setCredits({
@@ -655,7 +766,8 @@ export default function AudioTranscription() {
 
   const clearSession = () => {
     setFile(null); setTranscript(''); setRawTranscript('');
-    setDiarizedSource(''); setFileHash('');
+    setDiarizedSource(''); setFileHash(''); setChatGptUrl('');
+    setAudioDurMin(0);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -842,6 +954,91 @@ export default function AudioTranscription() {
             ))}
           </div>
 
+          {/* ── QA Parameters Panel ── */}
+          {qaMode && (
+            <div className="glass-panel" style={{ padding:'1.25rem 1.5rem', border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.05)' }}>
+              <p style={{ margin:'0 0 0.85rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <ClipboardCheck size={16} color="#a78bfa" /> QA Parameters
+              </p>
+
+              {/* Load template */}
+              {savedTemplates.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    const tpl = savedTemplates.find(t => t.name === e.target.value);
+                    if (tpl) { setQaParams(tpl.params); toast.success(`Template "${tpl.name}" loaded`); }
+                  }}
+                  style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'8px', marginBottom:'0.75rem',
+                    border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
+                    color:'var(--text-primary)', fontSize:'0.85rem', outline:'none' }}>
+                  <option value="" disabled>Load saved template…</option>
+                  {savedTemplates.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </select>
+              )}
+
+              {/* Parameter rows */}
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.45rem', marginBottom:'0.75rem' }}>
+                {qaParams.map((p, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.45rem', alignItems:'center' }}>
+                    <input
+                      value={p.name} placeholder="Parameter name"
+                      onChange={e => { const u = [...qaParams]; u[i] = { ...u[i], name: e.target.value }; setQaParams(u); }}
+                      style={{ flex:'1', padding:'0.38rem 0.6rem', borderRadius:'8px',
+                        border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
+                        color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
+                    />
+                    <input
+                      type="number" value={p.marks} min="1" max="100"
+                      onChange={e => { const u = [...qaParams]; u[i] = { ...u[i], marks: Number(e.target.value) }; setQaParams(u); }}
+                      style={{ width:'66px', padding:'0.38rem 0.5rem', borderRadius:'8px', textAlign:'center',
+                        border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
+                        color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
+                    />
+                    <button onClick={() => setQaParams(prev => prev.filter((_, j) => j !== i))}
+                      style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', padding:'0.2rem', lineHeight:0 }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem' }}>
+                <button onClick={() => setQaParams(prev => [...prev, { name: '', marks: 10 }])}
+                  className="btn-secondary"
+                  style={{ fontSize:'0.8rem', padding:'0.35rem 0.7rem', display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                  + Add Parameter
+                </button>
+                <span style={{ fontSize:'0.8rem', color:'var(--text-secondary)' }}>
+                  Total: <strong style={{ color:'var(--text-primary)' }}>{qaParams.reduce((s, p) => s + (Number(p.marks) || 0), 0)}</strong> marks
+                </span>
+              </div>
+
+              {/* Save template */}
+              <div style={{ display:'flex', gap:'0.45rem' }}>
+                <input
+                  value={qaTemplateName} onChange={e => setQaTemplateName(e.target.value)}
+                  placeholder="Template name…"
+                  style={{ flex:'1', padding:'0.38rem 0.6rem', borderRadius:'8px',
+                    border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
+                    color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
+                />
+                <button
+                  onClick={() => {
+                    if (!qaTemplateName.trim()) { toast.error('Enter a template name'); return; }
+                    saveQATemplate(qaTemplateName.trim(), qaParams);
+                    setSavedTemplates(loadQATemplates());
+                    toast.success(`Template "${qaTemplateName.trim()}" saved`);
+                    setQaTemplateName('');
+                  }}
+                  className="btn-primary"
+                  style={{ fontSize:'0.8rem', padding:'0.38rem 0.75rem', display:'flex', alignItems:'center', gap:'0.3rem', whiteSpace:'nowrap' }}>
+                  Save Template
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Transcribe button + progress */}
           <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
             <button onClick={handleTranscribe} disabled={!canTranscribe} className="btn-primary"
@@ -1014,6 +1211,38 @@ export default function AudioTranscription() {
               <p style={{ margin:'0.55rem 0 0', fontSize:'0.77rem', color:'var(--text-secondary)',
                 display:'flex', alignItems:'center', gap:'0.35rem' }}>
                 <Info size={11} /> Enable QA Mode to edit inline · "Identify Speakers" reruns diarization any time
+              </p>
+            )}
+
+            {/* ── ChatGPT QA Button — shown inline when ready ── */}
+            {qaMode && chatGptUrl && (
+              <div style={{ marginTop:'1rem', padding:'1rem', borderRadius:'14px',
+                border:'1px solid rgba(167,139,250,0.4)', background:'rgba(167,139,250,0.08)' }}>
+                <p style={{ margin:'0 0 0.35rem', fontWeight:700, fontSize:'0.92rem',
+                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#c4b5fd' }}>
+                  <Sparkles size={15} color="#a78bfa" /> QA Analysis Ready
+                </p>
+                <p style={{ margin:'0 0 0.75rem', fontSize:'0.82rem', color:'var(--text-secondary)' }}>
+                  Transcript + parameters compiled. ChatGPT will score each parameter and give feedback.
+                </p>
+                <a href={chatGptUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
+                    textDecoration:'none', padding:'0.85rem 1rem', borderRadius:'12px', fontWeight:700,
+                    fontSize:'0.95rem', color:'#fff',
+                    background:'linear-gradient(135deg,#7c3aed,#a855f7)',
+                    boxShadow:'0 4px 20px rgba(139,92,246,0.4)', transition:'opacity 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.opacity='0.88'}
+                  onMouseLeave={e => e.currentTarget.style.opacity='1'}>
+                  <Sparkles size={17} /> Analyze with ChatGPT
+                </a>
+              </div>
+            )}
+
+            {/* Prompt if QA mode on but no transcript yet */}
+            {qaMode && !transcript && (
+              <p style={{ margin:'0.75rem 0 0', fontSize:'0.82rem', color:'#a78bfa',
+                display:'flex', alignItems:'center', gap:'0.35rem' }}>
+                <ClipboardCheck size={13} /> QA mode active — transcribe your audio to generate the ChatGPT analysis prompt.
               </p>
             )}
           </div>
