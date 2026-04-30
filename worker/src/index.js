@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
@@ -7,64 +6,26 @@ import * as cheerio from 'cheerio';
 
 const app = new Hono();
 
-const allowedOrigins = [
+const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "https://www.multitoolhub.space",
-  "https://multitoolhub.space"
+  "https://multitoolhub.space",
 ];
 
-function corsHeaders(origin) {
-  if (allowedOrigins.includes(origin)) {
-    return {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Credentials": "true",
-    };
-  }
-  return {};
-}
-
-// Helper function to add CORS to responses
-function corsResponse(c, data, status = 200) {
-  const origin = c.req.header('Origin');
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...corsHeaders(origin),
-    },
-  });
-}
-
-// Explicit OPTIONS preflight — must come BEFORE cors() middleware
-app.options('*', (c) => {
-  const origin = c.req.header('Origin');
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders(origin),
-  });
-});
-
-// CORS for all other requests
+// Global CORS middleware — handles preflight and injects headers for all routes
 app.use('*', async (c, next) => {
   const origin = c.req.header('Origin');
 
-  const allowedOrigins = [
-    "http://localhost:5173",
-    "https://www.multitoolhub.space",
-    "https://multitoolhub.space"
-  ];
-
-  if (allowedOrigins.includes(origin)) {
+  if (ALLOWED_ORIGINS.includes(origin)) {
     c.header("Access-Control-Allow-Origin", origin);
     c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   }
 
+  // c.body() (not new Response()) so the headers set above are included
   if (c.req.method === 'OPTIONS') {
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   }
 
   await next();
@@ -166,13 +127,7 @@ const requireAuth = async (c, next) => {
 app.use('/api/*', authMiddleware);
 
 app.get('/api/health', (c) => {
-  const envKeys = Object.keys(c.env || {});
-  console.log('Environment Keys:', envKeys);
-  return corsResponse(c, {
-    ok: true,
-    envKeys,
-    hasDb: !!c.env.multitool_db
-  });
+  return c.json({ ok: true });
 });
 
 app.post('/api/auth/google', async (c) => {
