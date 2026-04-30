@@ -87,6 +87,7 @@ const GEMINI_LANGUAGES = [
   { value: 'none',       label: 'No translation' },
   { value: 'English',    label: '🇬🇧 English'    },
   { value: 'Hindi',      label: '🇮🇳 Hindi'       },
+  { value: 'Hinglish',   label: '🇮🇳 Hinglish (Hindi + English mix)' },
   { value: 'Spanish',    label: '🇪🇸 Spanish'     },
   { value: 'French',     label: '🇫🇷 French'      },
   { value: 'German',     label: '🇩🇪 German'      },
