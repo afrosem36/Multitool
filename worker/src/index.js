@@ -371,5 +371,122 @@ app.post('/api/auth/reset-password', async (c) => {
   return c.json({ message: 'Password reset successfully' });
 });
 
-// Rest of routes... (file truncated for brevity - the full Hono app continues identically)
+// ==========================================
+// ANALYTICS ROUTES
+// ==========================================
+
+app.get('/api/share/analytics', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const userId = user.id;
+
+  const links = await db.prepare(
+    `SELECT slug, original_name, size, long_url, download_count, created_at, expires_at, r2_key, requires_data_collection
+     FROM links WHERE user_id = ? ORDER BY created_at DESC`
+  ).bind(userId).all();
+
+  const now = new Date();
+
+  const linksWithMeta = await Promise.all((links.results || []).map(async (link) => {
+    const lastClick = await db.prepare(
+      'SELECT timestamp FROM analytics WHERE slug = ? ORDER BY timestamp DESC LIMIT 1'
+    ).bind(link.slug).first();
+
+    const leadsRow = await db.prepare(
+      'SELECT COUNT(*) as count FROM analytics WHERE slug = ? AND visitor_data IS NOT NULL'
+    ).bind(link.slug).first();
+
+    return {
+      slug: link.slug,
+      originalName: link.original_name,
+      size: link.size,
+      longUrl: link.long_url,
+      downloadCount: link.download_count || 0,
+      createdAt: link.created_at,
+      uploadedAt: link.created_at,
+      expiresAt: link.expires_at,
+      isExpired: link.expires_at ? new Date(link.expires_at) <= now : false,
+      lastClicked: lastClick?.timestamp || null,
+      leadsCount: leadsRow?.count || 0,
+    };
+  }));
+
+  const totalClicks = linksWithMeta.reduce((sum, l) => sum + l.downloadCount, 0);
+
+  const uniqueRow = await db.prepare(
+    `SELECT COUNT(DISTINCT a.ip) as count FROM analytics a
+     INNER JOIN links l ON a.slug = l.slug WHERE l.user_id = ?`
+  ).bind(userId).first();
+
+  const sparklineRows = await db.prepare(
+    `SELECT DATE(a.timestamp) as date, COUNT(*) as clicks FROM analytics a
+     INNER JOIN links l ON a.slug = l.slug
+     WHERE l.user_id = ?
+     GROUP BY DATE(a.timestamp) ORDER BY date ASC LIMIT 30`
+  ).bind(userId).all();
+
+  const countriesRows = await db.prepare(
+    `SELECT a.country as name, COUNT(*) as value FROM analytics a
+     INNER JOIN links l ON a.slug = l.slug
+     WHERE l.user_id = ? AND a.country IS NOT NULL
+     GROUP BY a.country ORDER BY value DESC LIMIT 5`
+  ).bind(userId).all();
+
+  const referersRows = await db.prepare(
+    `SELECT COALESCE(a.referer, 'Direct') as name, COUNT(*) as value FROM analytics a
+     INNER JOIN links l ON a.slug = l.slug
+     WHERE l.user_id = ?
+     GROUP BY a.referer ORDER BY value DESC LIMIT 5`
+  ).bind(userId).all();
+
+  const leadsRows = await db.prepare(
+    `SELECT a.slug, a.timestamp, a.ip, a.visitor_data FROM analytics a
+     INNER JOIN links l ON a.slug = l.slug
+     WHERE l.user_id = ? AND a.visitor_data IS NOT NULL
+     ORDER BY a.timestamp DESC LIMIT 100`
+  ).bind(userId).all();
+
+  const leads = (leadsRows.results || []).map(row => {
+    let data = {};
+    try { data = JSON.parse(row.visitor_data); } catch {}
+    return { slug: row.slug, timestamp: row.timestamp, ip: row.ip, data };
+  });
+
+  return c.json({
+    data: {
+      totalClicks,
+      uniqueVisitors: uniqueRow?.count || 0,
+      links: linksWithMeta,
+      sparkline: sparklineRows.results || [],
+      topCountries: countriesRows.results || [],
+      topReferers: referersRows.results || [],
+      leads,
+    }
+  });
+});
+
+// ==========================================
+// FEEDBACK ROUTES
+// ==========================================
+
+app.get('/api/feedback', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const rows = await db.prepare(
+    'SELECT id, email, message, created_at FROM feedback ORDER BY created_at DESC LIMIT 100'
+  ).all();
+  return c.json({ data: rows.results || [] });
+});
+
+app.post('/api/feedback', async (c) => {
+  const db = getDb(c.env);
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+  const { email, message } = body;
+  if (!message) return c.json({ error: 'Message required' }, 400);
+  await db.prepare('INSERT INTO feedback (email, message) VALUES (?, ?)').bind(email || null, message).run();
+  return c.json({ success: true });
+});
+
 export default app;
