@@ -2,11 +2,21 @@ node_modules/
 dist/
 .DS_Store
 Thumbs.db
+
+# Local env files (secrets) — never commit these
 .env
-.env.*
+.env.local
+.env.*.local
+
+# Worker secrets for local dev
+worker/.dev.vars
+
+# Wrangler build artifacts
+server/.wrangler/
+worker/.wrangler/
+
 .sixth/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-server/.wrangler/

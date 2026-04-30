@@ -65,11 +65,11 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/ninja/, '')
       },
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:8787',
         changeOrigin: true
       },
       '^/s/': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:8787',
         changeOrigin: true
       }
     }
