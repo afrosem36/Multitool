@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>API / CORS Debug</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0f0f0f; color: #e0e0e0; padding: 24px; }
+  h1 { color: #7dd3fc; margin-bottom: 20px; font-size: 1.2rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  button {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 10px 16px; border-radius: 6px; cursor: pointer; font-family: monospace;
+    font-size: 0.85rem; text-align: left;
+  }
+  button:hover { background: #273449; border-color: #7dd3fc; }
+  .result {
+    background: #0d1117; border: 1px solid #21262d; border-radius: 8px;
+    padding: 16px; white-space: pre-wrap; font-size: 0.8rem; line-height: 1.6;
+    min-height: 80px; overflow-x: auto;
+  }
+  .ok    { border-left: 4px solid #4ade80; }
+  .fail  { border-left: 4px solid #f87171; }
+  .warn  { border-left: 4px solid #facc15; }
+  .label { color: #94a3b8; font-size: 0.75rem; margin: 16px 0 6px; }
+  #url-display { color: #64748b; font-size: 0.75rem; margin-bottom: 16px; }
+  input {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 8px 12px; border-radius: 6px; font-family: monospace;
+    font-size: 0.85rem; width: 100%; margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+<h1>🔍 API / CORS Debug Panel</h1>
+
+<div class="label">Backend URL (change if needed)</div>
+<input id="apiUrl" value="https://multi-tool-backend.multitoolhub-api.workers.dev" />
+
+<div class="grid">
+  <button onclick="testHealth()">GET /api/health</button>
+  <button onclick="testDebug()">GET /api/debug</button>
+  <button onclick="testPreflight()">OPTIONS preflight → /api/auth/google</button>
+  <button onclick="testLogin()">POST /api/auth/login (dummy)</button>
+</div>
+
+<div class="label">Result</div>
+<div id="out" class="result warn">Click a button above…</div>
+
+<script>
+const out = document.getElementById('out');
+const apiUrl = () => document.getElementById('apiUrl').value.replace(/\/$/, '');
+
+function show(data, ok) {
+  out.className = 'result ' + (ok === true ? 'ok' : ok === false ? 'fail' : 'warn');
+  out.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+}
+
+async function testHealth() {
+  show('Testing GET /api/health …', null);
+  try {
+    const r = await fetch(`${apiUrl()}/api/health`);
+    const headers = {};
+    r.headers.forEach((v, k) => headers[k] = v);
+    const body = await r.json().catch(() => '(non-JSON)');
+    show({ status: r.status, corsHeader: headers['access-control-allow-origin'] || '❌ MISSING', body, headers }, r.ok);
+  } catch (e) { show('❌ ' + e.message, false); }
+}
+
+async function testDebug() {
+  show('Testing GET /api/debug …', null);
+  try {
+    const r = await fetch(`${apiUrl()}/api/debug`);
+    const body = await r.json().catch(() => '(non-JSON)');
+    show({ status: r.status, body }, r.ok);
+  } catch (e) { show('❌ ' + e.message, false); }
+}
+
+async function testPreflight() {
+  show('Testing OPTIONS preflight → /api/auth/google …', null);
+  try {
+    const r = await fetch(`${apiUrl()}/api/auth/google`, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': window.location.origin || 'https://www.multitoolhub.space',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'Content-Type, Authorization',
+      },
+    });
+    const headers = {};
+    r.headers.forEach((v, k) => headers[k] = v);
+    const acao = headers['access-control-allow-origin'];
+    show({
+      status: r.status,
+      'access-control-allow-origin': acao || '❌ MISSING — CORS BROKEN',
+      'access-control-allow-credentials': headers['access-control-allow-credentials'] || '❌ MISSING',
+      'access-control-allow-methods': headers['access-control-allow-methods'] || '❌ MISSING',
+      allResponseHeaders: headers,
+    }, !!acao);
+  } catch (e) { show('❌ ' + e.message, false); }
+}
+
+async function testLogin() {
+  show('Testing POST /api/auth/login …', null);
+  try {
+    const r = await fetch(`${apiUrl()}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email: 'test@test.com', password: 'test' }),
+    });
+    const headers = {};
+    r.headers.forEach((v, k) => headers[k] = v);
+    const body = await r.json().catch(() => '(non-JSON)');
+    show({
+      status: r.status,
+      'access-control-allow-origin': headers['access-control-allow-origin'] || '❌ MISSING',
+      body,
+    }, r.status !== 0);
+  } catch (e) { show('❌ ' + e.message, false); }
+}
+</script>
+</body>
+</html>

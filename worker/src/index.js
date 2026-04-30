@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
@@ -13,13 +12,16 @@ const ALLOWED_ORIGINS = [
   "https://multitoolhub.space",
 ];
 
-app.use('*', cors({
-  origin: (origin) => ALLOWED_ORIGINS.includes(origin) ? origin : null,
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  maxAge: 86400,
-}));
+function getCorsHeaders(origin) {
+  if (!ALLOWED_ORIGINS.includes(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+  };
+}
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
@@ -561,4 +563,43 @@ app.post('/api/groq/chat', requireAuth, async (c) => {
   return c.json(data);
 });
 
-export default app;
+// Debug endpoint — shows exactly what the worker sees on every request
+app.get('/api/debug', (c) => {
+  const origin = c.req.header('Origin') || '(none)';
+  const headers = {};
+  c.req.raw.headers.forEach((v, k) => { headers[k] = v; });
+  return c.json({
+    ok: true,
+    receivedOrigin: origin,
+    originAllowed: ALLOWED_ORIGINS.includes(origin),
+    allowedOrigins: ALLOWED_ORIGINS,
+    method: c.req.method,
+    url: c.req.url,
+    headers,
+    hasDb: !!c.env.multitool_db,
+    hasJwt: !!c.env.JWT_SECRET,
+  });
+});
+
+// Export a raw Cloudflare Worker fetch handler instead of `export default app`.
+// This handles CORS at the lowest level — before Hono routing — so OPTIONS
+// preflights are ALWAYS answered with the correct headers regardless of route.
+export default {
+  async fetch(request, env, ctx) {
+    const origin = request.headers.get('Origin') || '';
+    const corsHeaders = getCorsHeaders(origin);
+
+    // Answer preflight immediately — never reaches Hono
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    // Let Hono handle the actual request
+    const response = await app.fetch(request, env, ctx);
+
+    // Stamp CORS headers onto every response that Hono returns
+    const out = new Response(response.body, response);
+    Object.entries(corsHeaders).forEach(([k, v]) => out.headers.set(k, v));
+    return out;
+  },
+};
