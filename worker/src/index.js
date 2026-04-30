@@ -14,17 +14,15 @@ const ALLOWED_ORIGINS = [
 
 // Global CORS middleware — handles preflight and injects headers for all routes
 app.use('*', async (c, next) => {
-  const origin = c.req.header('Origin');
+  c.header("Access-Control-Allow-Origin", "https://www.multitoolhub.space");
+  c.header("Access-Control-Allow-Credentials", "true");
+  c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
 
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    c.header("Access-Control-Allow-Origin", origin);
-    c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  }
+  // 🔥 THIS FIXES GOOGLE LOGIN
+  c.header("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
 
-  // c.body() (not new Response()) so the headers set above are included
-  if (c.req.method === 'OPTIONS') {
+  if (c.req.method === "OPTIONS") {
     return c.body(null, 204);
   }
 
