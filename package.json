@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:client\" \"npm run dev:worker\"",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:backend\"",
     "dev:client": "vite",
-    "dev:worker": "npm run dev --prefix worker",
-    "deploy:worker": "npm run deploy --prefix worker",
+    "dev:backend": "npm run dev --prefix worker",
+    "deploy:backend": "npm run deploy --prefix worker",
     "prebuild": "node scripts/generate-seo-assets.mjs",
     "build": "vite build",
     "postbuild": "node scripts/generate-seo-assets.mjs",

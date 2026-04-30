@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "migrate": "wrangler d1 migrations apply multitool-db --remote"
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml",
+    "migrate": "wrangler d1 migrations apply multitool-db --remote --config wrangler.toml"
   },
   "dependencies": {
     "hono": "^4.4.0",
