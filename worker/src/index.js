@@ -478,18 +478,16 @@ app.get('/api/transcribe/credits', requireAuth, async (c) => {
   });
 });
 
+const LANGUAGE_CODES = {
+  english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it',
+  portuguese: 'pt', dutch: 'nl', russian: 'ru', japanese: 'ja', korean: 'ko',
+  chinese: 'zh', arabic: 'ar', hindi: 'hi', turkish: 'tr', polish: 'pl',
+  swedish: 'sv', norwegian: 'no', danish: 'da', finnish: 'fi', ukrainian: 'uk',
+};
+
 app.post('/api/transcribe', requireAuth, async (c) => {
   const db   = getDb(c.env);
   const user = c.get('user');
-
-  // Check quota
-  const used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
-  if (used >= TRANSCRIBE_DAILY_MAX) {
-    return c.json({ error: 'Daily transcription limit reached. Resets at midnight.' }, 429);
-  }
-
-  const groqKey = c.env.GROQ_API_KEY;
-  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
 
   let formData;
   try {
@@ -498,20 +496,36 @@ app.post('/api/transcribe', requireAuth, async (c) => {
     return c.json({ error: 'Invalid form data' }, 400);
   }
 
+  const userGroqKey    = (formData.get('groqApiKey') || '').trim();
+  const groqKey        = userGroqKey || c.env.GROQ_API_KEY;
+  const usingOwnKey    = !!userGroqKey;
+
+  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
+
+  // Quota only applies when using shared server key
+  let used = 0;
+  if (!usingOwnKey) {
+    used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+    if (used >= TRANSCRIBE_DAILY_MAX) {
+      return c.json({ error: 'Daily transcription limit reached. Resets at midnight.' }, 429);
+    }
+  }
+
   const file           = formData.get('file');
   const outputLanguage = formData.get('outputLanguage') || 'english';
   const model          = formData.get('model') || 'whisper-large-v3-turbo';
+  const wantTimestamps = formData.get('timestamps') === 'true';
 
   if (!file || typeof file === 'string') {
     return c.json({ error: 'Audio file required' }, 400);
   }
 
-  // Build Groq Whisper request
   const groqForm = new FormData();
   groqForm.append('file', file);
   groqForm.append('model', model);
-  groqForm.append('response_format', 'json');
-  if (outputLanguage === 'english') groqForm.append('language', 'en');
+  groqForm.append('response_format', wantTimestamps ? 'verbose_json' : 'json');
+  const langCode = LANGUAGE_CODES[outputLanguage];
+  if (langCode) groqForm.append('language', langCode);
 
   let groqRes;
   try {
@@ -529,13 +543,19 @@ app.post('/api/transcribe', requireAuth, async (c) => {
     return c.json({ error: groqData?.error?.message || 'Groq transcription failed' }, groqRes.status);
   }
 
-  await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
-  const newUsed = used + 1;
+  if (!usingOwnKey) {
+    await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+    used += 1;
+  }
 
   return c.json({
-    data:          { transcript: groqData.text || '' },
-    creditsUsed:   newUsed,
-    creditsTotal:  TRANSCRIBE_DAILY_MAX,
+    data: {
+      transcript: groqData.text || '',
+      ...(wantTimestamps && groqData.segments ? { segments: groqData.segments } : {}),
+    },
+    creditsUsed:  usingOwnKey ? null : used,
+    creditsTotal: usingOwnKey ? null : TRANSCRIBE_DAILY_MAX,
+    usingOwnKey,
   });
 });
 
@@ -544,23 +564,80 @@ app.post('/api/transcribe', requireAuth, async (c) => {
 // ==========================================
 
 app.post('/api/groq/chat', requireAuth, async (c) => {
-  const groqKey = c.env.GROQ_API_KEY;
-  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
-
   let body = {};
   try { body = await c.req.json(); } catch {
     return c.json({ error: 'Invalid JSON' }, 400);
   }
 
+  const userGroqKey = (body.groqApiKey || '').trim();
+  const groqKey     = userGroqKey || c.env.GROQ_API_KEY;
+  if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
+
+  // Remove our custom field before forwarding to Groq
+  const { groqApiKey: _removed, ...groqBody } = body;
+
   const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method:  'POST',
     headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body:    JSON.stringify(groqBody),
   });
 
   const data = await groqRes.json();
   if (!groqRes.ok) return c.json({ error: data?.error?.message || 'Groq chat failed' }, groqRes.status);
   return c.json(data);
+});
+
+// ==========================================
+// GEMINI TEXT PROCESSING
+// ==========================================
+
+app.post('/api/process-text', requireAuth, async (c) => {
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const { text, geminiApiKey, targetLanguage, translate, improve } = body;
+  if (!text) return c.json({ error: 'text is required' }, 400);
+
+  const apiKey = (geminiApiKey || '').trim() || c.env.GEMINI_API_KEY;
+  if (!apiKey) return c.json({ error: 'Gemini API key not configured' }, 500);
+
+  const tasks = [];
+  if (translate && targetLanguage && targetLanguage !== 'none') {
+    tasks.push(`Translate the text to ${targetLanguage}.`);
+  }
+  if (improve) {
+    tasks.push('Fix grammar, punctuation, and formatting while preserving meaning. Add paragraph breaks where appropriate.');
+  }
+  if (tasks.length === 0) return c.json({ data: { text } });
+
+  const prompt = `You are a transcript editor. Given the transcript below, perform these tasks:\n${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn ONLY the processed text with no preamble, explanation, or metadata.\n\nTranscript:\n${text}`;
+
+  let geminiRes;
+  try {
+    geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+        }),
+      }
+    );
+  } catch (err) {
+    return c.json({ error: 'Failed to reach Gemini API', detail: err.message }, 502);
+  }
+
+  const geminiData = await geminiRes.json();
+  if (!geminiRes.ok) {
+    return c.json({ error: geminiData?.error?.message || 'Gemini processing failed' }, geminiRes.status);
+  }
+
+  const processedText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || text;
+  return c.json({ data: { text: processedText } });
 });
 
 // Debug endpoint — shows exactly what the worker sees on every request

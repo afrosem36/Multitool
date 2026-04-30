@@ -40,6 +40,9 @@ const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const ACCEPTED_AUDIO = 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm';
 const RETRY_ATTEMPTS = 3;
 const RETRY_DELAYS   = [1000, 2500, 5000];
+const CHUNK_DURATION_SEC    = 180; // 3-minute WAV chunks
+const MAX_FILE_MB_OWN_KEY   = 200;
+const MAX_FILE_BYTES_OWN_KEY = MAX_FILE_MB_OWN_KEY * 1024 * 1024;
 
 // Fast cheap Groq LLM used for the diarization pass
 const GROQ_DIARIZE_MODEL = 'llama-3.1-8b-instant';
@@ -62,9 +65,37 @@ const TRANSCRIPTION_MODES = [
 ];
 
 const OUTPUT_LANGUAGES = [
-  { value: 'english',  label: '🇬🇧 English'  },
-  { value: 'hinglish', label: '🇮🇳 Hinglish'  },
-  { value: 'original', label: '🌐 Original'   },
+  { value: 'original',   label: '🌐 Original (auto-detect)' },
+  { value: 'english',    label: '🇬🇧 English'    },
+  { value: 'hinglish',   label: '🇮🇳 Hinglish'   },
+  { value: 'hindi',      label: '🇮🇳 Hindi'       },
+  { value: 'spanish',    label: '🇪🇸 Spanish'     },
+  { value: 'french',     label: '🇫🇷 French'      },
+  { value: 'german',     label: '🇩🇪 German'      },
+  { value: 'arabic',     label: '🇸🇦 Arabic'      },
+  { value: 'portuguese', label: '🇧🇷 Portuguese'  },
+  { value: 'russian',    label: '🇷🇺 Russian'      },
+  { value: 'japanese',   label: '🇯🇵 Japanese'    },
+  { value: 'korean',     label: '🇰🇷 Korean'      },
+  { value: 'chinese',    label: '🇨🇳 Chinese'     },
+  { value: 'turkish',    label: '🇹🇷 Turkish'     },
+  { value: 'italian',    label: '🇮🇹 Italian'     },
+  { value: 'dutch',      label: '🇳🇱 Dutch'       },
+];
+
+const GEMINI_LANGUAGES = [
+  { value: 'none',       label: 'No translation' },
+  { value: 'English',    label: '🇬🇧 English'    },
+  { value: 'Hindi',      label: '🇮🇳 Hindi'       },
+  { value: 'Spanish',    label: '🇪🇸 Spanish'     },
+  { value: 'French',     label: '🇫🇷 French'      },
+  { value: 'German',     label: '🇩🇪 German'      },
+  { value: 'Arabic',     label: '🇸🇦 Arabic'      },
+  { value: 'Portuguese', label: '🇧🇷 Portuguese'  },
+  { value: 'Russian',    label: '🇷🇺 Russian'      },
+  { value: 'Japanese',   label: '🇯🇵 Japanese'    },
+  { value: 'Korean',     label: '🇰🇷 Korean'      },
+  { value: 'Chinese',    label: '🇨🇳 Chinese'     },
 ];
 
 const EXPORT_FORMATS = [
@@ -149,6 +180,61 @@ Important:
 - Keep feedback concise but meaningful`;
 
   return `https://chat.openai.com/?q=${encodeURIComponent(prompt)}`;
+}
+
+// ─── WAV Encoder ──────────────────────────────────────────────────────────────
+function audioBufferToWavBlob(buffer) {
+  const samples  = buffer.getChannelData(0); // always mono after OfflineAudioContext
+  const dataSize = samples.length * 2;
+  const ab       = new ArrayBuffer(44 + dataSize);
+  const view     = new DataView(ab);
+  const wr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+  wr(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
+  wr(8, 'WAVE'); wr(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate * 2, true); view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true); wr(36, 'data'); view.setUint32(40, dataSize, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+
+async function splitAudioIntoChunks(file, onChunk) {
+  const TARGET_SR   = 16000;
+  const audioCtx    = new AudioContext();
+  const decoded     = await audioCtx.decodeAudioData(await file.arrayBuffer());
+  await audioCtx.close();
+
+  const srcSR       = decoded.sampleRate;
+  const srcPerChunk = Math.floor(srcSR * CHUNK_DURATION_SEC);
+  const totalSrc    = decoded.length;
+  const numChunks   = Math.ceil(totalSrc / srcPerChunk);
+  const blobs       = [];
+
+  for (let i = 0; i < numChunks; i++) {
+    const start  = i * srcPerChunk;
+    const end    = Math.min(start + srcPerChunk, totalSrc);
+    const srcLen = end - start;
+    const dstLen = Math.ceil(srcLen * TARGET_SR / srcSR);
+
+    const off = new OfflineAudioContext(1, dstLen, TARGET_SR);
+    const tmp = new AudioBuffer({ length: srcLen, numberOfChannels: decoded.numberOfChannels, sampleRate: srcSR });
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      tmp.getChannelData(ch).set(decoded.getChannelData(ch).subarray(start, end));
+    }
+    const src = off.createBufferSource();
+    src.buffer = tmp;
+    src.connect(off.destination);
+    src.start(0);
+    blobs.push(audioBufferToWavBlob(await off.startRendering()));
+    onChunk?.(i + 1, numChunks);
+  }
+  return blobs;
 }
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
@@ -471,22 +557,26 @@ function StatBadge({ label, value, color = 'var(--accent-primary)' }) {
 }
 
 // ─── PreflightWarning ─────────────────────────────────────────────────────────
-function PreflightWarning({ file }) {
+function PreflightWarning({ file, usingOwnKey }) {
   if (!file) return null;
   const mb   = file.size / 1024 / 1024;
-  const hard = mb > MAX_FILE_MB;
-  const soft = mb > 15;
-  if (!hard && !soft) return null;
+  const hard = !usingOwnKey && mb > MAX_FILE_MB;
+  const soft = mb > 15 && mb <= MAX_FILE_MB;
+  const big  = usingOwnKey && mb > 50;
+  if (!hard && !soft && !big) return null;
+  const color = hard ? '#ef4444' : '#f59e0b';
+  const bg    = hard ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)';
+  const bdr   = hard ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)';
   return (
     <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.65rem 0.9rem', borderRadius:'10px',
-      background: hard ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-      border:`1px solid ${hard ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
-      marginTop:'0.75rem', fontSize:'0.85rem' }}>
-      <AlertTriangle size={15} color={hard ? '#ef4444' : '#f59e0b'} />
+      background: bg, border:`1px solid ${bdr}`, marginTop:'0.75rem', fontSize:'0.85rem' }}>
+      <AlertTriangle size={15} color={color} />
       <span style={{ color: hard ? '#fca5a5' : '#fcd34d' }}>
         {hard
-          ? `File exceeds ${MAX_FILE_MB} MB limit — please compress the audio.`
-          : `Large file (${mb.toFixed(1)} MB) — Whale mode recommended.`}
+          ? `File exceeds ${MAX_FILE_MB} MB limit — add your Groq API key below to unlock chunked transcription up to ${MAX_FILE_MB_OWN_KEY} MB.`
+          : big
+            ? `Large file (${mb.toFixed(1)} MB) — will be split into ${Math.ceil(mb / 5)} chunks automatically.`
+            : `Large file (${mb.toFixed(1)} MB) — Whale mode recommended.`}
       </span>
     </div>
   );
@@ -546,6 +636,23 @@ export default function AudioTranscription() {
   // ── UI ──
   const [showLoginModal, setShowLoginModal] = useState(false);
 
+  // ── API Keys ──
+  const [groqApiKey, setGroqApiKey]     = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [showApiKeys, setShowApiKeys]   = useState(false);
+
+  // ── Advanced transcription ──
+  const [enableTimestamps, setEnableTimestamps] = useState(false);
+  const [enableGemini, setEnableGemini]         = useState(false);
+  const [geminiTranslate, setGeminiTranslate]   = useState(false);
+  const [geminiImprove, setGeminiImprove]       = useState(true);
+  const [geminiTarget, setGeminiTarget]         = useState('none');
+  const [chunkInfo, setChunkInfo]               = useState({ current: 0, total: 0 });
+  const [segments, setSegments]                 = useState([]);
+
+  // Derived from API key state (must be before any useMemo/useCallback that uses it)
+  const usingOwnKey = groqApiKey.trim().length > 0;
+
   // ── Credits fetch ──
   useEffect(() => {
     if (!user) { setCredits({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT }); return; }
@@ -582,9 +689,11 @@ export default function AudioTranscription() {
 
   const isBusy = isTranscribing || isDiarizing;
 
-  const canTranscribe = useMemo(() =>
-    !!user && !!file && !isBusy && credits.creditsRemaining > 0 && file.size <= MAX_FILE_BYTES,
-  [user, file, isBusy, credits.creditsRemaining]);
+  const canTranscribe = useMemo(() => {
+    if (!user || !file || isBusy) return false;
+    if (usingOwnKey) return file.size <= MAX_FILE_BYTES_OWN_KEY;
+    return credits.creditsRemaining > 0 && file.size <= MAX_FILE_BYTES;
+  }, [user, file, isBusy, credits.creditsRemaining, usingOwnKey]);
 
   const handleBlockedAction = () => {
     if (!user) { setShowLoginModal(true); return true; }
@@ -596,7 +705,9 @@ export default function AudioTranscription() {
     if (handleBlockedAction()) return;
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > MAX_FILE_BYTES) { toast.error(`File too large — max ${MAX_FILE_MB} MB`); return; }
+    const maxBytes = usingOwnKey ? MAX_FILE_BYTES_OWN_KEY : MAX_FILE_BYTES;
+    const maxMb    = usingOwnKey ? MAX_FILE_MB_OWN_KEY    : MAX_FILE_MB;
+    if (f.size > maxBytes) { toast.error(`File too large — max ${maxMb} MB${!usingOwnKey ? '. Add your Groq key to unlock up to 200 MB.' : ''}`); return; }
     setFile(f);
     setTranscript('');
     setRawTranscript('');
@@ -653,26 +764,21 @@ export default function AudioTranscription() {
     if (sessionCache.has(fileHash)) {
       const cached = sessionCache.get(fileHash);
       setRawTranscript(cached);
-      if (speakerRecognition) {
-        await runDiarization(cached);
-      } else {
-        setDiarizedSource('');
-      }
+      if (speakerRecognition) await runDiarization(cached);
+      else setDiarizedSource('');
       toast('♻️ Loaded from cache', { icon: '💾' });
       return;
     }
 
-    // ── Daily call-length limits ──
-    if (user) {
+    // Daily call-length limits (shared key only)
+    if (user && !usingOwnKey) {
       const callType   = audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short';
       const maxAllowed = callType === 'long' ? LIMIT_LONG_MAX : LIMIT_SHORT_MAX;
       const usedToday  = getUsageCount(user.id || user.email, callType);
       if (usedToday >= maxAllowed) {
-        toast.error(
-          callType === 'long'
-            ? `Daily limit reached: max ${LIMIT_LONG_MAX} long calls (>${DURATION_THRESHOLD_M} min) per day. Resets at midnight.`
-            : `Daily limit reached: max ${LIMIT_SHORT_MAX} short calls (≤${DURATION_THRESHOLD_M} min) per day. Resets at midnight.`
-        );
+        toast.error(callType === 'long'
+          ? `Daily limit: max ${LIMIT_LONG_MAX} long calls (>${DURATION_THRESHOLD_M} min). Resets at midnight.`
+          : `Daily limit: max ${LIMIT_SHORT_MAX} short calls (≤${DURATION_THRESHOLD_M} min). Resets at midnight.`);
         return;
       }
     }
@@ -681,37 +787,114 @@ export default function AudioTranscription() {
     setProgress(5);
     setProgressLabel('Pre-flight checks…');
 
-    const selectedMode = TRANSCRIPTION_MODES.find(m => m.value === mode);
+    const selectedMode  = TRANSCRIPTION_MODES.find(m => m.value === mode);
+    const needsChunking = file.size > MAX_FILE_BYTES;
 
     try {
-      setProgress(20); setProgressLabel('Uploading audio…');
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
-      formData.append('model', selectedMode.model);
-      formData.append('restoreAudio', restoreAudio);
+      let fullTranscript = '';
+      let allSegments    = [];
 
-      setProgress(45); setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
-      const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: formData });
+      if (needsChunking) {
+        // ── Chunked path: decode → 16kHz mono WAV chunks ──
+        setProgressLabel('Decoding audio…');
+        let chunks;
+        try {
+          chunks = await splitAudioIntoChunks(file, (cur, total) => {
+            setChunkInfo({ current: cur, total });
+            setProgress(5 + Math.round((cur / total) * 20));
+            setProgressLabel(`Preparing chunk ${cur} of ${total}…`);
+          });
+        } catch (err) {
+          throw new Error('Failed to decode audio: ' + err.message);
+        }
 
-      setProgress(75); setProgressLabel('Running Text Engine…');
-      const raw = data?.data?.transcript || '';
-      setRawTranscript(raw);
-      sessionCache.set(fileHash, raw);
-      if (user) incrementUsage(user.id || user.email, audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short');
+        let segOffset = 0;
+        for (let i = 0; i < chunks.length; i++) {
+          setChunkInfo({ current: i + 1, total: chunks.length });
+          setProgress(25 + Math.round(((i + 0.5) / chunks.length) * 50));
+          setProgressLabel(`${selectedMode.emoji} Chunk ${i + 1} of ${chunks.length}…`);
 
-      if (typeof data.creditsUsed === 'number') {
-        setCredits({
-          creditsUsed:      data.creditsUsed,
-          creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
-          creditsTotal:     data.creditsTotal || DAILY_LIMIT,
-        });
+          const fd = new FormData();
+          fd.append('file', new File([chunks[i]], `chunk_${i}.wav`, { type: 'audio/wav' }));
+          fd.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
+          fd.append('model', selectedMode.model);
+          fd.append('timestamps', enableTimestamps ? 'true' : 'false');
+          if (usingOwnKey) fd.append('groqApiKey', groqApiKey.trim());
+
+          const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: fd });
+          fullTranscript += (fullTranscript ? ' ' : '') + (data?.data?.transcript || '');
+
+          if (enableTimestamps && data?.data?.segments) {
+            allSegments = [...allSegments, ...data.data.segments.map(seg => ({
+              ...seg, start: seg.start + segOffset, end: seg.end + segOffset,
+            }))];
+            segOffset += CHUNK_DURATION_SEC;
+          }
+
+          if (!usingOwnKey && typeof data.creditsUsed === 'number') {
+            setCredits({
+              creditsUsed:      data.creditsUsed,
+              creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
+              creditsTotal:     data.creditsTotal || DAILY_LIMIT,
+            });
+          }
+        }
+      } else {
+        // ── Direct path ──
+        setProgress(20); setProgressLabel('Uploading audio…');
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
+        formData.append('model', selectedMode.model);
+        formData.append('timestamps', enableTimestamps ? 'true' : 'false');
+        if (usingOwnKey) formData.append('groqApiKey', groqApiKey.trim());
+
+        setProgress(45); setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
+        const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: formData });
+        fullTranscript = data?.data?.transcript || '';
+        if (enableTimestamps && data?.data?.segments) allSegments = data.data.segments;
+
+        if (!usingOwnKey && typeof data.creditsUsed === 'number') {
+          setCredits({
+            creditsUsed:      data.creditsUsed,
+            creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
+            creditsTotal:     data.creditsTotal || DAILY_LIMIT,
+          });
+        }
       }
 
-      setIsTranscribing(false);
+      // ── Gemini post-processing ──
+      if (enableGemini && fullTranscript && (geminiTranslate || geminiImprove)) {
+        setProgress(78); setProgressLabel('Gemini AI — processing transcript…');
+        try {
+          const gemRes = await apiFetchWithRetry(apiFetch, '/api/process-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: fullTranscript,
+              geminiApiKey: geminiApiKey.trim(),
+              targetLanguage: geminiTarget,
+              translate: geminiTranslate && geminiTarget !== 'none',
+              improve: geminiImprove,
+            }),
+          });
+          fullTranscript = gemRes?.data?.text || fullTranscript;
+        } catch (err) {
+          toast.error('Gemini processing failed — showing raw transcript');
+        }
+      }
 
-      if (speakerRecognition && raw) {
-        await runDiarization(raw);
+      setProgress(88); setProgressLabel('Running Text Engine…');
+      setRawTranscript(fullTranscript);
+      if (allSegments.length) setSegments(allSegments);
+      sessionCache.set(fileHash, fullTranscript);
+      if (user && !usingOwnKey) incrementUsage(user.id || user.email, audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short');
+
+      setIsTranscribing(false);
+      setChunkInfo({ current: 0, total: 0 });
+
+      if (speakerRecognition && fullTranscript) {
+        await runDiarization(fullTranscript);
       } else {
         setDiarizedSource('');
         setProgress(100); setProgressLabel('Done!');
@@ -722,6 +905,7 @@ export default function AudioTranscription() {
       toast.error(err.message || 'Transcription failed');
     } finally {
       setIsTranscribing(false);
+      setChunkInfo({ current: 0, total: 0 });
     }
   };
 
@@ -801,11 +985,16 @@ export default function AudioTranscription() {
         {user ? (
           <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
             <div>
-              <p style={{ margin:0, fontWeight:700 }}>Daily transcription quota</p>
+              <p style={{ margin:0, fontWeight:700 }}>
+                {usingOwnKey ? '🔑 Using your Groq API key' : 'Daily transcription quota'}
+              </p>
               <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.9rem' }}>
-                {isLoadingCredits ? 'Refreshing…' : `${credits.creditsRemaining} of ${credits.creditsTotal} remaining today`}
+                {usingOwnKey
+                  ? 'Unlimited transcriptions — no daily cap'
+                  : isLoadingCredits ? 'Refreshing…' : `${credits.creditsRemaining} of ${credits.creditsTotal} remaining today`}
               </p>
             </div>
+            {!usingOwnKey && (
             <div style={{ minWidth:'220px', flex:'1 1 220px' }}>
               <div style={{ height:'8px', borderRadius:'999px', overflow:'hidden', background:'rgba(255,255,255,0.08)' }}>
                 <div style={{ height:'100%', transition:'width 0.3s ease',
@@ -816,6 +1005,7 @@ export default function AudioTranscription() {
                 {credits.creditsRemaining === 0 ? '⚠️ Quota exhausted — resets at midnight' : `${credits.creditsUsed} used`}
               </p>
             </div>
+            )}
           </div>
         ) : (
           <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
@@ -867,7 +1057,7 @@ export default function AudioTranscription() {
               <Upload size={16} color="var(--accent-primary)" /> Upload Audio
             </h3>
             <p style={{ color:'var(--text-secondary)', marginTop:0, fontSize:'0.9rem' }}>
-              MP3, WAV, M4A, AAC, FLAC, OGG, WEBM — max {MAX_FILE_MB} MB
+              MP3, WAV, M4A, AAC, FLAC, OGG, WEBM — max {usingOwnKey ? `${MAX_FILE_MB_OWN_KEY} MB (chunked)` : `${MAX_FILE_MB} MB`}
             </p>
 
             <label htmlFor="audio-upload"
@@ -886,22 +1076,19 @@ export default function AudioTranscription() {
                 </p>
               </div>
             </label>
-            <PreflightWarning file={file} />
+            <PreflightWarning file={file} usingOwnKey={usingOwnKey} />
 
             {/* Language */}
             <div style={{ marginTop:'1rem' }}>
               <p style={{ margin:'0 0 0.55rem', fontWeight:600, fontSize:'0.9rem' }}>Output Language</p>
-              <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+              <select value={outputLanguage} onChange={e => setOutputLanguage(e.target.value)}
+                style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
+                  border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
+                  color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', cursor:'pointer' }}>
                 {OUTPUT_LANGUAGES.map(opt => (
-                  <label key={opt.value} style={{ display:'inline-flex', alignItems:'center', gap:'0.4rem',
-                    padding:'0.45rem 0.7rem', borderRadius:'10px', border:'1px solid var(--border-color)', cursor:'pointer',
-                    background: outputLanguage===opt.value ? 'rgba(56,189,248,0.16)' : 'rgba(255,255,255,0.03)', fontSize:'0.85rem' }}>
-                    <input type="radio" name="outputLanguage" value={opt.value} checked={outputLanguage===opt.value}
-                      onChange={e => setOutputLanguage(e.target.value)} style={{ accentColor:'#38bdf8' }} />
-                    {opt.label}
-                  </label>
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
-              </div>
+              </select>
             </div>
 
             {/* Advanced toggle */}
@@ -917,7 +1104,8 @@ export default function AudioTranscription() {
                 padding:'0.9rem', borderRadius:'12px', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)' }}>
                 {[
                   { val:speakerRecognition,   set:setSpeakerRecognition,   icon:Users,    label:'Recognize Speakers',    desc:'AI labels who is speaking — adds ~5s of processing' },
-                  { val:transcribeToEnglish,  set:setTranscribeToEnglish,  icon:Filter,   label:'Transcribe to English', desc:'Force English output regardless of source language' },
+                  { val:enableTimestamps,     set:setEnableTimestamps,     icon:Hash,     label:'Include Timestamps',    desc:'Adds word-level timestamps (verbose_json format)' },
+                  { val:transcribeToEnglish,  set:setTranscribeToEnglish,  icon:Filter,   label:'Force English Output',  desc:'Override language selection and always output English' },
                   { val:restoreAudio,         set:setRestoreAudio,         icon:Sparkles, label:'Restore Audio',         desc:'AI noise reduction — only for poor-quality recordings' },
                 ].map(({ val, set, icon:Icon, label, desc }) => (
                   <label key={label} style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem', cursor:'pointer' }}>
@@ -952,6 +1140,93 @@ export default function AudioTranscription() {
                 </div>
               </label>
             ))}
+          </div>
+
+          {/* ── API Keys Panel ── */}
+          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
+            <button onClick={() => setShowApiKeys(v => !v)}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', width:'100%',
+                background:'transparent', border:'none', color:'var(--text-primary)', cursor:'pointer',
+                padding:0, fontWeight:700, fontSize:'0.95rem' }}>
+              <Lock size={15} color="var(--accent-primary)" />
+              API Keys (optional — unlocks unlimited transcriptions)
+              {showApiKeys ? <ChevronUp size={14} style={{ marginLeft:'auto' }} /> : <ChevronDown size={14} style={{ marginLeft:'auto' }} />}
+            </button>
+
+            {showApiKeys && (
+              <div style={{ marginTop:'1rem', display:'flex', flexDirection:'column', gap:'0.85rem' }}>
+                <div>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--text-secondary)', display:'block', marginBottom:'0.3rem' }}>
+                    Groq API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={groqApiKey}
+                    onChange={e => setGroqApiKey(e.target.value)}
+                    placeholder="gsk_…"
+                    style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
+                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
+                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', boxSizing:'border-box' }}
+                  />
+                  <p style={{ margin:'0.3rem 0 0', fontSize:'0.75rem', color:'var(--text-secondary)' }}>
+                    Your key is sent directly to the server and never stored. Get one free at console.groq.com
+                  </p>
+                </div>
+
+                <div>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--text-secondary)', display:'block', marginBottom:'0.3rem' }}>
+                    Gemini API Key <span style={{ fontWeight:400 }}>(for translation & improvement)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={geminiApiKey}
+                    onChange={e => { setGeminiApiKey(e.target.value); if (e.target.value.trim()) setEnableGemini(true); }}
+                    placeholder="AIzaSy…"
+                    style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
+                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
+                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', boxSizing:'border-box' }}
+                  />
+                </div>
+
+                {/* Gemini options — only when key is entered */}
+                {geminiApiKey.trim() && (
+                  <div style={{ padding:'0.85rem', borderRadius:'12px',
+                    background:'rgba(167,139,250,0.06)', border:'1px solid rgba(167,139,250,0.22)',
+                    display:'flex', flexDirection:'column', gap:'0.65rem' }}>
+                    <p style={{ margin:0, fontWeight:700, fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'0.4rem', color:'#c4b5fd' }}>
+                      <Sparkles size={13} color="#a78bfa" /> Gemini Post-Processing
+                    </p>
+
+                    <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
+                      <input type="checkbox" checked={geminiImprove} onChange={e => setGeminiImprove(e.target.checked)}
+                        style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
+                      <div>
+                        <div style={{ fontWeight:600, fontSize:'0.87rem' }}>Fix Grammar &amp; Formatting</div>
+                        <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>Correct punctuation, add paragraph breaks, clean up stutters</div>
+                      </div>
+                    </label>
+
+                    <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
+                      <input type="checkbox" checked={geminiTranslate} onChange={e => setGeminiTranslate(e.target.checked)}
+                        style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
+                      <div>
+                        <div style={{ fontWeight:600, fontSize:'0.87rem' }}>Translate</div>
+                        <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>Translate the transcript to a target language</div>
+                      </div>
+                    </label>
+
+                    {geminiTranslate && (
+                      <select value={geminiTarget} onChange={e => setGeminiTarget(e.target.value)}
+                        style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'10px',
+                          border:'1px solid rgba(167,139,250,0.35)', background:'rgba(255,255,255,0.04)',
+                          color:'var(--text-primary)', fontSize:'0.84rem', outline:'none', cursor:'pointer' }}>
+                        {GEMINI_LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── QA Parameters Panel ── */}
@@ -1058,7 +1333,15 @@ export default function AudioTranscription() {
           {isBusy && (
             <div>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'var(--text-secondary)', marginBottom:'4px' }}>
-                <span>{progressLabel}</span><span>{progress}%</span>
+                <span>
+                  {progressLabel}
+                  {chunkInfo.total > 1 && (
+                    <span style={{ marginLeft:'0.5rem', color:'#7dd3fc', fontWeight:600 }}>
+                      [{chunkInfo.current}/{chunkInfo.total}]
+                    </span>
+                  )}
+                </span>
+                <span>{progress}%</span>
               </div>
               <div style={{ height:'6px', borderRadius:'999px', background:'rgba(255,255,255,0.08)', overflow:'hidden' }}>
                 <div style={{ height:'100%', width:`${progress}%`, transition:'width 0.4s ease',
