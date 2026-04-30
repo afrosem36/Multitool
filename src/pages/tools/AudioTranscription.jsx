@@ -636,11 +636,6 @@ export default function AudioTranscription() {
   // ── UI ──
   const [showLoginModal, setShowLoginModal] = useState(false);
 
-  // ── API Keys ──
-  const [groqApiKey, setGroqApiKey]     = useState('');
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [showApiKeys, setShowApiKeys]   = useState(false);
-
   // ── Advanced transcription ──
   const [enableTimestamps, setEnableTimestamps] = useState(false);
   const [enableGemini, setEnableGemini]         = useState(false);
@@ -650,8 +645,7 @@ export default function AudioTranscription() {
   const [chunkInfo, setChunkInfo]               = useState({ current: 0, total: 0 });
   const [segments, setSegments]                 = useState([]);
 
-  // Derived from API key state (must be before any useMemo/useCallback that uses it)
-  const usingOwnKey = groqApiKey.trim().length > 0;
+  const usingOwnKey = false; // keys are server-side
 
   // ── Credits fetch ──
   useEffect(() => {
@@ -689,11 +683,9 @@ export default function AudioTranscription() {
 
   const isBusy = isTranscribing || isDiarizing;
 
-  const canTranscribe = useMemo(() => {
-    if (!user || !file || isBusy) return false;
-    if (usingOwnKey) return file.size <= MAX_FILE_BYTES_OWN_KEY;
-    return credits.creditsRemaining > 0 && file.size <= MAX_FILE_BYTES;
-  }, [user, file, isBusy, credits.creditsRemaining, usingOwnKey]);
+  const canTranscribe = useMemo(() =>
+    !!user && !!file && !isBusy && credits.creditsRemaining > 0 && file.size <= MAX_FILE_BYTES,
+  [user, file, isBusy, credits.creditsRemaining]);
 
   const handleBlockedAction = () => {
     if (!user) { setShowLoginModal(true); return true; }
@@ -705,9 +697,7 @@ export default function AudioTranscription() {
     if (handleBlockedAction()) return;
     const f = e.target.files?.[0];
     if (!f) return;
-    const maxBytes = usingOwnKey ? MAX_FILE_BYTES_OWN_KEY : MAX_FILE_BYTES;
-    const maxMb    = usingOwnKey ? MAX_FILE_MB_OWN_KEY    : MAX_FILE_MB;
-    if (f.size > maxBytes) { toast.error(`File too large — max ${maxMb} MB${!usingOwnKey ? '. Add your Groq key to unlock up to 200 MB.' : ''}`); return; }
+    if (f.size > MAX_FILE_BYTES) { toast.error(`File too large — max ${MAX_FILE_MB} MB`); return; }
     setFile(f);
     setTranscript('');
     setRawTranscript('');
@@ -819,7 +809,6 @@ export default function AudioTranscription() {
           fd.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
           fd.append('model', selectedMode.model);
           fd.append('timestamps', enableTimestamps ? 'true' : 'false');
-          if (usingOwnKey) fd.append('groqApiKey', groqApiKey.trim());
 
           const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: fd });
           fullTranscript += (fullTranscript ? ' ' : '') + (data?.data?.transcript || '');
@@ -847,7 +836,6 @@ export default function AudioTranscription() {
         formData.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
         formData.append('model', selectedMode.model);
         formData.append('timestamps', enableTimestamps ? 'true' : 'false');
-        if (usingOwnKey) formData.append('groqApiKey', groqApiKey.trim());
 
         setProgress(45); setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
         const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: formData });
@@ -872,7 +860,6 @@ export default function AudioTranscription() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               text: fullTranscript,
-              geminiApiKey: geminiApiKey.trim(),
               targetLanguage: geminiTarget,
               translate: geminiTranslate && geminiTarget !== 'none',
               improve: geminiImprove,
@@ -985,16 +972,11 @@ export default function AudioTranscription() {
         {user ? (
           <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
             <div>
-              <p style={{ margin:0, fontWeight:700 }}>
-                {usingOwnKey ? '🔑 Using your Groq API key' : 'Daily transcription quota'}
-              </p>
+              <p style={{ margin:0, fontWeight:700 }}>Daily transcription quota</p>
               <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.9rem' }}>
-                {usingOwnKey
-                  ? 'Unlimited transcriptions — no daily cap'
-                  : isLoadingCredits ? 'Refreshing…' : `${credits.creditsRemaining} of ${credits.creditsTotal} remaining today`}
+                {isLoadingCredits ? 'Refreshing…' : `${credits.creditsRemaining} of ${credits.creditsTotal} remaining today`}
               </p>
             </div>
-            {!usingOwnKey && (
             <div style={{ minWidth:'220px', flex:'1 1 220px' }}>
               <div style={{ height:'8px', borderRadius:'999px', overflow:'hidden', background:'rgba(255,255,255,0.08)' }}>
                 <div style={{ height:'100%', transition:'width 0.3s ease',
@@ -1005,7 +987,6 @@ export default function AudioTranscription() {
                 {credits.creditsRemaining === 0 ? '⚠️ Quota exhausted — resets at midnight' : `${credits.creditsUsed} used`}
               </p>
             </div>
-            )}
           </div>
         ) : (
           <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
@@ -1057,7 +1038,7 @@ export default function AudioTranscription() {
               <Upload size={16} color="var(--accent-primary)" /> Upload Audio
             </h3>
             <p style={{ color:'var(--text-secondary)', marginTop:0, fontSize:'0.9rem' }}>
-              MP3, WAV, M4A, AAC, FLAC, OGG, WEBM — max {usingOwnKey ? `${MAX_FILE_MB_OWN_KEY} MB (chunked)` : `${MAX_FILE_MB} MB`}
+              MP3, WAV, M4A, AAC, FLAC, OGG, WEBM — max {MAX_FILE_MB} MB
             </p>
 
             <label htmlFor="audio-upload"
@@ -1142,88 +1123,45 @@ export default function AudioTranscription() {
             ))}
           </div>
 
-          {/* ── API Keys Panel ── */}
-          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
-            <button onClick={() => setShowApiKeys(v => !v)}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', width:'100%',
-                background:'transparent', border:'none', color:'var(--text-primary)', cursor:'pointer',
-                padding:0, fontWeight:700, fontSize:'0.95rem' }}>
-              <Lock size={15} color="var(--accent-primary)" />
-              API Keys (optional — unlocks unlimited transcriptions)
-              {showApiKeys ? <ChevronUp size={14} style={{ marginLeft:'auto' }} /> : <ChevronDown size={14} style={{ marginLeft:'auto' }} />}
-            </button>
+          {/* ── Gemini Post-Processing Panel ── */}
+          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem',
+            border: enableGemini ? '1px solid rgba(167,139,250,0.3)' : undefined,
+            background: enableGemini ? 'rgba(167,139,250,0.05)' : undefined }}>
+            <label style={{ display:'flex', alignItems:'center', gap:'0.6rem', cursor:'pointer', marginBottom: enableGemini ? '0.85rem' : 0 }}>
+              <input type="checkbox" checked={enableGemini} onChange={e => setEnableGemini(e.target.checked)}
+                style={{ accentColor:'#a78bfa', width:16, height:16 }} />
+              <span style={{ fontWeight:700, display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <Sparkles size={15} color="#a78bfa" /> Gemini AI Post-Processing
+              </span>
+            </label>
 
-            {showApiKeys && (
-              <div style={{ marginTop:'1rem', display:'flex', flexDirection:'column', gap:'0.85rem' }}>
-                <div>
-                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--text-secondary)', display:'block', marginBottom:'0.3rem' }}>
-                    Groq API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={groqApiKey}
-                    onChange={e => setGroqApiKey(e.target.value)}
-                    placeholder="gsk_…"
-                    style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
-                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
-                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', boxSizing:'border-box' }}
-                  />
-                  <p style={{ margin:'0.3rem 0 0', fontSize:'0.75rem', color:'var(--text-secondary)' }}>
-                    Your key is sent directly to the server and never stored. Get one free at console.groq.com
-                  </p>
-                </div>
-
-                <div>
-                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--text-secondary)', display:'block', marginBottom:'0.3rem' }}>
-                    Gemini API Key <span style={{ fontWeight:400 }}>(for translation & improvement)</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={geminiApiKey}
-                    onChange={e => { setGeminiApiKey(e.target.value); if (e.target.value.trim()) setEnableGemini(true); }}
-                    placeholder="AIzaSy…"
-                    style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
-                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
-                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', boxSizing:'border-box' }}
-                  />
-                </div>
-
-                {/* Gemini options — only when key is entered */}
-                {geminiApiKey.trim() && (
-                  <div style={{ padding:'0.85rem', borderRadius:'12px',
-                    background:'rgba(167,139,250,0.06)', border:'1px solid rgba(167,139,250,0.22)',
-                    display:'flex', flexDirection:'column', gap:'0.65rem' }}>
-                    <p style={{ margin:0, fontWeight:700, fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'0.4rem', color:'#c4b5fd' }}>
-                      <Sparkles size={13} color="#a78bfa" /> Gemini Post-Processing
-                    </p>
-
-                    <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
-                      <input type="checkbox" checked={geminiImprove} onChange={e => setGeminiImprove(e.target.checked)}
-                        style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
-                      <div>
-                        <div style={{ fontWeight:600, fontSize:'0.87rem' }}>Fix Grammar &amp; Formatting</div>
-                        <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>Correct punctuation, add paragraph breaks, clean up stutters</div>
-                      </div>
-                    </label>
-
-                    <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
-                      <input type="checkbox" checked={geminiTranslate} onChange={e => setGeminiTranslate(e.target.checked)}
-                        style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
-                      <div>
-                        <div style={{ fontWeight:600, fontSize:'0.87rem' }}>Translate</div>
-                        <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>Translate the transcript to a target language</div>
-                      </div>
-                    </label>
-
-                    {geminiTranslate && (
-                      <select value={geminiTarget} onChange={e => setGeminiTarget(e.target.value)}
-                        style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'10px',
-                          border:'1px solid rgba(167,139,250,0.35)', background:'rgba(255,255,255,0.04)',
-                          color:'var(--text-primary)', fontSize:'0.84rem', outline:'none', cursor:'pointer' }}>
-                        {GEMINI_LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                      </select>
-                    )}
+            {enableGemini && (
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
+                <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
+                  <input type="checkbox" checked={geminiImprove} onChange={e => setGeminiImprove(e.target.checked)}
+                    style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:'0.88rem' }}>Fix Grammar &amp; Formatting</div>
+                    <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>Correct punctuation, add paragraph breaks, clean up stutters</div>
                   </div>
+                </label>
+
+                <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
+                  <input type="checkbox" checked={geminiTranslate} onChange={e => setGeminiTranslate(e.target.checked)}
+                    style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:'0.88rem' }}>Translate</div>
+                    <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>Translate the transcript to another language after transcription</div>
+                  </div>
+                </label>
+
+                {geminiTranslate && (
+                  <select value={geminiTarget} onChange={e => setGeminiTarget(e.target.value)}
+                    style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'10px',
+                      border:'1px solid rgba(167,139,250,0.35)', background:'rgba(255,255,255,0.04)',
+                      color:'var(--text-primary)', fontSize:'0.84rem', outline:'none', cursor:'pointer' }}>
+                    {GEMINI_LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                  </select>
                 )}
               </div>
             )}
