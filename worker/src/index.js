@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
@@ -12,26 +13,13 @@ const ALLOWED_ORIGINS = [
   "https://multitoolhub.space",
 ];
 
-// Global CORS middleware — handles preflight and injects headers for all routes
-app.use('*', async (c, next) => {
-  const origin = c.req.header('Origin');
-
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    c.header("Access-Control-Allow-Origin", origin);
-    c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  }
-
-  // Allows Google Identity Services popup to postMessage back to the opener page
-  c.header("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-
-  if (c.req.method === "OPTIONS") {
-    return c.body(null, 204);  // c.body() merges c.header() calls; new Response() does NOT
-  }
-
-  await next();
-});
+app.use('*', cors({
+  origin: (origin) => ALLOWED_ORIGINS.includes(origin) ? origin : null,
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,
+}));
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
