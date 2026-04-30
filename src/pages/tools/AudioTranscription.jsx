@@ -83,21 +83,6 @@ const OUTPUT_LANGUAGES = [
   { value: 'dutch',      label: '🇳🇱 Dutch'       },
 ];
 
-const GEMINI_LANGUAGES = [
-  { value: 'none',       label: 'No translation' },
-  { value: 'English',    label: '🇬🇧 English'    },
-  { value: 'Hindi',      label: '🇮🇳 Hindi'       },
-  { value: 'Hinglish',   label: '🇮🇳 Hinglish (Hindi + English mix)' },
-  { value: 'Spanish',    label: '🇪🇸 Spanish'     },
-  { value: 'French',     label: '🇫🇷 French'      },
-  { value: 'German',     label: '🇩🇪 German'      },
-  { value: 'Arabic',     label: '🇸🇦 Arabic'      },
-  { value: 'Portuguese', label: '🇧🇷 Portuguese'  },
-  { value: 'Russian',    label: '🇷🇺 Russian'      },
-  { value: 'Japanese',   label: '🇯🇵 Japanese'    },
-  { value: 'Korean',     label: '🇰🇷 Korean'      },
-  { value: 'Chinese',    label: '🇨🇳 Chinese'     },
-];
 
 const EXPORT_FORMATS = [
   { value: 'txt',  label: 'Plain Text (.txt)', icon: FileText      },
@@ -258,13 +243,19 @@ async function parseJsonResponse(res) {
 
 async function apiFetchWithRetry(apiFetch, url, options = {}, attempts = RETRY_ATTEMPTS) {
   for (let i = 0; i < attempts; i++) {
+    let res;
     try {
-      const res = await apiFetch(url, options);
+      res = await apiFetch(url, options);
+    } catch (netErr) {
+      if (i === attempts - 1) throw netErr;
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
+      continue;
+    }
+    const noRetry = [400, 401, 403].includes(res.status);
+    try {
       return await parseJsonResponse(res);
     } catch (err) {
-      const isLast      = i === attempts - 1;
-      const nonRetry    = ['400','401','403'].some(c => err.message.includes(c));
-      if (isLast || nonRetry) throw err;
+      if (i === attempts - 1 || noRetry) throw err;
       await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
     }
   }
@@ -596,7 +587,7 @@ export default function AudioTranscription() {
 
   // ── Config ──
   const [mode, setMode]                             = useState('dolphin');
-  const [outputLanguage, setOutputLanguage]         = useState('english');
+  const [outputLanguage, setOutputLanguage]         = useState('original');
   const [speakerRecognition, setSpeakerRecognition] = useState(false);
   const [transcribeToEnglish, setTranscribeToEnglish] = useState(false);
   const [restoreAudio, setRestoreAudio]             = useState(false);
@@ -639,10 +630,6 @@ export default function AudioTranscription() {
 
   // ── Advanced transcription ──
   const [enableTimestamps, setEnableTimestamps] = useState(false);
-  const [enableGemini, setEnableGemini]         = useState(false);
-  const [geminiTranslate, setGeminiTranslate]   = useState(false);
-  const [geminiImprove, setGeminiImprove]       = useState(true);
-  const [geminiTarget, setGeminiTarget]         = useState('none');
   const [chunkInfo, setChunkInfo]               = useState({ current: 0, total: 0 });
   const [segments, setSegments]                 = useState([]);
 
@@ -849,26 +836,6 @@ export default function AudioTranscription() {
             creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
             creditsTotal:     data.creditsTotal || DAILY_LIMIT,
           });
-        }
-      }
-
-      // ── Gemini post-processing ──
-      if (enableGemini && fullTranscript && (geminiTranslate || geminiImprove)) {
-        setProgress(78); setProgressLabel('Gemini AI — processing transcript…');
-        try {
-          const gemRes = await apiFetchWithRetry(apiFetch, '/api/process-text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: fullTranscript,
-              targetLanguage: geminiTarget,
-              translate: geminiTranslate && geminiTarget !== 'none',
-              improve: geminiImprove,
-            }),
-          });
-          fullTranscript = gemRes?.data?.text || fullTranscript;
-        } catch (err) {
-          toast.error('Gemini processing failed — showing raw transcript');
         }
       }
 
@@ -1122,50 +1089,6 @@ export default function AudioTranscription() {
                 </div>
               </label>
             ))}
-          </div>
-
-          {/* ── Gemini Post-Processing Panel ── */}
-          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem',
-            border: enableGemini ? '1px solid rgba(167,139,250,0.3)' : undefined,
-            background: enableGemini ? 'rgba(167,139,250,0.05)' : undefined }}>
-            <label style={{ display:'flex', alignItems:'center', gap:'0.6rem', cursor:'pointer', marginBottom: enableGemini ? '0.85rem' : 0 }}>
-              <input type="checkbox" checked={enableGemini} onChange={e => setEnableGemini(e.target.checked)}
-                style={{ accentColor:'#a78bfa', width:16, height:16 }} />
-              <span style={{ fontWeight:700, display:'flex', alignItems:'center', gap:'0.4rem' }}>
-                <Sparkles size={15} color="#a78bfa" /> Gemini AI Post-Processing
-              </span>
-            </label>
-
-            {enableGemini && (
-              <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
-                <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
-                  <input type="checkbox" checked={geminiImprove} onChange={e => setGeminiImprove(e.target.checked)}
-                    style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
-                  <div>
-                    <div style={{ fontWeight:600, fontSize:'0.88rem' }}>Fix Grammar &amp; Formatting</div>
-                    <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>Correct punctuation, add paragraph breaks, clean up stutters</div>
-                  </div>
-                </label>
-
-                <label style={{ display:'flex', alignItems:'flex-start', gap:'0.65rem', cursor:'pointer' }}>
-                  <input type="checkbox" checked={geminiTranslate} onChange={e => setGeminiTranslate(e.target.checked)}
-                    style={{ marginTop:'3px', accentColor:'#a78bfa' }} />
-                  <div>
-                    <div style={{ fontWeight:600, fontSize:'0.88rem' }}>Translate</div>
-                    <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>Translate the transcript to another language after transcription</div>
-                  </div>
-                </label>
-
-                {geminiTranslate && (
-                  <select value={geminiTarget} onChange={e => setGeminiTarget(e.target.value)}
-                    style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'10px',
-                      border:'1px solid rgba(167,139,250,0.35)', background:'rgba(255,255,255,0.04)',
-                      color:'var(--text-primary)', fontSize:'0.84rem', outline:'none', cursor:'pointer' }}>
-                    {GEMINI_LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                  </select>
-                )}
-              </div>
-            )}
           </div>
 
           {/* ── QA Parameters Panel ── */}

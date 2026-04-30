@@ -5,17 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --config wrangler.toml",
+    "dev:remote": "wrangler dev --config wrangler.toml --remote",
     "deploy": "wrangler deploy --config wrangler.toml",
     "migrate": "wrangler d1 migrations apply multitool-db --remote --config wrangler.toml"
   },
   "dependencies": {
-    "hono": "^4.4.0",
-
     "bcryptjs": "^2.4.3",
-    "nanoid": "^5.0.7",
-    "cheerio": "^1.0.0"
+    "cheerio": "^1.0.0",
+    "hono": "^4.4.0",
+    "nanoid": "^5.0.7"
   },
   "devDependencies": {
-    "wrangler": "^4.85.0"
+    "wrangler": "^3.78.0"
   }
 }

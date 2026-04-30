@@ -43,22 +43,48 @@ function getTodayUtcDate() {
 }
 
 async function checkUserQuota(db, userId, toolId) {
-  const today = getTodayUtcDate();
-  const quota = await db.prepare(
-    'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
-  ).bind(userId, toolId, today).first();
+  if (!userId) return 0;
+  try {
+    const today = getTodayUtcDate();
+    const quota = await db.prepare(
+      'SELECT count FROM tool_quotas WHERE user_id = ? AND tool_id = ? AND date = ?'
+    ).bind(userId, toolId, today).first();
+    return quota?.count || 0;
+  } catch (err) {
+    console.warn(`Failed to check quota for user ${userId}: ${err.message}`);
+    return 0; // Assume no quota if check fails
+  }
+}
 
-  return quota?.count || 0;
+async function userExists(db, userId) {
+  if (!userId) return false;
+  try {
+    const result = await db.prepare('SELECT 1 FROM users WHERE id = ? LIMIT 1').bind(userId).first();
+    return !!result;
+  } catch {
+    return false;
+  }
 }
 
 async function incrementUserQuota(db, userId, toolId) {
+  // Verify user exists before incrementing quota to avoid foreign key constraint errors
+  const exists = await userExists(db, userId);
+  if (!exists) {
+    console.warn(`User ${userId} not found in database, skipping quota increment`);
+    return;
+  }
+  
   const today = getTodayUtcDate();
-  await db.prepare(`
-    INSERT INTO tool_quotas (user_id, tool_id, date, count)
-    VALUES (?, ?, ?, 1)
-    ON CONFLICT (user_id, tool_id, date)
-    DO UPDATE SET count = count + 1
-  `).bind(userId, toolId, today).run();
+  try {
+    await db.prepare(`
+      INSERT INTO tool_quotas (user_id, tool_id, date, count)
+      VALUES (?, ?, ?, 1)
+      ON CONFLICT (user_id, tool_id, date)
+      DO UPDATE SET count = count + 1
+    `).bind(userId, toolId, today).run();
+  } catch (err) {
+    console.warn(`Failed to increment quota for user ${userId}: ${err.message}`);
+  }
 }
 
 function getRequiredEnvValue(env, key) {
@@ -79,6 +105,48 @@ function sanitizeFileName(name = 'file') {
     .replace(/-+/g, '-')
     .replace(/^[-_.]+|[-_.]+$/g, '');
   return `${baseName || 'file'}${extension}`;
+}
+
+function sanitizeSlug(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+}
+
+async function slugExists(db, slug) {
+  const result = await db.prepare('SELECT 1 FROM links WHERE slug = ? LIMIT 1').bind(slug).first();
+  return !!result;
+}
+
+async function generateUniqueSlug(db, base) {
+  let slug = sanitizeSlug(base || nanoid(8));
+  if (!slug) slug = nanoid(8).toLowerCase();
+  let candidate = slug;
+  let attempts = 0;
+
+  while (attempts < 6) {
+    if (!(await slugExists(db, candidate))) return candidate;
+    candidate = `${slug}-${nanoid(4).toLowerCase()}`;
+    attempts += 1;
+  }
+
+  throw new Error('Could not generate a unique slug');
+}
+
+function getGatePageUrl(c, slug) {
+  return `${getFrontendOrigin(c)}/gate/${slug}`;
+}
+
+function getBackgroundFileUrl(c, slug) {
+  return `${getPublicOrigin(c)}/api/s/${slug}/background-file`;
+}
+
+function getDownloadUrl(c, slug) {
+  return `${getPublicOrigin(c)}/api/s/${slug}/download`;
 }
 
 const MAX_SHARE_FILE_SIZE = 250 * 1024 * 1024;
@@ -457,6 +525,417 @@ app.post('/api/feedback', async (c) => {
   return c.json({ success: true });
 });
 
+app.post('/api/upload-asset', async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get('file');
+
+  if (!file || typeof file === 'string') {
+    return c.json({ error: 'File is required' }, 400);
+  }
+
+  if (file.size > MAX_SHARE_FILE_SIZE) {
+    return c.json({ error: 'File size exceeds the 250 MB limit' }, 413);
+  }
+
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) {
+    return c.json({ error: 'R2 bucket is not configured' }, 500);
+  }
+
+  const key = `uploads/${Date.now()}-${nanoid(10)}-${sanitizeFileName(file.name || 'asset')}`;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    await bucket.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType: file.type || 'application/octet-stream',
+      },
+      customMetadata: {
+        originalName: sanitizeFileName(file.name || 'asset'),
+      },
+    });
+  } catch (err) {
+    console.error('Upload asset error:', err);
+    return c.json({ error: 'Failed to upload asset' }, 500);
+  }
+
+  return c.json({ data: { key } });
+});
+
+app.post('/api/share/upload', async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+
+  let formData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: 'Invalid form data' }, 400);
+  }
+
+  const file = formData.get('file');
+  if (!file || typeof file === 'string') {
+    return c.json({ error: 'File is required' }, 400);
+  }
+
+  if (file.size > MAX_SHARE_FILE_SIZE) {
+    return c.json({ error: 'File size exceeds the 250 MB limit' }, 413);
+  }
+
+  const rawFormConfig = formData.get('formConfig');
+  let parsedFormConfig = null;
+  if (rawFormConfig) {
+    try {
+      parsedFormConfig = JSON.parse(rawFormConfig);
+    } catch {
+      return c.json({ error: 'Invalid form config JSON' }, 400);
+    }
+  }
+
+  const rawExpires = String(formData.get('expiresInSeconds') || '0');
+  const expiresInSeconds = Number(rawExpires) || 0;
+  const expiresAt = expiresInSeconds > 0
+    ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+    : null;
+
+  const gateBgKey = String(formData.get('gate_bg_key') || '').trim() || null;
+  const slug = await generateUniqueSlug(db);
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 bucket is not configured' }, 500);
+
+  const r2Key = `shared/${slug}/${sanitizeFileName(file.name || 'file')}`;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    await bucket.put(r2Key, arrayBuffer, {
+      httpMetadata: {
+        contentType: file.type || 'application/octet-stream',
+      },
+      customMetadata: {
+        originalName: sanitizeFileName(file.name || 'file'),
+      },
+    });
+  } catch (err) {
+    console.error('Share upload failed:', err);
+    return c.json({ error: 'Failed to upload file' }, 500);
+  }
+
+  const longUrl = getDownloadUrl(c, slug);
+  await db.prepare(
+    `INSERT INTO links (slug, original_name, r2_key, mime_type, size, long_url, user_id, requires_data_collection, form_config, gate_bg_key, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    slug,
+    sanitizeFileName(file.name || 'file'),
+    r2Key,
+    file.type || 'application/octet-stream',
+    file.size,
+    longUrl,
+    user?.id || null,
+    parsedFormConfig ? 1 : 0,
+    parsedFormConfig ? JSON.stringify(parsedFormConfig) : null,
+    gateBgKey,
+    expiresAt,
+  ).run();
+
+  return c.json({ data: { shortUrl: getGatePageUrl(c, slug), expiresAt, slug } });
+});
+
+app.post('/api/shorten', async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const { longUrl, customSlug, formConfig, gate_bg_key } = body;
+  if (!longUrl) return c.json({ error: 'longUrl is required' }, 400);
+
+  try {
+    new URL(longUrl);
+  } catch {
+    return c.json({ error: 'Invalid URL' }, 400);
+  }
+
+  let slug;
+  if (customSlug) {
+    slug = sanitizeSlug(customSlug);
+    if (!slug) return c.json({ error: 'Invalid custom slug' }, 400);
+    if (await slugExists(db, slug)) return c.json({ error: 'Custom slug already exists' }, 400);
+  } else {
+    slug = await generateUniqueSlug(db);
+  }
+
+  let parsedFormConfig = null;
+  if (formConfig) {
+    if (typeof formConfig === 'string') {
+      try {
+        parsedFormConfig = JSON.parse(formConfig);
+      } catch {
+        return c.json({ error: 'Invalid form config JSON' }, 400);
+      }
+    } else if (typeof formConfig === 'object') {
+      parsedFormConfig = formConfig;
+    } else {
+      return c.json({ error: 'Invalid form config format' }, 400);
+    }
+  }
+
+  const expiresAt = null;
+  await db.prepare(
+    `INSERT INTO links (slug, long_url, user_id, requires_data_collection, form_config, gate_bg_key, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    slug,
+    longUrl,
+    user?.id || null,
+    parsedFormConfig ? 1 : 0,
+    parsedFormConfig ? JSON.stringify(parsedFormConfig) : null,
+    gate_bg_key || null,
+    expiresAt,
+  ).run();
+
+  const shortUrl = parsedFormConfig
+    ? getGatePageUrl(c, slug)
+    : `${getPublicOrigin(c)}/api/s/${slug}`;
+
+  return c.json({ data: { shortUrl, slug } });
+});
+
+// Direct redirect — used by plain URL shortener (no lead gate)
+app.get('/api/s/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT long_url, expires_at, requires_data_collection FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  // If this link has a lead gate, redirect to the gate page instead
+  if (link.requires_data_collection) {
+    return Response.redirect(getGatePageUrl(c, slug), 302);
+  }
+  return Response.redirect(link.long_url, 302);
+});
+
+app.get('/api/s/:slug/config', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+
+  let formConfig = null;
+  if (link.form_config) {
+    try { formConfig = JSON.parse(link.form_config); } catch { formConfig = null; }
+  }
+
+  return c.json({
+    data: {
+      formConfig,
+      requiresDataCollection: !!link.requires_data_collection,
+      fileName: link.original_name || null,
+    }
+  });
+});
+
+app.get('/api/s/:slug/background', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT gate_bg_key, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  if (!link.gate_bg_key) return c.json({ data: {} });
+  return c.json({ data: { backgroundUrl: getBackgroundFileUrl(c, slug) } });
+});
+
+app.get('/api/s/:slug/background-file', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT gate_bg_key, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  if (!link.gate_bg_key) return c.json({ error: 'Background not found' }, 404);
+
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 bucket is not configured' }, 500);
+
+  const object = await bucket.get(link.gate_bg_key);
+  if (!object) return c.json({ error: 'Background not found' }, 404);
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    },
+  });
+});
+
+app.get('/api/s/:slug/download', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT r2_key, original_name, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  if (!link.r2_key) return c.json({ error: 'File not found' }, 404);
+
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 bucket is not configured' }, 500);
+  const object = await bucket.get(link.r2_key);
+  if (!object) return c.json({ error: 'File not found' }, 404);
+
+  const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
+  const filename = encodeURIComponent(link.original_name || 'file');
+  const isMedia = /^(video|audio|image)\//.test(contentType);
+  const disposition = isMedia
+    ? `inline; filename="${filename}"`
+    : `attachment; filename="${filename}"`;
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': contentType,
+      'Content-Disposition': disposition,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+});
+
+app.post('/api/s/:slug/submit', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT long_url, requires_data_collection, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  if (link.requires_data_collection) {
+    await db.prepare(
+      `INSERT INTO analytics (slug, ip, user_agent, referer, visitor_data)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(
+      slug,
+      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null,
+      c.req.header('User-Agent') || null,
+      c.req.header('Referer') || null,
+      JSON.stringify(body),
+    ).run();
+  }
+
+  return c.json({ data: { longUrl: link.long_url } });
+});
+
+// ==========================================
+// TEXT-TO-SQL ROUTES
+// ==========================================
+
+const TEXT_TO_SQL_TOOL_ID  = 'text-to-sql';
+const TEXT_TO_SQL_DAILY_MAX = 20;
+
+app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
+  const db   = getDb(c.env);
+  const user = c.get('user');
+  const used = await checkUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
+  const remaining = Math.max(0, TEXT_TO_SQL_DAILY_MAX - used);
+  return c.json({
+    data: {
+      creditsUsed:      used,
+      creditsRemaining: remaining,
+      creditsTotal:     TEXT_TO_SQL_DAILY_MAX,
+    }
+  });
+});
+
+app.post('/api/text-to-sql', requireAuth, async (c) => {
+  try {
+    const db   = getDb(c.env);
+    const user = c.get('user');
+
+    let body = {};
+    try { body = await c.req.json(); } catch {
+      return c.json({ error: 'Invalid JSON' }, 400);
+    }
+
+    const { question, schema } = body;
+    if (!question) return c.json({ error: 'question is required' }, 400);
+    if (!schema)   return c.json({ error: 'schema is required' }, 400);
+
+    const used = await checkUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
+    if (used >= TEXT_TO_SQL_DAILY_MAX) {
+      return c.json({ error: 'Daily limit reached. Resets at midnight UTC.', creditsTotal: TEXT_TO_SQL_DAILY_MAX }, 429);
+    }
+
+    const groqKey = getRequiredEnvValue(c.env, 'GROQ_API_KEY');
+    if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
+
+    const systemPrompt = `You are an expert SQL query generator. Given a database schema and a natural language question, generate a correct and efficient SQL query.\n\nRules:\n- Return ONLY the SQL query, no explanation, no markdown, no code blocks\n- Use standard SQL syntax compatible with most databases\n- If the question cannot be answered with the given schema, return: SELECT 'Unable to generate query for this question' as error`;
+
+    let groqRes;
+    try {
+      groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama3-70b-8192',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Schema:\n${schema}\n\nQuestion: ${question}` },
+          ],
+          temperature: 0.1,
+          max_tokens: 512,
+        }),
+      });
+    } catch (err) {
+      return c.json({ error: 'Failed to reach Groq API', detail: err.message }, 502);
+    }
+
+    let groqData;
+    try {
+      groqData = await groqRes.json();
+    } catch {
+      return c.json({ error: `Groq returned non-JSON response (status ${groqRes.status})` }, 502);
+    }
+
+    if (!groqRes.ok) {
+      return c.json({ error: groqData?.error?.message || 'Groq request failed' }, groqRes.status);
+    }
+
+    const sql = groqData.choices?.[0]?.message?.content?.trim() || '';
+    if (!sql) return c.json({ error: 'Groq returned empty response' }, 502);
+
+    await incrementUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
+    const newUsed = used + 1;
+
+    return c.json({
+      data: { sql },
+      creditsUsed:  newUsed,
+      creditsTotal: TEXT_TO_SQL_DAILY_MAX,
+    });
+  } catch (err) {
+    console.error('[text-to-sql] Unhandled error:', err);
+    return c.json({ error: 'Internal server error', detail: err.message }, 500);
+  }
+});
+
+app.all('/api/*', (c) => {
+  return c.json({ error: 'API route not found' }, 404);
+});
+
 // ==========================================
 // TRANSCRIPTION ROUTES
 // ==========================================
@@ -585,59 +1064,6 @@ app.post('/api/groq/chat', requireAuth, async (c) => {
   const data = await groqRes.json();
   if (!groqRes.ok) return c.json({ error: data?.error?.message || 'Groq chat failed' }, groqRes.status);
   return c.json(data);
-});
-
-// ==========================================
-// GEMINI TEXT PROCESSING
-// ==========================================
-
-app.post('/api/process-text', requireAuth, async (c) => {
-  let body = {};
-  try { body = await c.req.json(); } catch {
-    return c.json({ error: 'Invalid JSON' }, 400);
-  }
-
-  const { text, geminiApiKey, targetLanguage, translate, improve } = body;
-  if (!text) return c.json({ error: 'text is required' }, 400);
-
-  const apiKey = (geminiApiKey || '').trim() || c.env.GEMINI_API_KEY;
-  if (!apiKey) return c.json({ error: 'Gemini API key not configured' }, 500);
-
-  const tasks = [];
-  if (translate && targetLanguage && targetLanguage !== 'none') {
-    tasks.push(`Translate the text to ${targetLanguage}.`);
-  }
-  if (improve) {
-    tasks.push('Fix grammar, punctuation, and formatting while preserving meaning. Add paragraph breaks where appropriate.');
-  }
-  if (tasks.length === 0) return c.json({ data: { text } });
-
-  const prompt = `You are a transcript editor. Given the transcript below, perform these tasks:\n${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn ONLY the processed text with no preamble, explanation, or metadata.\n\nTranscript:\n${text}`;
-
-  let geminiRes;
-  try {
-    geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
-        }),
-      }
-    );
-  } catch (err) {
-    return c.json({ error: 'Failed to reach Gemini API', detail: err.message }, 502);
-  }
-
-  const geminiData = await geminiRes.json();
-  if (!geminiRes.ok) {
-    return c.json({ error: geminiData?.error?.message || 'Gemini processing failed' }, geminiRes.status);
-  }
-
-  const processedText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || text;
-  return c.json({ data: { text: processedText } });
 });
 
 // Debug endpoint — shows exactly what the worker sees on every request

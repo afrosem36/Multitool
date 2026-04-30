@@ -16,21 +16,36 @@ export default function LeadGate() {
 
   useEffect(() => {
     const fetchData = async () => {
+      let redirected = false;
       try {
-        // Fetch Config
         const configRes = await fetch(`${API_BASE_URL}/api/s/${slug}/config`);
-        const configJson = await configRes.json();
+        const rawText = await configRes.text();
+        let configJson;
+        try { configJson = JSON.parse(rawText); }
+        catch { throw new Error('Link not found or service unavailable'); }
         if (!configRes.ok) throw new Error(configJson.error || 'Failed to load form');
-        
+
+        // Plain link with no lead gate — redirect directly
+        if (!configJson.data.requiresDataCollection && !configJson.data.formConfig) {
+          const submitRes = await fetch(`${API_BASE_URL}/api/s/${slug}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          const submitJson = await submitRes.json();
+          if (submitRes.ok && submitJson.data?.longUrl) {
+            redirected = true;
+            window.location.replace(submitJson.data.longUrl);
+            return;
+          }
+        }
+
         const fetchedConfig = configJson.data.formConfig || {
-          fields: [
-            { id: 'name', label: 'Full Name', type: 'text', required: true }
-          ],
-          design: { background: '', buttonColor: 'var(--primary-color)' }
+          fields: [{ id: 'name', label: 'Full Name', type: 'text', required: true }],
+          design: { background: '', buttonColor: 'var(--primary-color)' },
         };
         setConfig(fetchedConfig);
 
-        // Fetch Background
         const bgRes = await fetch(`${API_BASE_URL}/api/s/${slug}/background`);
         const bgJson = await bgRes.json();
         if (bgRes.ok && bgJson.data?.backgroundUrl) {
@@ -39,7 +54,7 @@ export default function LeadGate() {
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoadingConfig(false);
+        if (!redirected) setLoadingConfig(false);
       }
     };
     fetchData();

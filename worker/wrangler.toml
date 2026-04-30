@@ -15,15 +15,9 @@ migrations_dir = "migrations"
 binding = "MY_BUCKET"
 bucket_name = "multitoolhub-files"
 
-# Non-sensitive variables
 [vars]
 R2_BUCKET_NAME = "multitoolhub-files"
-FRONTEND_URL = "https://www.multitoolhub.space"
-SHORT_DOMAIN = "https://multi-tool-backend.multitoolhub-api.workers.dev"
 
 # Secrets (set with: npx wrangler secret put KEY_NAME)
-# JWT_SECRET
-# GROQ_API_KEY  
-# REMOVE_BG_API_KEY
-# RESEND_API_KEY
-# FROM_EMAIL
+# JWT_SECRET, GROQ_API_KEY, GEMINI_API_KEY
+# FRONTEND_URL, SHORT_DOMAIN (set as secrets so .dev.vars overrides locally)
