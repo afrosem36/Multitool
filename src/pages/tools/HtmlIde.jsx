@@ -8,7 +8,6 @@ import AuthModal from '../../components/AuthModal';
 
 const STORAGE_KEY = 'html-ide-projects';
 const MAX_SAVED = 5;
-const PAYMENT_BUTTON_ID = 'pl_Sk5u81cuL2Pup8';
 
 const DEFAULT_HTML = `<div class="container">
   <h1>Hello World!</h1>
@@ -112,7 +111,7 @@ export default function HtmlIde() {
   const [myDeployments, setMyDeployments] = useState([]);
   const [loadingDeployments, setLoadingDeployments] = useState(false);
 
-  const deployBaseUrl = `${import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:8787'}/d`;
+  const siteBaseUrl = import.meta.env.VITE_SITE_URL || 'https://multitoolhub.space';
 
   const debounceRef = useRef(null);
   const iframeRef = useRef(null);
@@ -137,50 +136,25 @@ export default function HtmlIde() {
     }
   };
 
-  // Inject Razorpay Payment Button when payment step is shown
-  useEffect(() => {
-    if (deployStep !== 'payment') return;
-    const form = document.getElementById('rzp-deploy-form');
-    if (!form || form.querySelector('script')) return;
-
-    const handleSubmit = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const paymentId = fd.get('razorpay_payment_id');
-      const orderId = fd.get('razorpay_order_id');
-      const signature = fd.get('razorpay_signature');
-      try {
-        const verifyRes = await apiFetch('/api/deploy/verify-and-save', {
-          method: 'POST',
-          body: JSON.stringify({
-            razorpay_payment_id: paymentId,
-            razorpay_order_id: orderId,
-            razorpay_signature: signature,
-            projectName,
-            slug: deployName,
-            html, css, js,
-          }),
-        });
-        const verifyData = await verifyRes.json();
-        if (verifyData.error) throw new Error(verifyData.error);
-        setDeployedUrl(verifyData.data?.url || `${deployBaseUrl}/${deployName}`);
-        setDeployStep('success');
-        fetchDeployments();
-      } catch (err) {
-        toast.error(err.message || 'Deployment failed');
-      }
-    };
-
-    form.addEventListener('submit', handleSubmit);
-
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/payment-button.js';
-    script.setAttribute('data-payment_button_id', PAYMENT_BUTTON_ID);
-    script.async = true;
-    form.appendChild(script);
-
-    return () => form.removeEventListener('submit', handleSubmit);
-  }, [deployStep]);
+  const handleFreeDeploy = async () => {
+    if (!deployName) { toast.error('Enter a project name'); return; }
+    setDeployStep('deploying');
+    try {
+      const res = await apiFetch('/api/deploy/free', {
+        method: 'POST',
+        body: JSON.stringify({ projectName, slug: deployName, html, css, js }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setDeployedUrl(data.url);
+      setDeployStep('success');
+      fetchDeployments();
+      toast.success('Deployed!');
+    } catch (err) {
+      toast.error(err.message || 'Deployment failed');
+      setDeployStep('name');
+    }
+  };
 
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
@@ -618,10 +592,10 @@ export default function HtmlIde() {
               <button onClick={() => setShowDeployModal(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
-            {deployStep === 'name' && (
+            {(deployStep === 'name' || deployStep === 'deploying') && (
               <>
                 <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                  Deploy your project as a live website with a custom URL.
+                  Deploy as a free live website with a custom URL.
                 </p>
                 <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '0.4rem' }}>Project name (URL slug)</label>
                 <input
@@ -629,45 +603,23 @@ export default function HtmlIde() {
                   value={deployName}
                   onChange={e => setDeployName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
                   placeholder="my-project"
+                  disabled={deployStep === 'deploying'}
                 />
                 <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: '#a5b4fc' }}>
                   Your site will be live at:<br />
-                  <strong style={{ color: '#c7d2fe' }}>{deployBaseUrl}/{deployName || 'your-project'}</strong>
+                  <strong style={{ color: '#c7d2fe' }}>{siteBaseUrl}/you/{deployName || 'your-project'}</strong>
                 </div>
                 <button
                   className="ide-btn ide-btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.9rem' }}
-                  onClick={() => {
-                    if (!deployName) { toast.error('Enter a project name'); return; }
-                    setDeployStep('payment');
-                  }}
+                  onClick={handleFreeDeploy}
+                  disabled={deployStep === 'deploying'}
                 >
-                  <Rocket size={15} /> Continue to Payment
+                  <Rocket size={15} /> {deployStep === 'deploying' ? 'Deploying...' : 'Deploy Free'}
                 </button>
                 <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#334155', marginTop: '0.75rem' }}>
-                  One-time payment • Custom URL • Instant hosting
+                  Free • Custom URL • Instant hosting
                 </p>
-              </>
-            )}
-
-            {deployStep === 'payment' && (
-              <>
-                <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-                  Deploying as: <strong style={{ color: '#c7d2fe' }}>{deployBaseUrl}/{deployName}</strong>
-                </p>
-                <p style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
-                  Complete payment to publish your site instantly.
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <form id="rzp-deploy-form" />
-                </div>
-                <button
-                  className="ide-btn ide-btn-ghost"
-                  style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
-                  onClick={() => setDeployStep('name')}
-                >
-                  ← Back
-                </button>
               </>
             )}
 
@@ -712,7 +664,10 @@ export default function HtmlIde() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
                       <div>
                         <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{deployment.project_name}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{deployBaseUrl}/{deployment.slug}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                          {deployment.username ? `${siteBaseUrl}/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`}
+                          {deployment.views > 0 && <span style={{ marginLeft: '0.5rem', color: '#6366f1' }}>· {deployment.views} views</span>}
+                        </div>
                       </div>
                       <button
                         className="ide-btn ide-btn-danger"
@@ -725,7 +680,7 @@ export default function HtmlIde() {
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
                       <button
                         className="ide-btn ide-btn-ghost"
-                        onClick={() => window.open(`${deployBaseUrl}/${deployment.slug}`, '_blank')}
+                        onClick={() => window.open(deployment.username ? `${siteBaseUrl}/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`, '_blank')}
                       >
                         Open live site
                       </button>

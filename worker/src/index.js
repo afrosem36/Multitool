@@ -517,11 +517,51 @@ app.post('/api/deploy/verify-and-save', requireAuth, async (c) => {
   }
 });
 
+// Free deploy — no payment required
+app.post('/api/deploy/free', requireAuth, async (c) => {
+  const user = c.get('user');
+  let body = {};
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  const { projectName, slug: rawSlug, html, css, js } = body;
+  if (!projectName || !html) return c.json({ error: 'projectName and html are required' }, 400);
+
+  const slug = (rawSlug || projectName).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  if (!slug) return c.json({ error: 'Invalid project name' }, 400);
+
+  // Derive username from name or email
+  const username = (user.name || user.email.split('@')[0]).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  const db = getDb(c.env);
+  const id = nanoid();
+
+  try {
+    const existing = await db.prepare('SELECT id, user_id FROM deployments WHERE slug = ?').bind(slug).first();
+    if (existing && existing.user_id !== user.id) {
+      return c.json({ error: 'That project name is already taken. Choose another.' }, 409);
+    }
+
+    if (existing) {
+      await db.prepare(`UPDATE deployments SET html=?,css=?,js=?,project_name=?,username=?,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND user_id=?`)
+        .bind(html, css || '', js || '', projectName, username, slug, user.id).run();
+    } else {
+      await db.prepare(`INSERT INTO deployments (id,user_id,project_name,slug,html,css,js,username,views) VALUES (?,?,?,?,?,?,?,?,0)`)
+        .bind(id, user.id, projectName, slug, html, css || '', js || '', username).run();
+    }
+
+    const url = `${c.env.FRONTEND_URL || 'https://multitoolhub.space'}/${username}/${slug}`;
+    return c.json({ success: true, url, slug, username });
+  } catch (error) {
+    console.error('Free deploy error:', error);
+    return c.json({ error: 'Deployment failed' }, 500);
+  }
+});
+
 app.get('/api/deployments', requireAuth, async (c) => {
   const user = c.get('user');
   const db = getDb(c.env);
   try {
-    const result = await db.prepare('SELECT * FROM deployments WHERE user_id = ? ORDER BY created_at DESC')
+    const result = await db.prepare('SELECT id, project_name, slug, username, views, created_at, updated_at FROM deployments WHERE user_id = ? ORDER BY created_at DESC')
       .bind(user.id)
       .all();
     return c.json({ data: result.results || [] });
@@ -570,31 +610,47 @@ app.delete('/api/deployments/:id', requireAuth, async (c) => {
   }
 });
 
+function renderProject(project) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${project.project_name || 'Project'}</title>
+  <style>${project.css || ''}</style>
+</head>
+<body>
+  ${project.html || ''}
+  <script>${project.js || ''}</script>
+</body>
+</html>`;
+}
+
+// Legacy /d/:slug route — still works, increments views
 app.get('/d/:slug', async (c) => {
   const slug = c.req.param('slug');
   const db = getDb(c.env);
   try {
-    const project = await db.prepare('SELECT html, css, js FROM deployments WHERE slug = ?')
-      .bind(slug)
-      .first();
-
+    const project = await db.prepare('SELECT html, css, js, project_name FROM deployments WHERE slug = ?').bind(slug).first();
     if (!project) return c.text('Project not found', 404);
+    c.executionCtx?.waitUntil(db.prepare('UPDATE deployments SET views = views + 1 WHERE slug = ?').bind(slug).run());
+    return c.html(renderProject(project));
+  } catch (error) {
+    return c.text('Error loading project', 500);
+  }
+});
 
-    const fullHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>${project.css}</style>
-</head>
-<body>
-    ${project.html}
-    <script>${project.js}</script>
-</body>
-</html>`;
-
-    return c.html(fullHtml);
+// New /:username/:project route
+app.get('/:username/:project', async (c) => {
+  const username = c.req.param('username');
+  const project = c.req.param('project');
+  const db = getDb(c.env);
+  try {
+    const row = await db.prepare('SELECT html, css, js, project_name FROM deployments WHERE username = ? AND slug = ?')
+      .bind(username, project).first();
+    if (!row) return c.text('Project not found', 404);
+    c.executionCtx?.waitUntil(db.prepare('UPDATE deployments SET views = views + 1 WHERE username = ? AND slug = ?').bind(username, project).run());
+    return c.html(renderProject(row));
   } catch (error) {
     return c.text('Error loading project', 500);
   }

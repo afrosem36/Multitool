@@ -52,6 +52,7 @@ const CurrencyConverter = React.lazy(() => import('./pages/CurrencyConverter'));
 const SkyToggleDemo = React.lazy(() => import('./pages/SkyToggleDemo'));
 const FileShare = React.lazy(() => import('./pages/FileShare'));
 const AnalyticsDashboard = React.lazy(() => import('./pages/AnalyticsDashboard'));
+const DeployDashboard = React.lazy(() => import('./pages/DeployDashboard'));
 const HeicConverter = React.lazy(() => import('./pages/HeicConverter'));
 const SeoAnalyzer = React.lazy(() => import('./pages/SeoAnalyzer'));
 const TimeUnitConverter = React.lazy(() => import('./pages/TimeUnitConverter'));
@@ -182,6 +183,7 @@ function AppRoutes() {
             <Route path="/share" element={<FileShare />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/dashboard" element={<AnalyticsDashboard />} />
+            <Route path="/dashboard/deployments" element={<DeployDashboard />} />
           </>
         )}
         {FEATURE_FLAGS.ENABLE_HEIC_CONVERTER && (
