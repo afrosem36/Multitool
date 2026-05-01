@@ -3,9 +3,12 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import MobileTopBar from './MobileTopBar';
+import BackButton from './BackButton';
 import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
 import AdSenseUnit from './shared/AdSenseUnit';
+import { Boxes } from './ui/background-boxes';
 import { footerPages } from '../data/contentPages';
 import {
   calculatorTools,
@@ -116,6 +119,13 @@ const Layout = () => {
 
   return (
     <div className={`layout${navbarVisible ? '' : ' layout--nav-hidden'}`}>
+      {/* ── Global animated grid background ── */}
+      <div className="bg-boxes-root">
+        <Boxes />
+        {/* radial vignette — fades boxes to site background at edges */}
+        <div className="bg-boxes-mask" />
+      </div>
+
       <SeoManager />
       <Navbar
         onToggleSidebar={toggleSidebar}
@@ -133,6 +143,7 @@ const Layout = () => {
           <AdSenseUnit slot="1234567890" format="rectangle" responsive="false" />
         </div>
         <main className="main-content">
+          <BackButton />
           <Outlet />
 
           {isToolPage && (
@@ -165,6 +176,9 @@ const Layout = () => {
           </footer>
         </main>
       </div>
+
+      {/* Mobile top bar (back button + page title) */}
+      <MobileTopBar />
 
       {/* Mobile-only Navigation */}
       <BottomNav onSearchOpen={() => setIsMobileSearchOpen(true)} />

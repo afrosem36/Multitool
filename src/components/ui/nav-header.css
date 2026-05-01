@@ -18,6 +18,9 @@
   cursor: pointer;
   color: #fff;
   mix-blend-mode: difference;
+  /* Extend hover area downward to cover the gap to the dropdown */
+  padding-bottom: 8px;
+  margin-bottom: -8px;
 }
 
 .nav-header-link {
@@ -29,6 +32,7 @@
   transition: opacity 0.2s;
   color: inherit;
   user-select: none;
+  text-decoration: none;
 }
 
 .nav-header-link:hover {
@@ -57,40 +61,42 @@
   }
 }
 
-/* Dropdown Styles */
+/* ── Dropdown ─────────────────────────────────────────────────── */
 .nav-dropdown {
   position: absolute;
   top: 100%;
   left: 50%;
-  transform: translateX(-50%);
-  margin-top: 12px;
+  transform: translateX(-50%) translateY(0px);
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 12px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  min-width: 160px;
+  box-shadow: 0 10px 40px -8px rgba(0, 0, 0, 0.18), 0 4px 12px -4px rgba(0, 0, 0, 0.1);
+  min-width: 180px;
   opacity: 0;
   visibility: hidden;
-  transition: all 0.2s ease;
-  z-index: 50;
   pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease, transform 0.18s ease;
+  z-index: 9999;
+  mix-blend-mode: normal;
+  color: #111;
 }
 
-/* Invisible bridge to keep hover active between tab and dropdown */
-.nav-dropdown::before {
-  content: '';
-  position: absolute;
-  top: -16px;
-  left: 0;
-  right: 0;
-  height: 16px;
-}
-
-.nav-dropdown.active {
+/* Show on CSS :hover — no JS race condition possible */
+.nav-header-tab:hover .nav-dropdown {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translateX(-50%) translateY(4px);
+  transform: translateX(-50%) translateY(6px);
+}
+
+/* Extra hit area above the dropdown to bridge any remaining gap */
+.nav-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 0;
+  right: 0;
+  height: 12px;
 }
 
 .nav-dropdown-item {
@@ -98,13 +104,16 @@
   padding: 10px 16px;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #111;
-  transition: background 0.2s;
+  color: #111 !important;
+  transition: background 0.15s;
   white-space: nowrap;
+  text-decoration: none;
+  mix-blend-mode: normal;
 }
 
 .nav-dropdown-item:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.06);
+  color: #000 !important;
 }
 
 .nav-dropdown-item:first-child {
@@ -115,4 +124,19 @@
 .nav-dropdown-item:last-child {
   border-bottom-left-radius: 12px;
   border-bottom-right-radius: 12px;
+}
+
+.nav-dropdown-item--accent {
+  color: #4f46e5 !important;
+  font-weight: 600;
+}
+
+.nav-dropdown-item--accent:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.nav-dropdown-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.08);
+  margin: 4px 0;
 }

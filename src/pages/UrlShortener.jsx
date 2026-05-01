@@ -23,7 +23,25 @@ const UrlShortener = () => {
     if (saved) {
       setHistory(JSON.parse(saved));
     }
-  }, []);
+
+    // If the user is authenticated, attempt to fetch their links from the backend
+    if (user && token) {
+      fetch(`${API_BASE_URL}/api/links`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            // Gracefully handle 404 or other errors without crashing the UI
+            throw new Error(`Server returned ${res.status}`);
+          }
+          const data = await res.json();
+          if (data && data.data) {
+            setHistory(data.data);
+          }
+        })
+        .catch((err) => console.warn('Could not fetch links from server (falling back to local storage):', err.message));
+    }
+  }, [user, token]);
 
   const saveToHistory = (newLink) => {
     const updated = [newLink, ...history];

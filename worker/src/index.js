@@ -1516,6 +1516,296 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
   }
 });
 
+// ==========================================
+// SEO AUDIT
+// ==========================================
+
+const COUNTRY_TIPS = {
+  US:     ['Focus on E-E-A-T signals — Google heavily weights expertise and trust for US audiences.', 'Target featured snippets and People Also Ask boxes; US SERPs are rich-result heavy.', 'Core Web Vitals are a confirmed ranking signal — LCP under 2.5 s is the target.'],
+  IN:     ['Mobile-first is critical — 75%+ of Indian traffic is mobile; test on 3G/4G conditions.', 'Consider Hindi and regional-language pages for Tier-2/3 city growth.', 'Prioritize fast hosting close to Indian data centres for low TTFB.'],
+  UK:     ['Ensure GDPR/UK-GDPR cookie consent is correct — affects crawl and ad revenue.', 'Use British English spelling variants in meta tags and copy.', 'Local Business schema and Google Business Profile are strong trust signals.'],
+  CA:     ['Bilingual content (English + French) gives a visibility edge in federal and Quebec searches.', 'Ensure privacy policy meets PIPEDA requirements — trust signals matter for conversions.', 'Canadian TLD (.ca) builds local trust; use hreflang if also targeting US.'],
+  AU:     ['Use Australian spelling and slang in long-tail copy for natural language search.', 'Google.com.au ranks local pages higher — ensure NAP (Name, Address, Phone) consistency.', 'Page speed matters on mobile networks — optimise images and use a CDN.'],
+  Global: ['Use hreflang tags to target multiple regions and avoid duplicate-content penalties.', 'Write in clear, jargon-free English — international audiences value readability.', 'Structured data helps Google surface your pages in multilingual rich results.'],
+};
+
+function letterGrade(score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 65) return 'C';
+  if (score >= 50) return 'D';
+  return 'F';
+}
+
+app.post('/api/seo-audit', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { websiteUrl, websiteType = 'Blog', primaryKeywords = '', targetCountry = 'US', analyticsGoals = ['Traffic'] } = body;
+
+    if (!websiteUrl) return c.json({ error: 'websiteUrl is required' }, 400);
+    let parsedUrl;
+    try { parsedUrl = new URL(websiteUrl); } catch { return c.json({ error: 'Invalid URL format' }, 400); }
+
+    // ── Fetch target page ──────────────────────────────────────────
+    const fetchStart = Date.now();
+    let html = '';
+    let responseTime = 0;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 10000);
+      const res = await fetch(parsedUrl.toString(), {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MultiToolHub-SEOAuditor/1.0; +https://multitoolhub.space)', Accept: 'text/html' },
+        redirect: 'follow',
+      });
+      clearTimeout(t);
+      responseTime = Date.now() - fetchStart;
+      html = await res.text();
+    } catch (e) {
+      return c.json({ error: `Could not fetch the URL: ${e.message}` }, 422);
+    }
+
+    // ── Probe robots.txt + sitemap.xml (best-effort) ───────────────
+    let hasRobots = false, hasSitemap = false;
+    try { const r = await fetch(`${parsedUrl.origin}/robots.txt`, { signal: AbortSignal.timeout(4000) }); hasRobots = r.ok; } catch {}
+    try { const r = await fetch(`${parsedUrl.origin}/sitemap.xml`, { signal: AbortSignal.timeout(4000) }); hasSitemap = r.ok; } catch {}
+
+    // ── Parse HTML ─────────────────────────────────────────────────
+    const $ = cheerio.load(html);
+
+    const title          = $('title').first().text().trim();
+    const metaDesc       = $('meta[name="description"]').attr('content')?.trim() || '';
+    const h1List         = $('h1').map((_, el) => $(el).text().trim()).get();
+    const h2Count        = $('h2').length;
+    const canonicalUrl   = $('link[rel="canonical"]').attr('href')?.trim() || '';
+    const htmlLang       = $('html').attr('lang')?.trim() || '';
+    const ogTitle        = $('meta[property="og:title"]').attr('content')?.trim() || '';
+    const ogDesc         = $('meta[property="og:description"]').attr('content')?.trim() || '';
+    const ogImage        = $('meta[property="og:image"]').attr('content')?.trim() || '';
+    const twitterCard    = $('meta[name="twitter:card"]').attr('content')?.trim() || '';
+    const robotsMeta     = $('meta[name="robots"]').attr('content')?.toLowerCase() || '';
+    const viewport       = $('meta[name="viewport"]').attr('content') || '';
+    const hasSchema      = $('script[type="application/ld+json"]').length > 0;
+    const isHttps        = parsedUrl.protocol === 'https:';
+    const isIndexable    = !robotsMeta.includes('noindex');
+
+    // Images
+    const totalImages     = $('img').length;
+    const imagesWithAlt   = $('img[alt][alt!=""]').length;
+    const altCoverage     = totalImages > 0 ? Math.round((imagesWithAlt / totalImages) * 100) : 100;
+
+    // Links
+    let internalLinks = 0, externalLinks = 0;
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      if (/^https?:\/\//i.test(href) && !href.includes(parsedUrl.hostname)) externalLinks++;
+      else if (href && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('#') && !href.startsWith('javascript:')) internalLinks++;
+    });
+
+    // Word count
+    $('script, style, noscript, head').remove();
+    const bodyText  = $('body').text().replace(/\s+/g, ' ').trim();
+    const wordCount = bodyText.split(/\s+/).filter(w => w.length > 2).length;
+
+    // Keyword density
+    let keywordDensity = 0;
+    if (primaryKeywords && wordCount > 0) {
+      const kws = primaryKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+      const textLower = bodyText.toLowerCase();
+      let hits = 0;
+      kws.forEach(kw => { const m = textLower.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')); if (m) hits += m.length; });
+      keywordDensity = parseFloat(((hits / wordCount) * 100).toFixed(2));
+    }
+
+    const htmlSizeKB = Math.round(new TextEncoder().encode(html).length / 1024);
+    const kws        = primaryKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+    const kwInTitle  = kws.length > 0 && kws.some(k => title.toLowerCase().includes(k));
+    const kwInDesc   = kws.length > 0 && kws.some(k => metaDesc.toLowerCase().includes(k));
+    const kwInH1     = kws.length > 0 && h1List.some(h => kws.some(k => h.toLowerCase().includes(k)));
+
+    // ── Build signals ──────────────────────────────────────────────
+    const raw = [
+      // ── On-Page
+      { id: 'title_exists',   category: 'On-Page', name: 'Page Title',           maxScore: 10,
+        ...( !title                       ? { status: 'fail', score: 0,  message: 'No <title> tag found.',                          fixTip: 'Add a descriptive <title> tag between 30–60 characters.' }
+           : title.length < 20            ? { status: 'warn', score: 5,  message: `Title is too short (${title.length} chars).`,     fixTip: 'Expand the title to 30–60 characters with your primary keyword.' }
+           : title.length > 65            ? { status: 'warn', score: 6,  message: `Title is too long (${title.length} chars).`,      fixTip: 'Trim the title to under 60 characters to avoid truncation in SERPs.' }
+           :                               { status: 'pass', score: 10, message: `Title looks good (${title.length} chars).`,       fixTip: '' }) },
+
+      { id: 'meta_desc',      category: 'On-Page', name: 'Meta Description',     maxScore: 10,
+        ...( !metaDesc                    ? { status: 'fail', score: 0,  message: 'Meta description is missing.',                   fixTip: 'Write a compelling meta description between 120–160 characters.' }
+           : metaDesc.length < 70         ? { status: 'warn', score: 5,  message: `Description is short (${metaDesc.length} chars).`, fixTip: 'Expand to 120–160 characters to maximise SERP click-through rate.' }
+           : metaDesc.length > 165        ? { status: 'warn', score: 6,  message: `Description is too long (${metaDesc.length} chars).`, fixTip: 'Shorten to under 160 characters to prevent SERP truncation.' }
+           :                               { status: 'pass', score: 10, message: `Meta description is ${metaDesc.length} chars.`,   fixTip: '' }) },
+
+      { id: 'h1',             category: 'On-Page', name: 'H1 Heading',           maxScore: 8,
+        ...( h1List.length === 0          ? { status: 'fail', score: 0,  message: 'No H1 tag found on the page.',                   fixTip: 'Add exactly one H1 tag containing your primary keyword.' }
+           : h1List.length > 1            ? { status: 'warn', score: 4,  message: `${h1List.length} H1 tags found — use only one.`, fixTip: 'Remove duplicate H1 tags; Google prefers a single, clear H1.' }
+           :                               { status: 'pass', score: 8,  message: `One H1 found: "${h1List[0]?.slice(0, 60)}".`,    fixTip: '' }) },
+
+      { id: 'h2',             category: 'On-Page', name: 'H2 Subheadings',       maxScore: 5,
+        ...( h2Count === 0                ? { status: 'warn', score: 2,  message: 'No H2 tags found.',                              fixTip: 'Use H2 tags to structure content and include secondary keywords.' }
+           :                               { status: 'pass', score: 5,  message: `${h2Count} H2 headings found.`,                  fixTip: '' }) },
+
+      { id: 'kw_title',       category: 'On-Page', name: 'Keyword in Title',     maxScore: 8,
+        ...( kws.length === 0             ? { status: 'warn', score: 4,  message: 'No keywords provided to check.',                 fixTip: 'Enter primary keywords in the audit form for keyword signal checks.' }
+           : kwInTitle                    ? { status: 'pass', score: 8,  message: 'Primary keyword found in title.',                fixTip: '' }
+           :                               { status: 'fail', score: 0,  message: 'Primary keyword not in page title.',             fixTip: `Include "${kws[0]}" near the beginning of the <title> tag.` }) },
+
+      { id: 'kw_desc',        category: 'On-Page', name: 'Keyword in Meta Desc', maxScore: 5,
+        ...( kws.length === 0             ? { status: 'warn', score: 3,  message: 'No keywords provided to check.',                 fixTip: 'Enter primary keywords in the audit form.' }
+           : kwInDesc                     ? { status: 'pass', score: 5,  message: 'Primary keyword present in meta description.',   fixTip: '' }
+           :                               { status: 'warn', score: 2,  message: 'Keyword not found in meta description.',         fixTip: `Work "${kws[0]}" naturally into the meta description.` }) },
+
+      { id: 'kw_h1',          category: 'On-Page', name: 'Keyword in H1',        maxScore: 6,
+        ...( kws.length === 0             ? { status: 'warn', score: 3,  message: 'No keywords provided to check.',                 fixTip: 'Enter primary keywords in the audit form.' }
+           : kwInH1                       ? { status: 'pass', score: 6,  message: 'Primary keyword found in H1.',                  fixTip: '' }
+           :                               { status: 'warn', score: 2,  message: 'Keyword not found in H1 tag.',                  fixTip: `Place "${kws[0]}" in or near the H1 heading.` }) },
+
+      // ── Content
+      { id: 'word_count',     category: 'Content', name: 'Word Count',           maxScore: 8,
+        ...( wordCount < 200              ? { status: 'fail', score: 0,  message: `Only ${wordCount} words found — very thin.`,     fixTip: 'Aim for at least 600 words; in-depth content ranks better.' }
+           : wordCount < 500              ? { status: 'warn', score: 4,  message: `${wordCount} words — could be deeper.`,          fixTip: 'Expand to 800+ words covering subtopics thoroughly.' }
+           :                               { status: 'pass', score: 8,  message: `${wordCount} words — solid content depth.`,     fixTip: '' }) },
+
+      { id: 'kw_density',     category: 'Content', name: 'Keyword Density',      maxScore: 5,
+        ...( kws.length === 0             ? { status: 'warn', score: 3,  message: 'No keywords supplied.',                          fixTip: 'Provide primary keywords for density analysis.' }
+           : keywordDensity === 0         ? { status: 'warn', score: 1,  message: 'Keyword not found in body text.',                fixTip: 'Use the keyword naturally in headings, intro, and body copy.' }
+           : keywordDensity > 4           ? { status: 'warn', score: 2,  message: `Keyword density is ${keywordDensity}% — may look like stuffing.`, fixTip: 'Reduce to 1–3%; use synonyms and related terms instead.' }
+           :                               { status: 'pass', score: 5,  message: `Keyword density: ${keywordDensity}%.`,           fixTip: '' }) },
+
+      { id: 'images_alt',     category: 'Content', name: 'Image Alt Text',       maxScore: 6,
+        ...( totalImages === 0            ? { status: 'warn', score: 3,  message: 'No images found on the page.',                   fixTip: 'Add relevant images with descriptive alt text to improve accessibility and image SEO.' }
+           : altCoverage < 60             ? { status: 'fail', score: 1,  message: `Only ${altCoverage}% of images have alt text.`,  fixTip: 'Add descriptive alt text to all images; include keywords where natural.' }
+           : altCoverage < 90             ? { status: 'warn', score: 4,  message: `${altCoverage}% of images have alt text.`,       fixTip: 'Complete alt text for remaining images.' }
+           :                               { status: 'pass', score: 6,  message: `${altCoverage}% alt coverage — great.`,          fixTip: '' }) },
+
+      { id: 'internal_links', category: 'Content', name: 'Internal Links',       maxScore: 5,
+        ...( internalLinks < 2            ? { status: 'fail', score: 0,  message: `Only ${internalLinks} internal link(s) found.`,  fixTip: 'Add 5+ internal links to related pages; this distributes PageRank.' }
+           : internalLinks < 5            ? { status: 'warn', score: 3,  message: `${internalLinks} internal links found.`,         fixTip: 'Add more internal links to signal content depth to Google.' }
+           :                               { status: 'pass', score: 5,  message: `${internalLinks} internal links found.`,         fixTip: '' }) },
+
+      // ── Technical
+      { id: 'https',          category: 'Technical', name: 'HTTPS / SSL',        maxScore: 8,
+        ...( isHttps                      ? { status: 'pass', score: 8,  message: 'Site is served over HTTPS.',                     fixTip: '' }
+           :                               { status: 'fail', score: 0,  message: 'Site is not using HTTPS.',                       fixTip: 'Migrate to HTTPS immediately — it is a Google ranking signal and required for trust.' }) },
+
+      { id: 'canonical',      category: 'Technical', name: 'Canonical URL',      maxScore: 6,
+        ...( canonicalUrl                 ? { status: 'pass', score: 6,  message: `Canonical set to ${canonicalUrl.slice(0, 60)}.`, fixTip: '' }
+           :                               { status: 'warn', score: 2,  message: 'No canonical tag found.',                        fixTip: 'Add <link rel="canonical" href="..."> to prevent duplicate content issues.' }) },
+
+      { id: 'robots_meta',    category: 'Technical', name: 'Indexability',        maxScore: 6,
+        ...( isIndexable                  ? { status: 'pass', score: 6,  message: 'Page is indexable (no noindex directive).',      fixTip: '' }
+           :                               { status: 'fail', score: 0,  message: 'Page has noindex — it will not rank.',            fixTip: 'Remove noindex from the robots meta tag if you want this page in search results.' }) },
+
+      { id: 'viewport',       category: 'Technical', name: 'Mobile Viewport',    maxScore: 5,
+        ...( viewport                     ? { status: 'pass', score: 5,  message: 'Viewport meta tag is set.',                     fixTip: '' }
+           :                               { status: 'fail', score: 0,  message: 'No viewport meta tag — not mobile-friendly.',    fixTip: 'Add <meta name="viewport" content="width=device-width, initial-scale=1">.' }) },
+
+      { id: 'schema',         category: 'Technical', name: 'Structured Data',    maxScore: 6,
+        ...( hasSchema                    ? { status: 'pass', score: 6,  message: 'JSON-LD structured data detected.',              fixTip: '' }
+           :                               { status: 'warn', score: 1,  message: 'No structured data (JSON-LD) found.',            fixTip: 'Add schema markup (Article, Product, FAQ, etc.) to enable rich results.' }) },
+
+      { id: 'html_lang',      category: 'Technical', name: 'HTML Language',      maxScore: 4,
+        ...( htmlLang                     ? { status: 'pass', score: 4,  message: `lang="${htmlLang}" attribute set.`,              fixTip: '' }
+           :                               { status: 'warn', score: 1,  message: 'HTML lang attribute is missing.',                fixTip: 'Add lang="en" (or appropriate locale) to the <html> tag.' }) },
+
+      { id: 'page_size',      category: 'Technical', name: 'Page Size',          maxScore: 4,
+        ...( htmlSizeKB < 200             ? { status: 'pass', score: 4,  message: `HTML is ${htmlSizeKB} KB — lean.`,              fixTip: '' }
+           : htmlSizeKB < 500             ? { status: 'warn', score: 2,  message: `HTML is ${htmlSizeKB} KB.`,                     fixTip: 'Reduce HTML size by minimising inline scripts and redundant code.' }
+           :                               { status: 'fail', score: 0,  message: `HTML is ${htmlSizeKB} KB — very heavy.`,        fixTip: 'Inline HTML over 500 KB hurts crawl efficiency and LCP.' }) },
+
+      // ── Social
+      { id: 'og_title',       category: 'Social', name: 'OG Title',              maxScore: 4,
+        ...( ogTitle                      ? { status: 'pass', score: 4,  message: 'Open Graph title is set.',                      fixTip: '' }
+           :                               { status: 'warn', score: 1,  message: 'og:title meta tag is missing.',                 fixTip: 'Add <meta property="og:title"> for better social media previews.' }) },
+
+      { id: 'og_desc',        category: 'Social', name: 'OG Description',        maxScore: 3,
+        ...( ogDesc                       ? { status: 'pass', score: 3,  message: 'Open Graph description is set.',                fixTip: '' }
+           :                               { status: 'warn', score: 0,  message: 'og:description is missing.',                    fixTip: 'Add <meta property="og:description"> for social sharing cards.' }) },
+
+      { id: 'og_image',       category: 'Social', name: 'OG Image',              maxScore: 3,
+        ...( ogImage                      ? { status: 'pass', score: 3,  message: 'Open Graph image is set.',                      fixTip: '' }
+           :                               { status: 'warn', score: 0,  message: 'og:image is missing.',                          fixTip: 'Add a 1200×630 px og:image to maximise social click-through.' }) },
+
+      { id: 'twitter_card',   category: 'Social', name: 'Twitter Card',          maxScore: 2,
+        ...( twitterCard                  ? { status: 'pass', score: 2,  message: `twitter:card = "${twitterCard}".`,              fixTip: '' }
+           :                               { status: 'warn', score: 0,  message: 'twitter:card meta tag is missing.',             fixTip: 'Add <meta name="twitter:card" content="summary_large_image">.' }) },
+
+      // ── Crawlability
+      { id: 'robots_txt',     category: 'Crawlability', name: 'Robots.txt',      maxScore: 5,
+        ...( hasRobots                    ? { status: 'pass', score: 5,  message: 'robots.txt found.',                             fixTip: '' }
+           :                               { status: 'warn', score: 1,  message: 'robots.txt not found at /robots.txt.',          fixTip: 'Create a robots.txt to guide crawlers and protect sensitive paths.' }) },
+
+      { id: 'sitemap',        category: 'Crawlability', name: 'XML Sitemap',     maxScore: 5,
+        ...( hasSitemap                   ? { status: 'pass', score: 5,  message: 'sitemap.xml found.',                            fixTip: '' }
+           :                               { status: 'warn', score: 1,  message: 'sitemap.xml not found at /sitemap.xml.',        fixTip: 'Create and submit an XML sitemap in Google Search Console.' }) },
+    ];
+
+    // ── Score tallies ──────────────────────────────────────────────
+    const totalMax   = raw.reduce((s, r) => s + r.maxScore, 0);
+    const totalScore = raw.reduce((s, r) => s + r.score, 0);
+    const overallScore = Math.round((totalScore / totalMax) * 100);
+
+    const summary = {
+      passed:   raw.filter(r => r.status === 'pass').length,
+      warnings: raw.filter(r => r.status === 'warn').length,
+      failed:   raw.filter(r => r.status === 'fail').length,
+    };
+
+    // ── Categories ─────────────────────────────────────────────────
+    const catNames = ['On-Page', 'Content', 'Technical', 'Social', 'Crawlability'];
+    const categories = catNames.map(name => {
+      const items    = raw.filter(r => r.category === name);
+      const score    = items.reduce((s, r) => s + r.score, 0);
+      const maxScore = items.reduce((s, r) => s + r.maxScore, 0);
+      return { name, score, maxScore, percentage: Math.round((score / maxScore) * 100) };
+    });
+
+    // ── Quick wins (fail first, then warn) ─────────────────────────
+    const quickWins = raw
+      .filter(r => r.status !== 'pass' && r.fixTip)
+      .sort((a, b) => (a.status === 'fail' ? -1 : 1) - (b.status === 'fail' ? -1 : 1))
+      .slice(0, 6)
+      .map(r => ({ id: r.id, name: r.name, fixTip: r.fixTip, priority: r.status === 'fail' ? 'high' : 'medium' }));
+
+    // ── Strengths ──────────────────────────────────────────────────
+    const strengths = raw
+      .filter(r => r.status === 'pass')
+      .slice(0, 5)
+      .map(r => ({ id: r.id, name: r.name, message: r.message }));
+
+    return c.json({
+      data: {
+        overallScore,
+        letterGrade: letterGrade(overallScore),
+        summary,
+        inputContext: { targetCountry, analyticsGoals },
+        signals: raw,
+        quickWins,
+        strengths,
+        countryPlaybook: COUNTRY_TIPS[targetCountry] || COUNTRY_TIPS.Global,
+        metrics: {
+          titleLength: title.length,
+          metaDescriptionLength: metaDesc.length,
+          wordCount,
+          keywordDensity,
+          altCoverage,
+          internalLinks,
+          externalLinks,
+          responseTime,
+          htmlSizeKB,
+        },
+        categories,
+        crawl: { hasRobots, hasSitemap, isIndexable, htmlLang, canonicalUrl },
+      },
+    });
+  } catch (err) {
+    console.error('[seo-audit]', err);
+    return c.json({ error: 'Internal server error', detail: err.message }, 500);
+  }
+});
+
 app.all('/api/*', (c) => {
   return c.json({ error: 'API route not found' }, 404);
 });

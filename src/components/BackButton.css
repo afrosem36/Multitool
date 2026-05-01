@@ -1,0 +1,34 @@
+/* Desktop back button — hidden on mobile (MobileTopBar handles it there) */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.38rem 0.85rem 0.38rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-bottom: 1.25rem;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  letter-spacing: 0.01em;
+}
+
+.back-btn:hover {
+  background: rgba(99,102,241,0.12);
+  color: #a5b4fc;
+  border-color: rgba(99,102,241,0.3);
+}
+
+.back-btn:active {
+  transform: scale(0.96);
+}
+
+/* Mobile: hidden here — MobileTopBar shows the back button instead */
+@media (max-width: 768px) {
+  .back-btn {
+    display: none;
+  }
+}

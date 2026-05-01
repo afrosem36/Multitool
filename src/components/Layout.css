@@ -1,3 +1,30 @@
+/* ── Background boxes ──────────────────────────────────────────── */
+.bg-boxes-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Vignette mask: transparent center (shows boxes) → solid at edges (hides boxes) */
+.bg-boxes-mask {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 70% 70% at 50% 50%,
+    transparent 0%,
+    var(--bg-dark, #0a0a0f) 75%
+  );
+}
+
+/* layout-shell sits above the fixed bg-boxes (z-index 0) */
+.layout-shell {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
 .layout {
   display: flex;
   flex-direction: column;
@@ -125,14 +152,27 @@
 }
 
 @media (max-width: 768px) {
+  /* Desktop navbar hidden on mobile — MobileTopBar replaces it */
+  .navbar {
+    display: none !important;
+  }
+
+  /* Reset nav-hidden shift — not needed without desktop navbar */
+  .layout--nav-hidden .layout-shell {
+    margin-top: 0;
+  }
+
   .layout-shell {
     width: min(100% - 1rem, 1400px);
     padding-top: 0.85rem;
     gap: 1rem;
+    /* 54px MobileTopBar + small gap */
+    margin-top: 54px;
   }
 
   .main-content {
-    padding-bottom: 80px;
+    /* 68px bottom nav + safe area */
+    padding-bottom: 88px;
   }
 
   .sidebar-wrapper {
