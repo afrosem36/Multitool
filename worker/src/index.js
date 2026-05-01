@@ -872,6 +872,73 @@ app.get('/api/share/analytics', requireAuth, async (c) => {
   });
 });
 
+// Delete specific slugs (URL shortener links or file shares)
+app.delete('/api/links', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  let body = {};
+  try { body = await c.req.json(); } catch {}
+  const { slugs } = body;
+  if (!Array.isArray(slugs) || slugs.length === 0) {
+    return c.json({ error: 'slugs array required' }, 400);
+  }
+
+  const placeholders = slugs.map(() => '?').join(',');
+  const rows = await db.prepare(
+    `SELECT slug, r2_key FROM links WHERE slug IN (${placeholders}) AND user_id = ?`
+  ).bind(...slugs, user.id).all();
+
+  const bucket = c.env.MY_BUCKET;
+  for (const row of (rows.results || [])) {
+    if (row.r2_key && bucket) {
+      try { await bucket.delete(row.r2_key); } catch {}
+    }
+  }
+
+  await db.prepare(
+    `DELETE FROM links WHERE slug IN (${placeholders}) AND user_id = ?`
+  ).bind(...slugs, user.id).run();
+
+  await db.prepare(
+    `DELETE FROM analytics WHERE slug IN (${placeholders})`
+  ).bind(...slugs).run();
+
+  return c.json({ message: `Deleted ${slugs.length} item(s)` });
+});
+
+// Delete all links of a type (urls or files)
+app.delete('/api/links/all', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const type = c.req.query('type') || 'urls';
+
+  const condition = type === 'files' ? 'original_name IS NOT NULL' : 'original_name IS NULL';
+  const rows = await db.prepare(
+    `SELECT slug, r2_key FROM links WHERE user_id = ? AND ${condition}`
+  ).bind(user.id).all();
+
+  const bucket = c.env.MY_BUCKET;
+  for (const row of (rows.results || [])) {
+    if (row.r2_key && bucket) {
+      try { await bucket.delete(row.r2_key); } catch {}
+    }
+  }
+
+  const slugList = (rows.results || []).map(r => r.slug);
+  if (slugList.length > 0) {
+    const placeholders = slugList.map(() => '?').join(',');
+    await db.prepare(
+      `DELETE FROM analytics WHERE slug IN (${placeholders})`
+    ).bind(...slugList).run();
+  }
+
+  await db.prepare(
+    `DELETE FROM links WHERE user_id = ? AND ${condition}`
+  ).bind(user.id).run();
+
+  return c.json({ message: `Deleted all ${type}` });
+});
+
 // ==========================================
 // FEEDBACK ROUTES
 // ==========================================

@@ -418,19 +418,21 @@ export default function AnalyticsDashboard() {
     toast.success('XLSX Export downloaded!');
   };
 
+  const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` });
+
   const deleteSlugs = async (slugs) => {
     if (!window.confirm(`Are you sure you want to delete ${slugs.length} item(s)? This will also permanently remove files from Cloudflare R2 storage.`)) return;
-    
+
     setDeleting(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/links`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({ slugs })
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Delete failed');
-      
+
       toast.success(d.message);
       setSelectedSlugs([]);
       fetchData();
@@ -444,15 +446,18 @@ export default function AnalyticsDashboard() {
   const deleteAll = async () => {
     const type = searchParams.get('type') || 'urls';
     const typeLabel = type === 'files' ? 'all SHARED FILES' : 'all SHORTENED URLs';
-    
+
     if (!window.confirm(`CRITICAL ACTION: Are you sure you want to delete ${typeLabel}? This cannot be undone and will clear your cloud storage.`)) return;
 
     setDeleting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/links/all?type=${type}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/links/all?type=${type}`, {
+        method: 'DELETE',
+        headers: authHeader(),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Clear failed');
-      
+
       toast.success(d.message);
       setSelectedSlugs([]);
       fetchData();
