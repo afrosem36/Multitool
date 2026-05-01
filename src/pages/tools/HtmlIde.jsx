@@ -231,7 +231,7 @@ export default function HtmlIde() {
     if (authAction === 'dashboard') {
       setShowDashboard(true);
     } else if (authAction === 'deploy') {
-      setDeployName(projectName);
+      setDeployName(projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
       setShowDeployModal(true);
     }
     setAuthAction('');
@@ -530,7 +530,7 @@ export default function HtmlIde() {
               setShowAuthModal(true);
               return;
             }
-            setDeployName(projectName);
+            setDeployName(projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
             setShowDeployModal(true);
           }}
           title="Deploy as live site"
