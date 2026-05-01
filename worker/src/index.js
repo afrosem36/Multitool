@@ -407,7 +407,7 @@ app.post('/api/auth/register', async (c) => {
 // ==========================================
 
 app.post('/api/deploy/create-order', requireAuth, async (c) => {
-  const amount = 100; // ₹1 in paise
+  const amount = 1000; // ₹10 in paise
   const currency = 'INR';
   const receipt = `deploy_${nanoid(10)}`;
 
