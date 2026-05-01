@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    {
+      "source": "/p/:username/:project",
+      "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/p/:username/:project"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

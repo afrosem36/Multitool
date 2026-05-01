@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 const SITE_BASE = import.meta.env.VITE_SITE_URL || 'https://multitoolhub.space';
 
 function deployUrl(d) {
-  return d.username ? `${SITE_BASE}/${d.username}/${d.slug}` : `${SITE_BASE}/d/${d.slug}`;
+  return d.username ? `${SITE_BASE}/p/${d.username}/${d.slug}` : `${SITE_BASE}/d/${d.slug}`;
 }
 
 export default function DeployDashboard() {

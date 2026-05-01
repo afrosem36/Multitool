@@ -607,7 +607,7 @@ export default function HtmlIde() {
                 />
                 <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: '#a5b4fc' }}>
                   Your site will be live at:<br />
-                  <strong style={{ color: '#c7d2fe' }}>{siteBaseUrl}/you/{deployName || 'your-project'}</strong>
+                  <strong style={{ color: '#c7d2fe' }}>{siteBaseUrl}/p/you/{deployName || 'your-project'}</strong>
                 </div>
                 <button
                   className="ide-btn ide-btn-primary"
@@ -665,7 +665,7 @@ export default function HtmlIde() {
                       <div>
                         <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{deployment.project_name}</div>
                         <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                          {deployment.username ? `${siteBaseUrl}/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`}
+                          {deployment.username ? `${siteBaseUrl}/p/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`}
                           {deployment.views > 0 && <span style={{ marginLeft: '0.5rem', color: '#6366f1' }}>· {deployment.views} views</span>}
                         </div>
                       </div>
@@ -680,7 +680,7 @@ export default function HtmlIde() {
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
                       <button
                         className="ide-btn ide-btn-ghost"
-                        onClick={() => window.open(deployment.username ? `${siteBaseUrl}/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`, '_blank')}
+                        onClick={() => window.open(deployment.username ? `${siteBaseUrl}/p/${deployment.username}/${deployment.slug}` : `${siteBaseUrl}/d/${deployment.slug}`, '_blank')}
                       >
                         Open live site
                       </button>

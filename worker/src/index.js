@@ -549,7 +549,7 @@ app.post('/api/deploy/free', requireAuth, async (c) => {
         .bind(id, user.id, projectName, slug, html, css || '', js || '', username).run();
     }
 
-    const url = `${c.env.FRONTEND_URL || 'https://multitoolhub.space'}/${username}/${slug}`;
+    const url = `${c.env.FRONTEND_URL || 'https://multitoolhub.space'}/p/${username}/${slug}`;
     return c.json({ success: true, url, slug, username });
   } catch (error) {
     console.error('Free deploy error:', error);
@@ -640,8 +640,8 @@ app.get('/d/:slug', async (c) => {
   }
 });
 
-// New /:username/:project route
-app.get('/:username/:project', async (c) => {
+// Deployed projects: /p/:username/:project
+app.get('/p/:username/:project', async (c) => {
   const username = c.req.param('username');
   const project = c.req.param('project');
   const db = getDb(c.env);
