@@ -171,13 +171,14 @@ export default function HtmlIde() {
       const order = await orderRes.json();
 
       if (order.error) throw new Error(order.error);
+      console.log('ORDER:', order);
 
       // 2. Open Razorpay
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: order.amount,
         currency: order.currency,
-        order_id: order.order_id,
+        order_id: order.id,
         name: 'MultiTool Deploy',
         description: `Deploy ${projectName}`,
         handler: async (response) => {
@@ -679,7 +680,7 @@ export default function HtmlIde() {
               onClick={handleDeploy}
               disabled={isDeploying}
             >
-              <Rocket size={15} /> {isDeploying ? 'Processing...' : 'Deploy for ₹1'}
+              <Rocket size={15} /> {isDeploying ? 'Processing...' : 'Deploy for ₹1000'}
             </button>
             <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#334155', marginTop: '0.75rem' }}>
               One-time payment • Custom URL • Instant hosting

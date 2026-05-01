@@ -407,7 +407,7 @@ app.post('/api/auth/register', async (c) => {
 // ==========================================
 
 app.post('/api/deploy/create-order', requireAuth, async (c) => {
-  const amount = 1000; // ₹10 in paise
+  const amount = 100000; // ₹1000 in paise
   const currency = 'INR';
   const receipt = `deploy_${nanoid(10)}`;
 
@@ -438,7 +438,7 @@ app.post('/api/deploy/create-order', requireAuth, async (c) => {
     }
 
     return c.json({
-      order_id: razorpayData.id,
+      id: razorpayData.id,
       amount: razorpayData.amount,
       currency: razorpayData.currency,
       receipt: razorpayData.receipt,
