@@ -190,6 +190,123 @@ app.get('/api/health', (c) => {
   return c.json({ ok: true });
 });
 
+function isValidRazorpayAmount(amount) {
+  return Number.isFinite(Number(amount)) && Number(amount) >= 100;
+}
+
+function encodeBasicAuth(id, secret) {
+  const payload = `${id}:${secret}`;
+  return `Basic ${btoa(unescape(encodeURIComponent(payload)))}`;
+}
+
+async function computeRazorpaySignature(secret, payload) {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(payload));
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+app.post('/api/create-order', async (c) => {
+  let body = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const amount = Number(body.amount);
+  const currency = String(body.currency || 'INR').toUpperCase();
+  const receipt = String(body.receipt || `receipt_${Date.now()}`);
+
+  if (!isValidRazorpayAmount(amount)) {
+    return c.json({ error: 'Amount must be a number and at least 100 paise' }, 400);
+  }
+
+  const keyId = c.env.RAZORPAY_KEY_ID || '';
+  const keySecret = c.env.RAZORPAY_KEY_SECRET || '';
+
+  if (!keyId || !keySecret) {
+    return c.json({ error: 'Payment gateway is not configured' }, 500);
+  }
+
+  try {
+    const razorpayResponse = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        Authorization: encodeBasicAuth(keyId, keySecret),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount, currency, receipt }),
+    });
+
+    const razorpayData = await razorpayResponse.json();
+
+    if (razorpayResponse.status === 401) {
+      return c.json({ error: 'Razorpay authentication failed' }, 401);
+    }
+
+    if (!razorpayResponse.ok) {
+      return c.json({
+        error: razorpayData.error?.description || razorpayData.error?.reason || 'Razorpay order creation failed',
+        details: razorpayData,
+      }, 500);
+    }
+
+    return c.json({
+      order_id: razorpayData.id,
+      amount: razorpayData.amount,
+      currency: razorpayData.currency,
+      receipt: razorpayData.receipt,
+    });
+  } catch (error) {
+    console.error('Razorpay create order error:', error);
+    return c.json({ error: 'Unable to create Razorpay order' }, 500);
+  }
+});
+
+app.post('/api/verify-payment', async (c) => {
+  let body = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const paymentId = String(body.razorpay_payment_id || '').trim();
+  const orderId = String(body.razorpay_order_id || '').trim();
+  const signature = String(body.razorpay_signature || '').trim();
+
+  if (!paymentId || !orderId || !signature) {
+    return c.json({ error: 'razorpay_payment_id, razorpay_order_id and razorpay_signature are required' }, 400);
+  }
+
+  const keySecret = c.env.RAZORPAY_KEY_SECRET || '';
+  if (!keySecret) {
+    return c.json({ error: 'Payment gateway is not configured' }, 500);
+  }
+
+  try {
+    const expectedSignature = await computeRazorpaySignature(keySecret, `${orderId}|${paymentId}`);
+    if (expectedSignature !== signature) {
+      return c.json({ error: 'Invalid payment signature' }, 400);
+    }
+
+    return c.json({ success: true, message: 'Payment verified successfully' });
+  } catch (error) {
+    console.error('Razorpay verify signature error:', error);
+    return c.json({ error: 'Unable to verify payment signature' }, 500);
+  }
+});
+
 app.post('/api/auth/google', async (c) => {
   console.log("🔥 HIT GOOGLE AUTH ROUTE");
   try {
@@ -283,6 +400,204 @@ app.post('/api/auth/register', async (c) => {
   const payload = { id, email, exp };
   const token = await sign(payload, c.env.JWT_SECRET, "HS256");
   return c.json({ data: { user: { id, email }, token } });
+});
+
+// ==========================================
+// DEPLOYMENT ROUTES
+// ==========================================
+
+app.post('/api/deploy/create-order', requireAuth, async (c) => {
+  const amount = 100; // ₹1 in paise
+  const currency = 'INR';
+  const receipt = `deploy_${nanoid(10)}`;
+
+  const keyId = c.env.RAZORPAY_KEY_ID || '';
+  const keySecret = c.env.RAZORPAY_KEY_SECRET || '';
+
+  if (!keyId || !keySecret) {
+    return c.json({ error: 'Payment gateway is not configured' }, 500);
+  }
+
+  try {
+    const razorpayResponse = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        Authorization: encodeBasicAuth(keyId, keySecret),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount, currency, receipt }),
+    });
+
+    const razorpayData = await razorpayResponse.json();
+
+    if (!razorpayResponse.ok) {
+      return c.json({
+        error: razorpayData.error?.description || 'Razorpay order creation failed',
+        details: razorpayData,
+      }, 500);
+    }
+
+    return c.json({
+      order_id: razorpayData.id,
+      amount: razorpayData.amount,
+      currency: razorpayData.currency,
+      receipt: razorpayData.receipt,
+    });
+  } catch (error) {
+    console.error('Razorpay deploy order error:', error);
+    return c.json({ error: 'Unable to create payment order' }, 500);
+  }
+});
+
+app.post('/api/deploy/verify-and-save', requireAuth, async (c) => {
+  const user = c.get('user');
+  let body = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const { 
+    razorpay_payment_id, 
+    razorpay_order_id, 
+    razorpay_signature,
+    projectName,
+    slug: requestedSlug,
+    html,
+    css,
+    js
+  } = body;
+
+  if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    return c.json({ error: 'Payment details required' }, 400);
+  }
+
+  const keySecret = c.env.RAZORPAY_KEY_SECRET || '';
+  try {
+    const expectedSignature = await computeRazorpaySignature(keySecret, `${razorpay_order_id}|${razorpay_payment_id}`);
+    if (expectedSignature !== razorpay_signature) {
+      return c.json({ error: 'Invalid payment signature' }, 400);
+    }
+
+    // Verify slug uniqueness
+    const db = getDb(c.env);
+    const existing = await db.prepare('SELECT id FROM deployments WHERE slug = ?').bind(requestedSlug).first();
+    if (existing) {
+      return c.json({ error: 'Slug already taken, please choose another name' }, 400);
+    }
+
+    const id = nanoid();
+    await db.prepare(`
+      INSERT INTO deployments (id, user_id, project_name, slug, html, css, js, payment_id, order_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, 
+      user.id, 
+      projectName || 'Untitled', 
+      requestedSlug, 
+      html || '', 
+      css || '', 
+      js || '', 
+      razorpay_payment_id, 
+      razorpay_order_id
+    ).run();
+
+    return c.json({ 
+      success: true, 
+      data: { 
+        id, 
+        slug: requestedSlug,
+        url: `${getPublicOrigin(c)}/d/${requestedSlug}`
+      } 
+    });
+  } catch (error) {
+    console.error('Verify and save error:', error);
+    return c.json({ error: 'Failed to complete deployment' }, 500);
+  }
+});
+
+app.get('/api/deployments', requireAuth, async (c) => {
+  const user = c.get('user');
+  const db = getDb(c.env);
+  try {
+    const result = await db.prepare('SELECT * FROM deployments WHERE user_id = ? ORDER BY created_at DESC')
+      .bind(user.id)
+      .all();
+    return c.json({ data: result.results || [] });
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch deployments' }, 500);
+  }
+});
+
+app.post('/api/deployments/:id/update', requireAuth, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  let body = {};
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  const { html, css, js, projectName } = body;
+  const db = getDb(c.env);
+
+  try {
+    const deployment = await db.prepare('SELECT id FROM deployments WHERE id = ? AND user_id = ?')
+      .bind(id, user.id)
+      .first();
+
+    if (!deployment) return c.json({ error: 'Deployment not found' }, 404);
+
+    await db.prepare(`
+      UPDATE deployments 
+      SET html = ?, css = ?, js = ?, project_name = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(html, css, js, projectName, id).run();
+
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ error: 'Failed to update deployment' }, 500);
+  }
+});
+
+app.delete('/api/deployments/:id', requireAuth, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const db = getDb(c.env);
+  try {
+    await db.prepare('DELETE FROM deployments WHERE id = ? AND user_id = ?').bind(id, user.id).run();
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ error: 'Failed to delete deployment' }, 500);
+  }
+});
+
+app.get('/d/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  try {
+    const project = await db.prepare('SELECT html, css, js FROM deployments WHERE slug = ?')
+      .bind(slug)
+      .first();
+
+    if (!project) return c.text('Project not found', 404);
+
+    const fullHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>${project.css}</style>
+</head>
+<body>
+    ${project.html}
+    <script>${project.js}</script>
+</body>
+</html>`;
+
+    return c.html(fullHtml);
+  } catch (error) {
+    return c.text('Error loading project', 500);
+  }
 });
 
 app.post('/api/auth/login', async (c) => {

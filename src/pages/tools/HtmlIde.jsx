@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, RotateCcw, Download, Copy, Save, Share2, Rocket, X, Monitor, Code, FileCode, Zap, ZapOff, ChevronLeft, Terminal } from 'lucide-react';
+import { Play, RotateCcw, Download, Copy, Save, Share2, Rocket, X, Monitor, Code, FileCode, Zap, ZapOff, ChevronLeft, Terminal, LayoutDashboard, ExternalLink, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import LZString from 'lz-string';
+import { useAuth } from '../../context/AuthContext';
+import AuthModal from '../../components/AuthModal';
 
 const STORAGE_KEY = 'html-ide-projects';
 const MAX_SAVED = 5;
+const RAZORPAY_SCRIPT_URL = 'https://checkout.razorpay.com/v1/checkout.js';
+
+function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const script = document.createElement('script');
+    script.src = RAZORPAY_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
 
 const DEFAULT_HTML = `<div class="container">
   <h1>Hello World!</h1>
@@ -86,6 +101,7 @@ function saveProjects(projects) {
 
 export default function HtmlIde() {
   const navigate = useNavigate();
+  const { user, apiFetch } = useAuth();
 
   const [html, setHtml] = useState(DEFAULT_HTML);
   const [css, setCss] = useState(DEFAULT_CSS);
@@ -98,10 +114,139 @@ export default function HtmlIde() {
   const [previewKey, setPreviewKey] = useState(0);
   const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authAction, setAuthAction] = useState('');
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
   const [deployName, setDeployName] = useState('');
   const [savedProjects, setSavedProjects] = useState(loadProjects);
+  const [myDeployments, setMyDeployments] = useState([]);
+  const [loadingDeployments, setLoadingDeployments] = useState(false);
+
+  const deployBaseUrl = `${import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:8787'}/d`;
+
   const debounceRef = useRef(null);
   const iframeRef = useRef(null);
+
+  // Fetch user deployments when dashboard is opened
+  useEffect(() => {
+    if (showDashboard && user) {
+      fetchDeployments();
+    }
+  }, [showDashboard, user]);
+
+  const fetchDeployments = async () => {
+    setLoadingDeployments(true);
+    try {
+      const res = await apiFetch('/api/deployments');
+      const data = await res.json();
+      setMyDeployments(data.data || []);
+    } catch (err) {
+      toast.error('Failed to load deployments');
+    } finally {
+      setLoadingDeployments(false);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    if (!deployName) {
+      toast.error('Please enter a project name for the URL');
+      return;
+    }
+
+    setIsDeploying(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) throw new Error('Failed to load payment gateway');
+
+      // 1. Create Order
+      const orderRes = await apiFetch('/api/deploy/create-order', {
+        method: 'POST',
+      });
+      const order = await orderRes.json();
+
+      if (order.error) throw new Error(order.error);
+
+      // 2. Open Razorpay
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: order.currency,
+        order_id: order.order_id,
+        name: 'MultiTool Deploy',
+        description: `Deploy ${projectName}`,
+        handler: async (response) => {
+          try {
+            // 3. Verify and Save
+            const verifyRes = await apiFetch('/api/deploy/verify-and-save', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+                projectName,
+                slug: deployName,
+                html,
+                css,
+                js
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            
+            if (verifyData.error) throw new Error(verifyData.error);
+
+            toast.success('Successfully deployed!');
+            setShowDeployModal(false);
+            // Optionally redirect to dashboard or show the link
+            window.open(verifyData.data.url, '_blank');
+            fetchDeployments();
+          } catch (err) {
+            toast.error(err.message || 'Deployment verification failed');
+          }
+        },
+        prefill: {
+          email: user.email,
+        },
+        theme: {
+          color: '#6366f1',
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      toast.error(err.message || 'Payment initiation failed');
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    setShowAuthModal(false);
+    if (authAction === 'dashboard') {
+      setShowDashboard(true);
+    } else if (authAction === 'deploy') {
+      setDeployName(projectName);
+      setShowDeployModal(true);
+    }
+    setAuthAction('');
+  };
+
+  const handleDeleteDeployment = async (id) => {
+    if (!confirm('Are you sure you want to delete this deployment?')) return;
+    try {
+      await apiFetch(`/api/deployments/${id}`, { method: 'DELETE' });
+      toast.success('Deployment deleted');
+      fetchDeployments();
+    } catch (err) {
+      toast.error('Failed to delete deployment');
+    }
+  };
 
   // Load from URL hash on mount (shared project)
   useEffect(() => {
@@ -364,8 +509,30 @@ export default function HtmlIde() {
           <Download size={13} />
         </button>
         <button
+          className="ide-btn ide-btn-ghost"
+          onClick={() => {
+            if (!user) {
+              setAuthAction('dashboard');
+              setShowAuthModal(true);
+              return;
+            }
+            setShowDashboard(true);
+          }}
+          title="View my deployments"
+        >
+          <LayoutDashboard size={13} /> My Deployments
+        </button>
+        <button
           className="ide-btn ide-btn-primary"
-          onClick={() => { setDeployName(projectName); setShowDeployModal(true); }}
+          onClick={() => {
+            if (!user) {
+              setAuthAction('deploy');
+              setShowAuthModal(true);
+              return;
+            }
+            setDeployName(projectName);
+            setShowDeployModal(true);
+          }}
           title="Deploy as live site"
         >
           <Rocket size={13} /> Deploy
@@ -504,15 +671,15 @@ export default function HtmlIde() {
             />
             <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: '#a5b4fc' }}>
               Your site will be live at:<br />
-              <strong style={{ color: '#c7d2fe' }}>multitool.app/{deployName || 'your-project'}</strong>
+              <strong style={{ color: '#c7d2fe' }}>{deployBaseUrl}/{deployName || 'your-project'}</strong>
             </div>
             <button
               className="ide-btn ide-btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.9rem', opacity: 0.7, cursor: 'not-allowed' }}
-              disabled
-              title="Coming soon"
+              style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.9rem' }}
+              onClick={handleDeploy}
+              disabled={isDeploying}
             >
-              <Rocket size={15} /> Deploy for ₹99 — Coming Soon
+              <Rocket size={15} /> {isDeploying ? 'Processing...' : 'Deploy for ₹1'}
             </button>
             <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#334155', marginTop: '0.75rem' }}>
               One-time payment • Custom URL • Instant hosting
@@ -520,6 +687,66 @@ export default function HtmlIde() {
           </div>
         </div>
       )}
+
+      {/* Deployments Dashboard Modal */}
+      {showDashboard && (
+        <div className="ide-modal-overlay" onClick={() => setShowDashboard(false)}>
+          <div className="ide-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0 }}>My Deployments</h3>
+              <button onClick={() => setShowDashboard(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+            {loadingDeployments ? (
+              <p style={{ color: '#64748b', textAlign: 'center' }}>Loading deployments…</p>
+            ) : myDeployments.length === 0 ? (
+              <p style={{ color: '#64748b', textAlign: 'center' }}>No deployments yet. Click Deploy to publish your project.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: '0.85rem', maxHeight: '340px', overflowY: 'auto' }}>
+                {myDeployments.map((deployment) => (
+                  <div key={deployment.id} style={{ padding: '0.9rem', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{deployment.project_name}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{deployBaseUrl}/{deployment.slug}</div>
+                      </div>
+                      <button
+                        className="ide-btn ide-btn-danger"
+                        style={{ padding: '0.35rem 0.6rem' }}
+                        onClick={() => handleDeleteDeployment(deployment.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                      <button
+                        className="ide-btn ide-btn-ghost"
+                        onClick={() => window.open(`${deployBaseUrl}/${deployment.slug}`, '_blank')}
+                      >
+                        Open live site
+                      </button>
+                      <button
+                        className="ide-btn ide-btn-ghost"
+                        onClick={() => { setProjectName(deployment.project_name); setHtml(deployment.html); setCss(deployment.css); setJs(deployment.js); setShowDashboard(false); toast.success('Loaded deployment into editor'); }}
+                      >
+                        Load into editor
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => {
+          setShowAuthModal(false);
+          setAuthAction('');
+        }}
+        onSuccess={handleAuthSuccess}
+      />
     </div>
   );
 }

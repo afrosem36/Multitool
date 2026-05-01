@@ -6,6 +6,7 @@ import { homeFaqs } from '../seo/seoConfig';
 import { guideArticles, sitePages } from '../data/contentPages';
 import { useFavorites } from '../hooks/useFavorites';
 import { TiltCard } from '../components/ui/TiltCard';
+import RazorpayCheckout from '../components/RazorpayCheckout';
 import SEOHead from '../components/seo/SEOHead';
 import './Home.css';
 
@@ -78,6 +79,8 @@ const Home = () => {
           </Link>
         </div>
       </section>
+
+      <RazorpayCheckout />
 
       {/* Trending Banner */}
       <section className="feature-section" style={{ padding: '0 1rem' }}>
