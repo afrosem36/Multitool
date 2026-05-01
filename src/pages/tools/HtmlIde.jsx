@@ -178,7 +178,7 @@ export default function HtmlIde() {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: order.amount,
         currency: order.currency,
-        order_id: order.id,
+        order_id: order.id || order.order_id,
         name: 'MultiTool Deploy',
         description: `Deploy ${projectName}`,
         handler: async (response) => {
