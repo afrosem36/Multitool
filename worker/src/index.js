@@ -838,6 +838,152 @@ app.post('/api/s/:slug/submit', async (c) => {
 });
 
 // ==========================================
+// IDE PROJECTS ROUTES
+// ==========================================
+
+app.post('/api/ide/projects', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+  
+  const { name, files } = body;
+  if (!name || !files) return c.json({ error: 'name and files required' }, 400);
+  
+  const id = nanoid();
+  const filesJson = JSON.stringify(files);
+  
+  await db.prepare(
+    'INSERT INTO ide_projects (id, user_id, name, files) VALUES (?, ?, ?, ?)'
+  ).bind(id, user.id, name, filesJson).run();
+  
+  return c.json({ data: { id, name, files } });
+});
+
+app.get('/api/ide/projects', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  
+  const rows = await db.prepare(
+    'SELECT id, name, files, is_public, share_slug, created_at, updated_at FROM ide_projects WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50'
+  ).bind(user.id).all();
+  
+  const projects = (rows.results || []).map(row => ({
+    ...row,
+    files: JSON.parse(row.files || '[]'),
+  }));
+  
+  return c.json({ data: projects });
+});
+
+app.get('/api/ide/projects/:id', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  
+  const row = await db.prepare(
+    'SELECT * FROM ide_projects WHERE id = ? AND user_id = ?'
+  ).bind(id, user.id).first();
+  
+  if (!row) return c.json({ error: 'Project not found' }, 404);
+  
+  return c.json({
+    data: {
+      ...row,
+      files: JSON.parse(row.files || '[]'),
+    }
+  });
+});
+
+app.put('/api/ide/projects/:id', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  
+  let body = {};
+  try { body = await c.req.json(); } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+  
+  const { name, files } = body;
+  
+  const existing = await db.prepare(
+    'SELECT id FROM ide_projects WHERE id = ? AND user_id = ?'
+  ).bind(id, user.id).first();
+  
+  if (!existing) return c.json({ error: 'Project not found' }, 404);
+  
+  const filesJson = JSON.stringify(files);
+  const now = new Date().toISOString();
+  
+  await db.prepare(
+    'UPDATE ide_projects SET name = ?, files = ?, updated_at = ? WHERE id = ?'
+  ).bind(name, filesJson, now, id).run();
+  
+  return c.json({ data: { id, name, files } });
+});
+
+app.delete('/api/ide/projects/:id', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  
+  const existing = await db.prepare(
+    'SELECT id FROM ide_projects WHERE id = ? AND user_id = ?'
+  ).bind(id, user.id).first();
+  
+  if (!existing) return c.json({ error: 'Project not found' }, 404);
+  
+  await db.prepare('DELETE FROM ide_projects WHERE id = ?').bind(id).run();
+  
+  return c.json({ success: true });
+});
+
+app.post('/api/ide/projects/:id/share', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  
+  const existing = await db.prepare(
+    'SELECT id FROM ide_projects WHERE id = ? AND user_id = ?'
+  ).bind(id, user.id).first();
+  
+  if (!existing) return c.json({ error: 'Project not found' }, 404);
+  
+  const shareSlug = nanoid(8).toLowerCase();
+  
+  await db.prepare(
+    'UPDATE ide_projects SET is_public = 1, share_slug = ? WHERE id = ?'
+  ).bind(shareSlug, id).run();
+  
+  const shareUrl = `${getFrontendOrigin(c)}/ide/${shareSlug}`;
+  
+  return c.json({ data: { shareUrl, shareSlug } });
+});
+
+// Public share route - view shared project without auth
+app.get('/api/ide/shared/:slug', async (c) => {
+  const db = getDb(c.env);
+  const slug = c.req.param('slug');
+  
+  const row = await db.prepare(
+    'SELECT * FROM ide_projects WHERE share_slug = ? AND is_public = 1'
+  ).bind(slug).first();
+  
+  if (!row) return c.json({ error: 'Project not found' }, 404);
+  
+  return c.json({
+    data: {
+      ...row,
+      files: JSON.parse(row.files || '[]'),
+    }
+  });
+});
+
+// ==========================================
 // TEXT-TO-SQL ROUTES
 // ==========================================
 
@@ -891,7 +1037,7 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama3-70b-8192',
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Schema:\n${schema}\n\nQuestion: ${question}` },

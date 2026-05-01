@@ -45,7 +45,9 @@ import {
   Zap,
   Sparkles,
   FileCode,
-  AudioLines
+  AudioLines,
+  Code2,
+  Gamepad2
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -131,14 +133,30 @@ export const utilityTools = [
     icon: AudioLines,
     color: 'rgba(56, 189, 248, 0.12)'
   }] : []),
-  {
+{
     id: 'typing-test',
     name: 'Typing Speed Test',
     description: 'Test your WPM and accuracy with a printable certificate result.',
     path: '/tools/typing-test',
     icon: Keyboard,
     color: 'rgba(16, 185, 129, 0.1)'
-  }
+  },
+  {
+    id: 'html-ide',
+    name: 'HTML / CSS / JavaScript IDE',
+    description: 'Code in HTML, CSS, and JavaScript with instant live preview. Like CodePen or JSFiddle.',
+    path: '/tools/html-ide',
+    icon: Code2,
+    color: 'rgba(0, 212, 255, 0.1)'
+  },
+  {
+    id: 'sql-practice',
+    name: 'SQL Practice',
+    description: 'Upload CSV or Excel files and run SQL queries directly in your browser.',
+    path: '/tools/sql-practice',
+    icon: Database,
+    color: 'rgba(99, 102, 241, 0.1)'
+  },
 ];
 
 export const pdfTools = [
@@ -580,6 +598,14 @@ export const excelTools = [
     path: '/excel/convert',
     icon: ArrowRightLeft,
     color: 'rgba(59, 130, 246, 0.1)'
+  },
+  {
+    id: 'mojibake-decoder',
+    name: 'Mojibake Decoder',
+    description: "Fix broken text caused by encoding mismatches — turn 'Ã©' back into 'é'. Supports .txt, .csv, .xlsx.",
+    path: '/tools/mojibake-decoder',
+    icon: Wand2,
+    color: 'rgba(245, 158, 11, 0.1)'
   }
 ];
 
@@ -631,6 +657,14 @@ export const toolSections = [
     description: 'A collection of useful calculators and miscellaneous tools.',
     icon: Calculator,
     tools: calculatorTools
+  },
+  {
+    id: 'games',
+    label: 'Games Hub',
+    path: '/games',
+    description: 'Play free browser games — puzzles, racing, arcade, and more.',
+    icon: Gamepad2,
+    tools: []
   },
   {
     id: 'utilities',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate, NavLink } from 'react-router-dom';
-import { Menu, X, Settings, Star, PanelLeftClose, PanelLeftOpen, User, LogOut, ChevronDown, ChevronUp, Home, TrendingUp, Grid, BookOpen, LayoutDashboard } from 'lucide-react';
+import { Menu, X, Settings, Star, PanelLeftClose, PanelLeftOpen, User, LogOut, ChevronDown, ChevronUp, Home, TrendingUp, Grid, BookOpen, LayoutDashboard, Gamepad2 } from 'lucide-react';
 import Switch from './ui/sky-toggle';
 import NavHeader from './ui/nav-header';
 import SearchBar from './SearchBar';
@@ -9,7 +9,8 @@ import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../context/AuthContext';
 import './Navbar.css';
 
-const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
+const Navbar = ({ onToggleSidebar, isSidebarOpen, visible, onNavHover }) => {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
   const location = useLocation();
@@ -51,7 +52,11 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
 
   return (
     <>
-      <nav className="navbar glass-panel expanded">
+      <nav
+        className={`navbar glass-panel expanded${!visible && !isMobile ? ' navbar--hidden' : ''}`}
+        onMouseEnter={() => onNavHover?.(true)}
+        onMouseLeave={() => onNavHover?.(false)}
+      >
         <div className="navbar-container">
           <div className="navbar-left">
             {onToggleSidebar && (
@@ -158,6 +163,7 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
               <NavLink to="/trending" className="drawer-link"><TrendingUp size={18} /> Trending</NavLink>
               <NavLink to="/utilities" className="drawer-link"><Grid size={18} /> Tools</NavLink>
               <NavLink to="/guides" className="drawer-link"><BookOpen size={18} /> Guides</NavLink>
+              <NavLink to="/games" className="drawer-link"><Gamepad2 size={18} /> Games</NavLink>
             </div>
 
             <div className="drawer-section">

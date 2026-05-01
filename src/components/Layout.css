@@ -3,6 +3,31 @@
   flex-direction: column;
 }
 
+/* Pull content up smoothly when the navbar hides so no dead space remains.
+   82px ≈ navbar height (72px container + 10px top gap from sticky top:1rem) */
+.layout .layout-shell {
+  transition: margin-top 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.layout--nav-hidden .layout-shell {
+  margin-top: -82px;
+}
+@media (max-width: 768px) {
+  /* On mobile the navbar never hides, so never pull up */
+  .layout--nav-hidden .layout-shell {
+    margin-top: 0;
+  }
+}
+
+/* IDE fullscreen — hides everything except the tool */
+.ide-fullscreen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-dark, #0a0a0f);
+  animation: fadeIn 0.25s ease-out;
+}
+
 .layout-shell {
   width: min(1400px, calc(100% - 2rem));
   margin: 0 auto;

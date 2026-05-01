@@ -71,6 +71,10 @@ const AudioTranscription = React.lazy(() => import('./pages/tools/AudioTranscrip
 const TypingSpeedTest = React.lazy(() => import('./pages/tools/TypingSpeedTest'));
 const PdfLightener = React.lazy(() => import('./pages/tools/PdfLightener'));
 const BackgroundRemover = React.lazy(() => import('./pages/tools/BackgroundRemover'));
+const HtmlIde = React.lazy(() => import('./pages/tools/HtmlIde'));
+const SqlPractice = React.lazy(() => import('./pages/tools/SqlPractice'));
+const MojibakeDecoder = React.lazy(() => import('./pages/tools/MojibakeDecoder'));
+const GamesHub = React.lazy(() => import('./pages/GamesHub'));
 const Trending = React.lazy(() => import('./pages/Trending'));
 import { Login, Signup } from './pages/AuthPages';
 
@@ -136,7 +140,7 @@ function AppRoutes() {
         <Route path="/pdf/excel-to-pdf" element={<ExcelToPdf />} />
         <Route path="/text/:toolId" element={<TextToolPage />} />
         <Route path="/excel/merge" element={<ExcelMerger />} />
-        <Route path="/excel/convert" element={<ExcelConverter />} />
+<Route path="/excel/convert" element={<ExcelConverter />} />
         <Route path="/calculator/personal-finance" element={<PersonalFinanceCalculator />} />
         <Route path="/calculator/finance" element={<FinanceCalculator />} />
         <Route path="/calculator/bmi" element={<BmiCalculator />} />
@@ -154,7 +158,7 @@ function AppRoutes() {
         )}
         <Route path="/utilities/qr-generator" element={<QrGenerator />} />
         <Route path="/utilities/qr-decoder" element={<QrDecoder />} />
-        <Route path="/utilities/unit-converter" element={<UnitConverter />} />
+<Route path="/utilities/unit-converter" element={<UnitConverter />} />
         <Route path="/utilities/url-shortener" element={<UrlShortener />} />
         <Route path="/demo/sky-toggle" element={<SkyToggleDemo />} />
         <Route path="/tools/font-preview" element={<FontPreview />} />
@@ -169,6 +173,10 @@ function AppRoutes() {
         <Route path="/tools/typing-test" element={<TypingSpeedTest />} />
         <Route path="/tools/pdf-lightener" element={<PdfLightener />} />
         <Route path="/tools/background-remover" element={<BackgroundRemover />} />
+        <Route path="/tools/html-ide" element={<HtmlIde />} />
+        <Route path="/tools/sql-practice" element={<SqlPractice />} />
+        <Route path="/tools/mojibake-decoder" element={<MojibakeDecoder />} />
+        <Route path="/games" element={<GamesHub />} />
         {FEATURE_FLAGS.ENABLE_FILE_SHARING && (
           <>
             <Route path="/share" element={<FileShare />} />

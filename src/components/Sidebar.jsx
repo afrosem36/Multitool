@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { FileText, PanelLeftClose } from 'lucide-react';
 import { toolSections } from '../data/toolCatalog';
 import './Sidebar.css';
 
-const Sidebar = () => {
+const Sidebar = ({ onClose }) => {
   const location = useLocation();
 
   const isSectionActive = (section) =>
@@ -20,6 +20,11 @@ const Sidebar = () => {
         </div>
         <h2>Tools</h2>
         <p>Open a tools page or jump straight into the WhatsApp link creator.</p>
+        {onClose && (
+          <button className="sidebar-close-btn" onClick={onClose} title="Hide sidebar">
+            <PanelLeftClose size={16} />
+          </button>
+        )}
       </div>
 
       <div className="sidebar-links">

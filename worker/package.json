@@ -16,6 +16,6 @@
     "nanoid": "^5.0.7"
   },
   "devDependencies": {
-    "wrangler": "^3.78.0"
+    "wrangler": "^3.114.17"
   }
 }

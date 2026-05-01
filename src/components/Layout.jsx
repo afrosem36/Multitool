@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
@@ -46,8 +46,10 @@ function getTimeAgo(dateString) {
 }
 
 const Layout = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth > 1024);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [navbarVisible, setNavbarVisible] = useState(false);
+  const navHoveredRef = useRef(false);
   const [lastUpdated, setLastUpdated] = useState('');
   const location = useLocation();
 
@@ -55,33 +57,42 @@ const Layout = () => {
     const buildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : null;
     if (buildTime) {
       setLastUpdated(getTimeAgo(buildTime));
-      const interval = setInterval(() => {
-        setLastUpdated(getTimeAgo(buildTime));
-      }, 60000); // Update every 60 seconds
-      return () => clearInterval(interval);
+      const handleVisibility = () => {
+        if (!document.hidden) setLastUpdated(getTimeAgo(buildTime));
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+      return () => document.removeEventListener('visibilitychange', handleVisibility);
     }
   }, []);
 
-  // Handle window resize for sidebar
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth <= 1024) {
-        setIsSidebarOpen(false);
-      } else {
-        setIsSidebarOpen(true);
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Sync sidebar state with location
+  // Close sidebar on small screens when navigating
   useEffect(() => {
     if (window.innerWidth <= 1024) {
       setIsSidebarOpen(false);
     }
   }, [location.pathname]);
+
+  // Navbar auto-hide: show on hover at top edge; hide only when mouse is outside
+  // the navbar element AND below 90px. navHoveredRef prevents hiding while a dropdown is open.
+  useEffect(() => {
+    let rafId = null;
+    const handleMouseMove = (e) => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (e.clientY <= 20) {
+          setNavbarVisible(true);
+        } else if (e.clientY > 90 && !navHoveredRef.current) {
+          setNavbarVisible(false);
+        }
+      });
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
@@ -91,17 +102,34 @@ const Layout = () => {
   const noLayoutPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
   const isNoLayout = noLayoutPages.includes(location.pathname) || location.pathname.startsWith('/s/');
   const isToolPage = TOOL_PAGE_PATHS.has(location.pathname);
+  const isIde = location.pathname === '/tools/html-ide';
 
   if (isNoLayout) return <Outlet />;
 
-  return (
-    <div className="layout">
+  // IDE gets fullscreen mode — no navbar, sidebar, or footer
+  if (isIde) return (
+    <div className="ide-fullscreen">
       <SeoManager />
-      <Navbar onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
+      <Outlet />
+    </div>
+  );
+
+  return (
+    <div className={`layout${navbarVisible ? '' : ' layout--nav-hidden'}`}>
+      <SeoManager />
+      <Navbar
+        onToggleSidebar={toggleSidebar}
+        isSidebarOpen={isSidebarOpen}
+        visible={navbarVisible}
+        onNavHover={(hovered) => {
+          navHoveredRef.current = hovered;
+          if (hovered) setNavbarVisible(true);
+        }}
+      />
       
       <div className="layout-shell">
         <div className={`sidebar-wrapper ${isSidebarOpen ? '' : 'hidden'}`}>
-          <Sidebar />
+          <Sidebar onClose={toggleSidebar} />
           <AdSenseUnit slot="1234567890" format="rectangle" responsive="false" />
         </div>
         <main className="main-content">

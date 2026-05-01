@@ -14,6 +14,20 @@
   pointer-events: none;
 }
 
+.navbar--hidden {
+  transform: translateY(calc(-100% - 2rem));
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .navbar--hidden {
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .navbar.expanded {
   max-width: 1400px;
   width: calc(100% - 3rem);
