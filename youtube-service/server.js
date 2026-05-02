@@ -541,9 +541,11 @@ app.use(cors({
     return callback(new Error('CORS: origin not allowed'));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Type'],
 }));
+app.options('*', cors());
 
 app.get('/api/health', (_req, res) => res.type('text/plain').send('OK'));
 app.get('/health', (_req, res) => res.json({
