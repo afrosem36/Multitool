@@ -223,12 +223,28 @@ function checkRateLimit(ip) {
 }
 
 function authMiddleware(req, res, next) {
+  console.log('[AUTH MIDDLEWARE]', req.method, req.path, {
+    hasAuth: !!req.headers.authorization,
+    authStartsWithBearer: req.headers.authorization?.startsWith('Bearer '),
+    isAuthRoute: req.path.startsWith('/api/auth'),
+    isHealthRoute: req.path === '/api/health' || req.path === '/health',
+    isTestCors: req.path === '/api/test-cors'
+  });
+
   if (req.path === '/api/health' || req.path === '/health') return next();
   if (req.path === '/api/test-cors') return next();
   if (req.path.startsWith('/api/auth')) return next();
-  if (!WORKER_SECRET) return next();
+  if (!WORKER_SECRET) {
+    console.log('[AUTH MIDDLEWARE] No WORKER_SECRET configured, allowing request');
+    return next();
+  }
 
-  if (req.headers.authorization === `Bearer ${WORKER_SECRET}`) return next();
+  if (req.headers.authorization === `Bearer ${WORKER_SECRET}`) {
+    console.log('[AUTH MIDDLEWARE] WORKER_SECRET match, allowing request');
+    return next();
+  }
+
+  console.log('[AUTH MIDDLEWARE] Unauthorized - no valid WORKER_SECRET');
   return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
 }
 
@@ -779,26 +795,34 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/auth/google', async (req, res) => {
+  console.log('[GOOGLE AUTH] Request received:', { hasToken: !!req.body?.token, origin: req.headers.origin });
+
   const { token } = req.body || {};
 
   if (!token) {
+    console.log('[GOOGLE AUTH] Missing token in request');
     return res.status(400).json({ error: 'Token missing' });
   }
 
   try {
+    console.log('[GOOGLE AUTH] Validating token with Google...');
     const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
     const googleData = await googleResponse.json();
 
     if (!googleResponse.ok || googleData.error || !googleData.email) {
+      console.log('[GOOGLE AUTH] Invalid Google token:', { ok: googleResponse.ok, error: googleData.error });
       return res.status(401).json({ error: 'Invalid Google token' });
     }
 
     const email = normalizeEmail(googleData.email);
+    console.log('[GOOGLE AUTH] Processing user:', { email, name: googleData.name });
+
     const name = String(googleData.name || googleData.given_name || email.split('@')[0]).trim();
     const store = readAuthStore();
     let user = store.users.find((entry) => entry.email === email);
 
     if (!user) {
+      console.log('[GOOGLE AUTH] Creating new user');
       user = {
         id: uuidv4(),
         email,
@@ -808,17 +832,26 @@ app.post('/api/auth/google', async (req, res) => {
       };
       store.users.push(user);
       writeAuthStore(store);
+    } else {
+      console.log('[GOOGLE AUTH] Found existing user');
     }
+
+    const authToken = createUserToken(user);
+    console.log('[GOOGLE AUTH] Success - returning token');
 
     return res.json({
       success: true,
       data: {
         user: sanitizeUser(user),
-        token: createUserToken(user),
+        token: authToken,
       },
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Server error', message: error.message });
+    console.error('[GOOGLE AUTH ERROR]:', error);
+    return res.status(500).json({
+      error: 'Google auth failed',
+      message: error.message
+    });
   }
 });
 
@@ -887,15 +920,21 @@ app.post('/api/auth/reset-password', (req, res) => {
 app.use(authMiddleware);
 
 app.post('/api/video-info', async (req, res) => {
+  console.log('[VIDEO-INFO] Request received:', { url: req.body?.url, hasAuth: !!req.headers.authorization });
+
   const { url } = req.body || {};
   if (!url || !isYouTubeUrl(url)) {
+    console.log('[VIDEO-INFO] Invalid URL:', url);
     return res.status(400).json({ error: 'Invalid or missing YouTube URL.', code: 'INVALID_URL' });
   }
 
   try {
+    console.log('[VIDEO-INFO] Getting video info for:', url);
     const info = await getVideoInfo(url);
+    console.log('[VIDEO-INFO] Success - returning info');
     return res.json(info);
   } catch (error) {
+    console.log('[VIDEO-INFO] Error:', error.message);
     const status = error.statusCode || 500;
     return res.status(status).json({ error: parseYtDlpError(error), code: 'VIDEO_INFO_FAILED' });
   }
@@ -1044,6 +1083,8 @@ const server = app.listen(PORT, () => {
     ytDlpReady: !!ytDlp,
   });
   console.log('[STARTUP] Server listening on port', PORT);
+  console.log('[STARTUP] WORKER_SECRET configured:', !!WORKER_SECRET);
+  console.log('[STARTUP] JWT_SECRET configured:', !!JWT_SECRET);
   console.log('[STARTUP] yt-dlp status:', ytDlp ? 'READY' : 'FAILED (server degraded)');
   console.log('[STARTUP] Test route: GET /api/test-cors');
 });
