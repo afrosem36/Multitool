@@ -4,16 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:client\" \"npm run dev:backend\"",
+    "setup": "npm install && npm install --prefix worker && npm install --prefix youtube-service",
+    "dev": "concurrently --kill-others-on-fail --names client,worker,youtube --prefix-colors cyan,yellow,magenta \"npm run dev:client\" \"npm run dev:worker\" \"npm run dev:youtube\"",
     "dev:client": "vite",
-    "dev:backend": "npm run dev --prefix worker",
-    "deploy:backend": "npm run deploy --prefix worker",
+    "dev:worker": "npm run dev --prefix worker",
+    "dev:youtube": "node youtube-service/server.js",
     "prebuild": "node scripts/generate-seo-assets.mjs",
     "build": "vite build",
     "postbuild": "node scripts/generate-seo-assets.mjs",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy:frontend": "npm run build && npx vercel --prod",
+    "deploy:worker": "npm run deploy --prefix worker",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@hello-pangea/dnd": "latest",

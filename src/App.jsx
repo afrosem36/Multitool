@@ -76,6 +76,8 @@ const HtmlIde = React.lazy(() => import('./pages/tools/HtmlIde'));
 const SqlPractice = React.lazy(() => import('./pages/tools/SqlPractice'));
 const MojibakeDecoder = React.lazy(() => import('./pages/tools/MojibakeDecoder'));
 const GamesHub = React.lazy(() => import('./pages/GamesHub'));
+const AllToolsPage = React.lazy(() => import('./pages/AllToolsPage'));
+const YouTubeDownloader = React.lazy(() => import('./pages/tools/YouTubeDownloader'));
 const Trending = React.lazy(() => import('./pages/Trending'));
 const AdminPage = React.lazy(() => import('./pages/AdminPage'));
 import { Login, Signup } from './pages/AuthPages';
@@ -180,6 +182,9 @@ function AppRoutes() {
         <Route path="/tools/sql-practice" element={<SqlPractice />} />
         <Route path="/tools/mojibake-decoder" element={<MojibakeDecoder />} />
         <Route path="/games" element={<GamesHub />} />
+        <Route path="/explore" element={<AllToolsPage />} />
+        <Route path="/downloader-tools" element={<ToolHubPage sectionId="downloader" />} />
+        <Route path="/tools/youtube-downloader" element={<YouTubeDownloader />} />
         {FEATURE_FLAGS.ENABLE_FILE_SHARING && (
           <>
             <Route path="/share" element={<FileShare />} />

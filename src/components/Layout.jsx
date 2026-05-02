@@ -167,6 +167,9 @@ const Layout = () => {
                 ))}
               </div>
               <p>&copy; {new Date().getFullYear()} MultiTool</p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                Created and developed by Mohammad Afroz
+              </p>
               {lastUpdated && (
                 <p className="last-updated-text" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                   {lastUpdated}

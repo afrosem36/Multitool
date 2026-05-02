@@ -47,7 +47,9 @@ import {
   FileCode,
   AudioLines,
   Code2,
-  Gamepad2
+  Gamepad2,
+  Youtube,
+  Download
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -609,6 +611,17 @@ export const excelTools = [
   }
 ];
 
+export const videoTools = [
+  {
+    id: 'youtube-downloader',
+    name: 'YouTube Downloader',
+    description: 'Download YouTube videos as MP4 or extract audio. Highest quality with automatic fallback.',
+    path: '/tools/youtube-downloader',
+    icon: Youtube,
+    color: 'rgba(239, 68, 68, 0.12)'
+  }
+];
+
 export const toolSections = [
   {
     id: 'pdf',
@@ -673,6 +686,14 @@ export const toolSections = [
     description: 'Helpful utilities including QR generators and decoders.',
     icon: Wrench,
     tools: utilityTools
+  },
+  {
+    id: 'downloader',
+    label: 'Downloader Hub',
+    path: '/downloader-tools',
+    description: 'Download videos and audio from popular platforms at the highest available quality.',
+    icon: Download,
+    tools: videoTools
   }
 ];
 

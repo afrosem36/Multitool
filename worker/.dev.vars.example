@@ -8,3 +8,5 @@ FRONTEND_URL=http://localhost:5173
 SHORT_DOMAIN=http://localhost:8787
 RAZORPAY_KEY_ID=your_razorpay_key_id
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+# YouTube downloader microservice URL (e.g. https://your-service.railway.app)
+YOUTUBE_SERVICE_URL=http://localhost:3001

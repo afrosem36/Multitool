@@ -1,0 +1,138 @@
+/* ── Analysis strip ─────────────────────────────────────────────────────────── */
+.ie-analysis {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ie-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  min-width: 72px;
+  text-align: center;
+}
+.ie-badge-warn  { background: rgba(239, 68, 68, 0.18);  color: #f87171; }
+.ie-badge-ok    { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.ie-badge-good  { background: rgba(34, 197, 94, 0.18);  color: #4ade80; }
+
+.ie-badge-label { font-size: 0.65rem; opacity: 0.75; }
+.ie-badge-value { font-size: 1rem; font-weight: 700; }
+
+.ie-blur-label {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #aaa);
+  font-style: italic;
+}
+
+/* ── Mode tabs ───────────────────────────────────────────────────────────────── */
+.ie-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.ie-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ie-tab:hover { border-color: rgba(255,255,255,0.25); color: #fff; }
+.ie-tab.active {
+  background: var(--gradient-primary, linear-gradient(135deg, #6366f1, #8b5cf6));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Manual panel ───────────────────────────────────────────────────────────── */
+.ie-manual-panel {
+  padding: 1.25rem !important;
+  margin-bottom: 1.25rem !important;
+}
+
+.ie-manual-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 600px) {
+  .ie-manual-cols { grid-template-columns: 1fr; }
+}
+
+.ie-group-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 0.85rem;
+}
+
+/* ── Slider row ─────────────────────────────────────────────────────────────── */
+.ie-slider-row {
+  display: block;
+  margin-bottom: 1rem;
+  cursor: default;
+}
+
+.ie-slider-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.ie-slider-val {
+  font-weight: 700;
+  color: var(--accent-primary, #6366f1);
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.ie-slider-hint {
+  font-size: 0.68rem;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 0.35rem;
+}
+
+.ie-slider-row input[type="range"] { width: 100%; }
+
+/* ── Super-res toggle ──────────────────────────────────────────────────────── */
+.ie-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 0.5rem;
+  user-select: none;
+}
+.ie-toggle-row:hover { color: #fff; }
+.ie-toggle-row input[type="checkbox"] { accent-color: var(--accent-primary, #6366f1); }
+
+/* ── Preview placeholder ───────────────────────────────────────────────────── */
+.ie-preview-placeholder {
+  padding: 1rem !important;
+}

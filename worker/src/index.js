@@ -190,6 +190,104 @@ app.get('/api/health', (c) => {
   return c.json({ ok: true });
 });
 
+// ==========================================
+// YOUTUBE DOWNLOADER PROXY
+// Rate-limits requests then proxies to the youtube-service microservice.
+// Set YOUTUBE_SERVICE_URL in Worker env vars (e.g. https://your-service.railway.app)
+// ==========================================
+
+// Simple in-memory rate limiter: max 3 requests per IP per 10 minutes
+const ytRateMap = new Map(); // ip → { count, resetAt }
+const YT_MAX    = 3;
+const YT_WINDOW = 10 * 60 * 1000;
+
+function ytRateCheck(ip) {
+  const now = Date.now();
+  let entry  = ytRateMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + YT_WINDOW };
+    ytRateMap.set(ip, entry);
+  }
+  entry.count += 1;
+  return entry.count <= YT_MAX;
+}
+
+function getYtServiceUrl(c) {
+  return (c.env.YOUTUBE_SERVICE_URL || '').replace(/\/$/, '');
+}
+
+app.get('/api/youtube/info', async (c) => {
+  const ip  = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+  const url = c.req.query('url');
+
+  if (!url) return c.json({ error: 'Missing url parameter.' }, 400);
+  if (!ytRateCheck(ip)) {
+    return c.json({ error: 'Too many requests. Please wait a few minutes.' }, 429);
+  }
+
+  const serviceUrl = getYtServiceUrl(c);
+  if (!serviceUrl) return c.json({ error: 'YouTube service not configured.' }, 503);
+
+  const secret = c.env.YOUTUBE_WORKER_SECRET || '';
+  try {
+    const upstream = await fetch(`${serviceUrl}/info?url=${encodeURIComponent(url)}`, {
+      headers: secret ? { 'x-worker-secret': secret } : {},
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await upstream.json();
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Video info fetch timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.post('/api/youtube/download', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+
+  if (!ytRateCheck(ip)) {
+    return c.json({ error: 'Too many requests. Please wait a few minutes.' }, 429);
+  }
+
+  const serviceUrl = getYtServiceUrl(c);
+  if (!serviceUrl) return c.json({ error: 'YouTube service not configured.' }, 503);
+
+  let body;
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  const secret = c.env.YOUTUBE_WORKER_SECRET || '';
+  try {
+    const upstream = await fetch(`${serviceUrl}/download`, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(secret ? { 'x-worker-secret': secret } : {}),
+      },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(120000),
+    });
+
+    if (!upstream.ok) {
+      const err = await upstream.json().catch(() => ({ error: 'Download failed.' }));
+      return c.json(err, upstream.status);
+    }
+
+    // Stream the file back, forwarding media headers
+    const headers = new Headers();
+    ['content-type', 'content-disposition', 'content-length', 'x-format-used'].forEach((h) => {
+      const v = upstream.headers.get(h);
+      if (v) headers.set(h, v);
+    });
+
+    return new Response(upstream.body, { status: 200, headers });
+  } catch (err) {
+    if (err.name === 'TimeoutError') {
+      return c.json({ error: 'Download timed out. Try a shorter video or lower quality.' }, 504);
+    }
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
 function isValidRazorpayAmount(amount) {
   return Number.isFinite(Number(amount)) && Number(amount) >= 100;
 }

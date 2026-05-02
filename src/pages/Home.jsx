@@ -70,7 +70,7 @@ const Home = () => {
           workflows behind them.
         </p>
         <div className="hero-actions animate-fade-in" style={{ animationDelay: '0.16s' }}>
-          <Link to="/pdf-tools" className="btn-primary">
+          <Link to="/explore" className="btn-primary">
             Explore Tools
           </Link>
           <Link to="/guides" className="btn-secondary">
