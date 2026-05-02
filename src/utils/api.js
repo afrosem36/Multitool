@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, WORKER_SECRET } from '../config';
 
 export async function parseJsonResponse(response) {
   const text = await response.text();
@@ -22,6 +22,10 @@ export async function parseJsonResponse(response) {
  * Centralized fetch wrapper with error handling
  */
 export async function apiFetch(endpoint, options = {}) {
+  if (!API_BASE_URL && !endpoint.startsWith('http')) {
+    throw new Error('Missing VITE_API_URL environment variable.');
+  }
+
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
   
   const isFormData = options.body instanceof FormData;
@@ -33,6 +37,7 @@ export async function apiFetch(endpoint, options = {}) {
   // Merge headers
   const headers = {
     ...defaultHeaders,
+    ...(WORKER_SECRET ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
     ...options.headers,
   };
 

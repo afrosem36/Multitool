@@ -6,7 +6,7 @@ import '../ToolStyles.css';
 import './YouTubeDownloader.css';
 
 const POLL_INTERVAL = 1500;
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 const WORKER_SECRET = import.meta.env.VITE_WORKER_SECRET || '';
 
 const authHeaders = (headers = {}) => ({
@@ -25,6 +25,10 @@ const parseJsonSafely = async (response) => {
 };
 
 const apiJson = async (endpoint, options = {}) => {
+  if (!API_BASE_URL) {
+    throw new Error('Missing VITE_API_URL environment variable.');
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: authHeaders(options.headers || {}),
@@ -40,6 +44,10 @@ const getDownloadFilename = (disposition) => {
 };
 
 const apiBlob = async (endpoint) => {
+  if (!API_BASE_URL) {
+    throw new Error('Missing VITE_API_URL environment variable.');
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: authHeaders(),
   });
