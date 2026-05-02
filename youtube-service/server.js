@@ -169,13 +169,27 @@ function resolveYtDlpBinary() {
   }
 }
 
-const ytDlp = new (YTDlpWrap.default || YTDlpWrap)(resolveYtDlpBinary());
+console.log('[STARTUP] Server initialization starting...');
 
+let ytDlp = null;
 try {
-  execSync('yt-dlp --update-to stable', { stdio: 'ignore', timeout: 30000 });
-  log('info', 'yt-dlp verified');
-} catch {
-  log('warn', 'yt-dlp update skipped');
+  console.log('[STARTUP] Initializing yt-dlp...');
+  ytDlp = new (YTDlpWrap.default || YTDlpWrap)(resolveYtDlpBinary());
+  console.log('[STARTUP] yt-dlp instance created successfully');
+  
+  try {
+    execSync('yt-dlp --update-to stable', { stdio: 'ignore', timeout: 30000 });
+    log('info', 'yt-dlp verified');
+    console.log('[STARTUP] yt-dlp verified and updated');
+  } catch (updateError) {
+    log('warn', 'yt-dlp update skipped', { error: updateError.message });
+    console.log('[STARTUP] yt-dlp update skipped:', updateError.message);
+  }
+} catch (initError) {
+  log('error', 'yt-dlp initialization failed', { error: initError.message });
+  console.error('[STARTUP] CRITICAL: yt-dlp initialization failed:', initError.message);
+  console.error('[STARTUP] Downloads will fail, but server will continue running');
+  ytDlp = null;
 }
 
 let proxyIndex = 0;
@@ -461,6 +475,10 @@ function updateProgress(job, line) {
 
 function runYtDlp(job, quality, proxy, worker) {
   return new Promise((resolve, reject) => {
+    if (!ytDlp) {
+      return reject(new Error('yt-dlp is not initialized. Server startup failed.'));
+    }
+
     const args = [
       ...baseArgs(proxy),
       '-f',
@@ -599,6 +617,9 @@ async function runDownloadWithFailover(job) {
 }
 
 async function getVideoInfo(url) {
+  if (!ytDlp) {
+    throw new Error('yt-dlp is not initialized. Server startup failed.');
+  }
   const attempts = PROXIES.length ? Math.max(2, Math.min(PROXIES.length, 3)) : 1;
   let lastError;
 
@@ -681,13 +702,19 @@ app.get('/health', (_req, res) => res.json({
 
 // CORS test endpoint
 app.get('/api/test-cors', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CORS is working ✅',
-    origin: req.headers.origin || 'no origin',
-    timestamp: new Date().toISOString(),
-    serverFile: __filename,
-  });
+  try {
+    return res.json({
+      success: true,
+      message: 'CORS is working ✅',
+      origin: req.headers.origin || 'no origin',
+      timestamp: new Date().toISOString(),
+      serverFile: __filename,
+      ytDlpReady: !!ytDlp,
+    });
+  } catch (error) {
+    console.error('[TEST-CORS] Route error:', error);
+    return res.status(500).json({ error: 'Test route failed', message: error.message });
+  }
 });
 
 app.post('/api/auth/register', (req, res) => {
@@ -989,8 +1016,17 @@ setInterval(() => {
 }, Math.min(TEMP_TTL, JOB_TTL)).unref();
 
 app.use((error, _req, res, _next) => {
-  log('error', 'request failed', { error: error.message });
-  res.status(500).json({ error: 'Internal server error.', code: 'INTERNAL_ERROR' });
+  console.error('[ERROR HANDLER]', {
+    message: error.message,
+    stack: error.stack,
+    code: error.code,
+  });
+  log('error', 'request failed', { error: error.message, code: error.code });
+  res.status(500).json({ 
+    error: 'Internal server error.', 
+    code: 'INTERNAL_ERROR',
+    message: error.message,
+  });
 });
 
 const server = app.listen(PORT, () => {
@@ -1002,9 +1038,26 @@ const server = app.listen(PORT, () => {
     queueEnabled: true,
     ytDlpReady: !!ytDlp,
   });
+  console.log('[STARTUP] Server listening on port', PORT);
+  console.log('[STARTUP] yt-dlp status:', ytDlp ? 'READY' : 'FAILED (server degraded)');
+  console.log('[STARTUP] Test route: GET /api/test-cors');
 });
 
 server.on('error', (error) => {
+  console.error('[SERVER ERROR]', error);
   log('error', 'server error', { error: error.message });
   process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT EXCEPTION]', error);
+  log('error', 'uncaught exception', { error: error.message });
+  process.exit(1);
+});
+
+// Handle unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+  log('error', 'unhandled rejection', { reason: String(reason) });
 });
