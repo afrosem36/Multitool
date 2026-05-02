@@ -9,7 +9,8 @@ import jwt from 'jsonwebtoken';
 import os from 'node:os';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
-import YTDlpWrap from 'yt-dlp-wrap';
+import pkg from 'yt-dlp-wrap';
+const { default: YTDlpWrap } = pkg;
 
 const PORT = process.env.PORT || 8080;
 const TMP_DIR = process.env.TMP_DIR || os.tmpdir();
@@ -168,7 +169,7 @@ function resolveYtDlpBinary() {
   }
 }
 
-const ytDlp = new YTDlpWrap(resolveYtDlpBinary());
+const ytDlp = new (YTDlpWrap.default || YTDlpWrap)(resolveYtDlpBinary());
 
 try {
   execSync('yt-dlp --update-to stable', { stdio: 'ignore', timeout: 30000 });
@@ -658,6 +659,11 @@ app.use(cors({
 }));
 app.options('*', cors());
 
+// Health check route
+app.get('/', (req, res) => {
+  res.send('Server is alive');
+});
+
 // Debug logger middleware
 app.use((req, res, next) => {
   console.log('[REQUEST]', req.method, req.path, { origin: req.headers.origin || 'no-origin', ts: new Date().toISOString() });
@@ -987,12 +993,18 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error.', code: 'INTERNAL_ERROR' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   log('info', 'youtube downloader backend started', {
     port: PORT,
     maxConcurrent: MAX_CONCURRENT,
     workers: WORKERS.length,
     proxies: PROXIES.length,
     queueEnabled: true,
+    ytDlpReady: !!ytDlp,
   });
+});
+
+server.on('error', (error) => {
+  log('error', 'server error', { error: error.message });
+  process.exit(1);
 });
