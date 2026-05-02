@@ -213,8 +213,156 @@ function ytRateCheck(ip) {
 }
 
 function getYtServiceUrl(c) {
-  return (c.env.YOUTUBE_SERVICE_URL || '').replace(/\/$/, '');
+  return (c.env.API_URL || c.env.YOUTUBE_SERVICE_URL || '').replace(/\/$/, '');
 }
+
+function getYtConfigError(c) {
+  const serviceUrl = getYtServiceUrl(c);
+  if (serviceUrl) return null;
+  return c.json({
+    error: 'YouTube service not configured.',
+    detail: 'Set API_URL to the Railway backend URL in Worker variables. YOUTUBE_SERVICE_URL is supported as a fallback.',
+  }, 503);
+}
+
+function getYtAuthHeaders(c, extra = {}) {
+  const secret = c.env.WORKER_SECRET || '';
+  return {
+    ...extra,
+    ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+  };
+}
+
+async function readJsonResponse(response, fallbackMessage) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: fallbackMessage };
+  }
+}
+
+app.post('/api/video-info', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+  if (!ytRateCheck(ip)) {
+    return c.json({ error: 'Too many requests. Please wait a few minutes.' }, 429);
+  }
+
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  let body;
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/video-info`, {
+      method: 'POST',
+      headers: getYtAuthHeaders(c, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await readJsonResponse(upstream, 'Video info failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Video info fetch timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.post('/api/download', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+  if (!ytRateCheck(ip)) {
+    return c.json({ error: 'Too many requests. Please wait a few minutes.' }, 429);
+  }
+
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  let body;
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/download`, {
+      method: 'POST',
+      headers: getYtAuthHeaders(c, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await readJsonResponse(upstream, 'Download failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Service timeout. Try again.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.get('/api/progress/:id', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/progress/${c.req.param('id')}`, {
+      headers: getYtAuthHeaders(c),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await readJsonResponse(upstream, 'Progress check failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Progress check timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.get('/api/download/:id/file', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/download/${c.req.param('id')}/file`, {
+      headers: getYtAuthHeaders(c),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!upstream.ok || upstream.status === 202) {
+      const data = await readJsonResponse(upstream, 'File not ready.');
+      return c.json(data, upstream.status);
+    }
+
+    const headers = new Headers();
+    ['content-type', 'content-disposition', 'content-length'].forEach((header) => {
+      const value = upstream.headers.get(header);
+      if (value) headers.set(header, value);
+    });
+    return new Response(upstream.body, { status: upstream.status, headers });
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'File download timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.delete('/api/download/:id', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/download/${c.req.param('id')}`, {
+      method: 'DELETE',
+      headers: getYtAuthHeaders(c),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await readJsonResponse(upstream, 'Cancel request failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Cancel request timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
 
 app.get('/api/youtube/info', async (c) => {
   const ip  = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
@@ -226,15 +374,17 @@ app.get('/api/youtube/info', async (c) => {
   }
 
   const serviceUrl = getYtServiceUrl(c);
-  if (!serviceUrl) return c.json({ error: 'YouTube service not configured.' }, 503);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
 
-  const secret = c.env.YOUTUBE_WORKER_SECRET || '';
   try {
-    const upstream = await fetch(`${serviceUrl}/info?url=${encodeURIComponent(url)}`, {
-      headers: secret ? { 'x-worker-secret': secret } : {},
+    const upstream = await fetch(`${serviceUrl}/api/video-info`, {
+      method: 'POST',
+      headers: getYtAuthHeaders(c, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ url }),
       signal: AbortSignal.timeout(30000),
     });
-    const data = await upstream.json();
+    const data = await readJsonResponse(upstream, 'Video info failed.');
     return c.json(data, upstream.status);
   } catch (err) {
     if (err.name === 'TimeoutError') return c.json({ error: 'Video info fetch timed out.' }, 504);
@@ -242,6 +392,7 @@ app.get('/api/youtube/info', async (c) => {
   }
 });
 
+// POST /api/youtube/download — now async: returns { jobId } immediately
 app.post('/api/youtube/download', async (c) => {
   const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
 
@@ -250,40 +401,90 @@ app.post('/api/youtube/download', async (c) => {
   }
 
   const serviceUrl = getYtServiceUrl(c);
-  if (!serviceUrl) return c.json({ error: 'YouTube service not configured.' }, 503);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
 
   let body;
   try { body = await c.req.json(); } catch { body = {}; }
 
-  const secret = c.env.YOUTUBE_WORKER_SECRET || '';
   try {
-    const upstream = await fetch(`${serviceUrl}/download`, {
+    const upstream = await fetch(`${serviceUrl}/api/download`, {
       method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(secret ? { 'x-worker-secret': secret } : {}),
-      },
-      body:    JSON.stringify(body),
+      headers: getYtAuthHeaders(c, { 'Content-Type': 'application/json' }),
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(10000), // just enqueues — fast
+    });
+    const data = await readJsonResponse(upstream, 'Download failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Service timeout. Try again.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+// GET /api/youtube/progress/:id — poll job progress (no rate limit — polling is cheap)
+app.get('/api/youtube/progress/:id', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/progress/${c.req.param('id')}`, {
+      headers: getYtAuthHeaders(c),
+      signal:  AbortSignal.timeout(8000),
+    });
+    const data = await readJsonResponse(upstream, 'Progress check failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Progress check timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+// GET /api/youtube/file/:id — stream completed file (no rate limit — already paid for)
+app.get('/api/youtube/file/:id', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/download/${c.req.param('id')}/file`, {
+      headers: getYtAuthHeaders(c),
       signal:  AbortSignal.timeout(120000),
     });
 
     if (!upstream.ok) {
-      const err = await upstream.json().catch(() => ({ error: 'Download failed.' }));
+      const err = await readJsonResponse(upstream, 'File not ready.');
       return c.json(err, upstream.status);
     }
 
-    // Stream the file back, forwarding media headers
     const headers = new Headers();
     ['content-type', 'content-disposition', 'content-length', 'x-format-used'].forEach((h) => {
       const v = upstream.headers.get(h);
       if (v) headers.set(h, v);
     });
-
     return new Response(upstream.body, { status: 200, headers });
   } catch (err) {
-    if (err.name === 'TimeoutError') {
-      return c.json({ error: 'Download timed out. Try a shorter video or lower quality.' }, 504);
-    }
+    if (err.name === 'TimeoutError') return c.json({ error: 'File download timed out.' }, 504);
+    return c.json({ error: 'Failed to reach download service.' }, 502);
+  }
+});
+
+app.delete('/api/youtube/progress/:id', async (c) => {
+  const serviceUrl = getYtServiceUrl(c);
+  const configError = getYtConfigError(c);
+  if (configError) return configError;
+
+  try {
+    const upstream = await fetch(`${serviceUrl}/api/download/${c.req.param('id')}`, {
+      method: 'DELETE',
+      headers: getYtAuthHeaders(c),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await readJsonResponse(upstream, 'Cancel request failed.');
+    return c.json(data, upstream.status);
+  } catch (err) {
+    if (err.name === 'TimeoutError') return c.json({ error: 'Cancel request timed out.' }, 504);
     return c.json({ error: 'Failed to reach download service.' }, 502);
   }
 });
@@ -2114,6 +2315,7 @@ app.get('/api/debug', (c) => {
     headers,
     hasDb: !!c.env.multitool_db,
     hasJwt: !!c.env.JWT_SECRET,
+    hasYoutubeServiceUrl: !!getYtServiceUrl(c),
   });
 });
 

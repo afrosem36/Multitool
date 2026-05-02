@@ -1,11 +1,59 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, Clock, Link2, Search, Youtube } from 'lucide-react';
-import ProcessingState from '../../components/shared/ProcessingState';
+import { ArrowDown, Clock, Link2, Search, ShieldCheck, TimerReset, X, Zap } from 'lucide-react';
 import AdPlaceholder from '../../components/shared/AdPlaceholder';
 import { useToolHistory } from '../../hooks/useToolHistory';
-import { apiFetch } from '../../utils/api';
 import '../ToolStyles.css';
 import './YouTubeDownloader.css';
+
+const POLL_INTERVAL = 1500;
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const WORKER_SECRET = import.meta.env.VITE_WORKER_SECRET || '';
+
+const authHeaders = (headers = {}) => ({
+  ...headers,
+  ...(WORKER_SECRET ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
+});
+
+const parseJsonSafely = async (response) => {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: 'Server returned an unexpected response.' };
+  }
+};
+
+const apiJson = async (endpoint, options = {}) => {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: authHeaders(options.headers || {}),
+  });
+  const data = await parseJsonSafely(response);
+  if (!response.ok) throw new Error(data.error || data.message || 'Request failed');
+  return data;
+};
+
+const getDownloadFilename = (disposition) => {
+  const match = disposition?.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || 'youtube-video.mp4';
+};
+
+const apiBlob = async (endpoint) => {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const data = await parseJsonSafely(response);
+    throw new Error(data.error || 'Download failed');
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: getDownloadFilename(response.headers.get('content-disposition')),
+  };
+};
 
 const formatDuration = (secs) => {
   if (!secs) return '';
@@ -16,150 +64,232 @@ const formatDuration = (secs) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
+const formatQuality = (quality) => {
+  if (quality === 'best') return 'Best';
+  if (quality === '4k') return '4K';
+  if (quality === '8k') return '8K';
+  return `${quality}p`;
+};
+
+const formatWait = (wait) => wait || 'Calculating...';
+
+const statusLabel = (job) => {
+  if (!job) return '';
+  const progress = Number(job.progress || job.percent || 0);
+  switch (job.status) {
+    case 'queued':
+      return 'Queued - waiting for a download slot...';
+    case 'downloading':
+      return `Downloading ${progress.toFixed(1)}%${job.speed ? ` at ${job.speed}` : ''}${job.eta ? ` - ETA ${job.eta}` : ''}`;
+    case 'merging':
+      return 'Merging video + audio...';
+    case 'ready':
+      return 'Ready - starting your download...';
+    case 'retrying':
+      return job.message || 'Retrying with another server...';
+    case 'starting':
+      return 'Starting your download...';
+    case 'error':
+      return job.error || 'Download failed.';
+    case 'cancelled':
+      return 'Cancelled.';
+    default:
+      return '';
+  }
+};
+
 const YouTubeDownloader = () => {
-  const [url,        setUrl]        = useState('');
-  const [info,       setInfo]       = useState(null);
-  const [quality,    setQuality]    = useState('');
-  const [infoStatus, setInfoStatus] = useState('idle');
-  const [dlStatus,   setDlStatus]   = useState('idle');
-  const [infoError,  setInfoError]  = useState('');
-  const [dlError,    setDlError]    = useState('');
-  const [dlMsg,      setDlMsg]      = useState('');
-  const abortRef = useRef(null);
+  const [url, setUrl] = useState('');
+  const [info, setInfo] = useState(null);
+  const [quality, setQuality] = useState('best');
+  const [infoState, setInfoState] = useState({ status: 'idle', error: '' });
+  const [job, setJob] = useState(null);
+  const [isFetchingFile, setIsFetchingFile] = useState(false);
+  const pollRef = useRef(null);
+  const jobIdRef = useRef(null);
 
   const { addHistory } = useToolHistory();
-  useEffect(() => { addHistory('/tools/youtube-downloader', 'YouTube Downloader', 'utility'); }, [addHistory]);
+  useEffect(() => {
+    addHistory('/tools/youtube-downloader', 'YouTube Downloader', 'utility');
+  }, [addHistory]);
+
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  const stopPolling = () => {
+    clearInterval(pollRef.current);
+    pollRef.current = null;
+  };
+
+  const triggerDownload = async (jobId) => {
+    setIsFetchingFile(true);
+    const { blob, filename } = await apiBlob(`/api/download/${jobId}/file`);
+    const fileUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = fileUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
+    setIsFetchingFile(false);
+  };
+
+  const startPolling = (jobId) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const data = await apiJson(`/api/progress/${jobId}`);
+        setJob((prev) => ({ ...prev, ...data }));
+
+        if (data.status === 'ready') {
+          stopPolling();
+          try {
+            await triggerDownload(jobId);
+          } catch (err) {
+            setJob((prev) => prev ? { ...prev, status: 'error', error: err.message } : prev);
+          }
+        } else if (data.status === 'error' || data.status === 'cancelled') {
+          stopPolling();
+        }
+      } catch (err) {
+        setJob((prev) => prev ? { ...prev, error: err.message } : prev);
+      }
+    }, POLL_INTERVAL);
+  };
 
   const handleGetInfo = async (e) => {
     e.preventDefault();
     const trimmed = url.trim();
     if (!trimmed) return;
 
+    stopPolling();
     setInfo(null);
-    setInfoStatus('processing');
-    setInfoError('');
-    setDlStatus('idle');
-    setDlError('');
-    setDlMsg('');
+    setJob(null);
+    setIsFetchingFile(false);
+    setInfoState({ status: 'processing', error: '' });
 
     try {
-      const res  = await apiFetch(`/api/youtube/info?url=${encodeURIComponent(trimmed)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch video info.');
+      const data = await apiJson('/api/video-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
       setInfo(data);
       setQuality(data.formats?.[0] || 'best');
-      setInfoStatus('success');
+      setInfoState({ status: 'success', error: '' });
     } catch (err) {
-      setInfoStatus('error');
-      setInfoError(err.message || 'Could not fetch video info. Check the URL and try again.');
+      setInfoState({ status: 'error', error: err.message || 'Could not fetch info. Check the URL.' });
     }
   };
 
   const handleDownload = async () => {
     if (!info) return;
-    setDlStatus('processing');
-    setDlError('');
-    setDlMsg('Preparing download — this may take a minute for HD videos…');
+    stopPolling();
+    setIsFetchingFile(false);
+    setJob({
+      status: 'queued',
+      progress: 0,
+      percent: 0,
+      speed: '',
+      eta: '',
+      error: '',
+      position: 0,
+      estimatedWait: 'Calculating...',
+      message: 'Creating your job...',
+    });
 
     try {
-      const res = await apiFetch('/api/youtube/download', {
-        method:  'POST',
+      const data = await apiJson('/api/download', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ url: url.trim(), quality }),
+        body: JSON.stringify({ url: url.trim(), quality }),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Download failed.' }));
-        // Check if a lower-quality fallback was used
-        const formatUsed = res.headers.get('x-format-used');
-        if (formatUsed && formatUsed !== quality) {
-          setDlMsg(`Note: Requested quality unavailable — downloaded at ${formatUsed} instead.`);
-        }
-        throw new Error(err.error || 'Download failed.');
-      }
-
-      const formatUsed   = res.headers.get('x-format-used');
-      const disposition  = res.headers.get('content-disposition') || '';
-      const match        = disposition.match(/filename="?([^"]+)"?/);
-      const filename     = match?.[1] || `video.${quality === 'audio' ? 'mp3' : 'mp4'}`;
-
-      if (formatUsed && formatUsed !== quality) {
-        setDlMsg(`Fallback: ${quality} unavailable — downloaded at ${formatUsed}.`);
-      } else {
-        setDlMsg('');
-      }
-
-      const blob    = await res.blob();
-      const dlUrl   = URL.createObjectURL(blob);
-      const anchor  = document.createElement('a');
-      anchor.href   = dlUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      setTimeout(() => URL.revokeObjectURL(dlUrl), 10000);
-
-      setDlStatus('success');
+      jobIdRef.current = data.jobId;
+      startPolling(data.jobId);
     } catch (err) {
-      setDlStatus('error');
-      setDlError(err.message);
+      setJob({ status: 'error', progress: 0, percent: 0, speed: '', eta: '', error: err.message });
     }
   };
+
+  const handleCancel = async () => {
+    stopPolling();
+    const jobId = jobIdRef.current;
+    setIsFetchingFile(false);
+    setJob(null);
+    if (jobId) {
+      apiJson(`/api/download/${jobId}`, { method: 'DELETE' }).catch(() => {});
+    }
+  };
+
+  const isDownloading = job && ['queued', 'starting', 'downloading', 'merging', 'retrying'].includes(job.status);
+  const isError = job?.status === 'error';
+  const isReady = job?.status === 'ready';
+  const progress = job?.progress || job?.percent || 0;
+  const canDownload = info && !isDownloading && !isFetchingFile;
 
   return (
     <div className="tool-container container">
       <div className="tool-header text-center animate-fade-in">
         <h1>YouTube Downloader</h1>
-        <p>Download YouTube videos as MP4 or extract audio. Highest quality with automatic fallback.</p>
+        <p>Queue-friendly video downloads with audio merging, retries, and progress tracking.</p>
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
+        <div className="ytd-intro">
+          <div className="ytd-highlight">
+            <Zap size={16} />
+            <span>Supports best, 720p, 1080p, 4K, and 8K with merged audio.</span>
+          </div>
+          <div className="ytd-highlight">
+            <ShieldCheck size={16} />
+            <span>Queued automatically when traffic is high so downloads stay stable.</span>
+          </div>
+        </div>
 
-        {/* ── URL form ─────────────────────────────────────────────────── */}
         <form onSubmit={handleGetInfo} className="ytd-url-form">
           <div className="ytd-input-wrap glass-panel">
             <Link2 size={18} className="ytd-input-icon" />
             <input
               type="url"
-              placeholder="Paste YouTube URL…"
+              placeholder="Paste YouTube URL..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="ytd-input"
               required
             />
           </div>
-          <button type="submit" className="btn-primary" disabled={infoStatus === 'processing'}>
-            <Search size={16} /> Get Info
+          <button type="submit" className="btn-primary" disabled={infoState.status === 'processing'}>
+            <Search size={16} />
+            {infoState.status === 'processing' ? 'Fetching...' : 'Get Info'}
           </button>
         </form>
 
-        {/* ── Info fetch status ─────────────────────────────────────────── */}
-        <ProcessingState
-          status={infoStatus}
-          error={infoError}
-          message={infoStatus === 'success' ? 'Video info loaded.' : 'Fetching video info…'}
-        />
+        {infoState.status === 'error' && (
+          <div className="ytd-error-box">{infoState.error}</div>
+        )}
 
-        {/* ── Video card ────────────────────────────────────────────────── */}
         {info && (
           <div className="ytd-card glass-panel animate-fade-in">
             {info.thumbnail && (
-              <img src={info.thumbnail} alt="Thumbnail" className="ytd-thumb" />
+              <img src={info.thumbnail} alt="Thumbnail" className="ytd-thumb" draggable={false} />
             )}
             <div className="ytd-meta">
               <p className="ytd-title">{info.title}</p>
-              {info.channel && <p className="ytd-channel">{info.channel}</p>}
-              {info.duration > 0 && (
-                <p className="ytd-duration">
-                  <Clock size={13} /> {formatDuration(info.duration)}
-                </p>
-              )}
+              <div className="ytd-meta-row">
+                {info.channel && <p className="ytd-channel">{info.channel}</p>}
+                {info.duration > 0 && (
+                  <p className="ytd-duration"><Clock size={13} /> {formatDuration(info.duration)}</p>
+                )}
+              </div>
+              <div className="ytd-meta-note">
+                Audio is merged into the final MP4 automatically before download starts.
+              </div>
             </div>
           </div>
         )}
 
-        {/* ── Quality selector + Download ───────────────────────────────── */}
-        {info && (
+        {info && !isDownloading && !isReady && (
           <div className="ytd-controls animate-fade-in">
             <div className="ytd-quality-wrap">
               <label className="ytd-quality-label">Quality</label>
@@ -171,36 +301,86 @@ const YouTubeDownloader = () => {
                     className={`ytd-pill ${quality === fmt ? 'active' : ''}`}
                     onClick={() => setQuality(fmt)}
                   >
-                    {fmt === 'audio' ? '🎵 Audio (MP3)' : fmt}
+                    {formatQuality(fmt)}
                   </button>
                 ))}
               </div>
             </div>
-
-            <button
-              onClick={handleDownload}
-              className="btn-primary ytd-dl-btn"
-              disabled={dlStatus === 'processing'}
-            >
+            <button onClick={handleDownload} className="btn-primary ytd-dl-btn" disabled={!canDownload}>
               <ArrowDown size={18} />
-              {dlStatus === 'processing' ? 'Downloading…' : `Download ${quality === 'audio' ? 'Audio' : quality + ' MP4'}`}
+              {isFetchingFile ? 'Preparing...' : `Download ${formatQuality(quality)} MP4`}
             </button>
           </div>
         )}
 
-        {/* ── Download status ───────────────────────────────────────────── */}
-        {(dlStatus !== 'idle' || dlMsg) && (
-          <ProcessingState
-            status={dlStatus}
-            error={dlError}
-            message={dlStatus === 'success' ? 'Download complete!' : dlMsg || 'Processing…'}
-          />
+        {job && (
+          <div className={`ytd-progress-wrap animate-fade-in ${isError ? 'ytd-progress-error' : ''}`}>
+            <div className="ytd-progress-head">
+              <div>
+                <p className="ytd-progress-kicker">Download Status</p>
+                <p className={`ytd-status-label ${isError ? 'ytd-status-error' : isReady ? 'ytd-status-done' : ''}`}>
+                  {statusLabel(job)}
+                </p>
+              </div>
+              {!isError && (
+                <div className={`ytd-status-chip ytd-chip-${job.status || 'queued'}`}>
+                  {job.status === 'queued' ? 'Queued' : job.status === 'retrying' ? 'Retrying' : job.status === 'merging' ? 'Merging' : job.status === 'ready' ? 'Ready' : 'Active'}
+                </div>
+              )}
+            </div>
+
+            {!isError && (
+              <div className="ytd-bar-track">
+                <div
+                  className={`ytd-bar-fill ${isReady ? 'ytd-bar-done' : ''}`}
+                  style={{ width: `${isReady ? 100 : progress}%` }}
+                />
+              </div>
+            )}
+
+            <div className="ytd-job-grid">
+              <div className="ytd-job-stat">
+                <span>Queue position</span>
+                <strong>{job.position > 0 ? `#${job.position}` : 'Live'}</strong>
+              </div>
+              <div className="ytd-job-stat">
+                <span>Estimated wait</span>
+                <strong>{formatWait(job.estimatedWait)}</strong>
+              </div>
+              <div className="ytd-job-stat">
+                <span>Worker</span>
+                <strong>{job.worker || 'Assigning...'}</strong>
+              </div>
+              <div className="ytd-job-stat">
+                <span>Quality</span>
+                <strong>{job.formatUsed ? formatQuality(job.formatUsed) : formatQuality(quality)}</strong>
+              </div>
+            </div>
+
+            {job.message && (
+              <div className="ytd-helper-note">
+                <TimerReset size={14} />
+                <span>{job.message}</span>
+              </div>
+            )}
+
+            {isDownloading && (
+              <button className="ytd-cancel-btn" onClick={handleCancel}>
+                <X size={14} /> Cancel
+              </button>
+            )}
+
+            {isError && (
+              <button className="btn-secondary" style={{ marginTop: '0.75rem' }} onClick={() => setJob(null)}>
+                Try Again
+              </button>
+            )}
+          </div>
         )}
 
-        {/* ── Disclaimer ────────────────────────────────────────────────── */}
         <p className="ytd-disclaimer">
-          For personal use only. Downloading copyrighted content without permission may violate YouTube's Terms of Service.
-          Live streams, private, and age-restricted videos are not supported.
+          For personal use only. Downloading copyrighted content without permission may violate
+          YouTube's Terms of Service. Live streams, private, and age-restricted videos are not supported.
         </p>
       </div>
 
