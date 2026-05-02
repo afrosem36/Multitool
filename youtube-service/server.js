@@ -1,11 +1,9 @@
 import 'dotenv/config';
-import bcrypt from 'bcryptjs';
 import { execSync } from 'node:child_process';
 import cors from 'cors';
 import express from 'express';
 import ffmpegPath from 'ffmpeg-static';
 import fs from 'node:fs';
-import jwt from 'jsonwebtoken';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +17,6 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
 const TMP_DIR = process.env.TMP_DIR || os.tmpdir();
-const WORKER_SECRET = process.env.WORKER_SECRET || '';
 const MAX_CONCURRENT = Number.parseInt(process.env.MAX_CONCURRENT || '10', 10);
 const TEMP_TTL = Number.parseInt(process.env.TEMP_TTL_MINUTES || '10', 10) * 60 * 1000;
 const JOB_TTL = Number.parseInt(process.env.JOB_TTL_MINUTES || '20', 10) * 60 * 1000;
@@ -35,9 +32,6 @@ const AVERAGE_JOB_SECONDS_MIN = Number.parseInt(process.env.AVERAGE_JOB_SECONDS_
 const AVERAGE_JOB_SECONDS_MAX = Number.parseInt(process.env.AVERAGE_JOB_SECONDS_MAX || '60', 10);
 const JOB_TIMEOUT_MS = Number.parseInt(process.env.JOB_TIMEOUT_MS || '30000', 10);
 const MAX_JOB_RETRIES = Number.parseInt(process.env.MAX_JOB_RETRIES || '3', 10);
-const JWT_SECRET = process.env.JWT_SECRET || '';
-const AUTH_STORE_DIR = process.env.AUTH_STORE_DIR || path.join(process.cwd(), '.data');
-const AUTH_STORE_PATH = process.env.AUTH_STORE_PATH || path.join(AUTH_STORE_DIR, 'auth-store.json');
 const WORKERS = (process.env.WORKERS || DEFAULT_WORKERS.join(','))
   .split(',')
   .map((value) => value.trim())
@@ -51,117 +45,6 @@ const PROXIES = (process.env.PROXY_LIST || '')
 
 function log(level, message, meta = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level, message, ...meta }));
-}
-
-function ensureAuthStore() {
-  if (!fs.existsSync(AUTH_STORE_DIR)) {
-    fs.mkdirSync(AUTH_STORE_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(AUTH_STORE_PATH)) {
-    fs.writeFileSync(AUTH_STORE_PATH, JSON.stringify({ users: [], passwordResets: [] }, null, 2));
-  }
-}
-
-function readAuthStore() {
-  ensureAuthStore();
-  try {
-    const raw = fs.readFileSync(AUTH_STORE_PATH, 'utf8');
-    const parsed = raw ? JSON.parse(raw) : {};
-    return {
-      users: Array.isArray(parsed.users) ? parsed.users : [],
-      passwordResets: Array.isArray(parsed.passwordResets) ? parsed.passwordResets : [],
-    };
-  } catch (error) {
-    log('error', 'failed to read auth store', { error: error.message });
-    return { users: [], passwordResets: [] };
-  }
-}
-
-function writeAuthStore(store) {
-  ensureAuthStore();
-  fs.writeFileSync(AUTH_STORE_PATH, JSON.stringify(store, null, 2));
-}
-
-function normalizeEmail(email = '') {
-  return String(email).trim().toLowerCase();
-}
-
-function sanitizeUser(user) {
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name || user.email.split('@')[0],
-  };
-}
-
-function createUserToken(user) {
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is not configured.');
-  }
-
-  return jwt.sign(
-    { id: user.id, email: user.email, name: user.name || '' },
-    JWT_SECRET,
-    { expiresIn: '7d' },
-  );
-}
-
-function getBearerToken(req) {
-  const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ')) return '';
-  return authHeader.slice(7).trim();
-}
-
-function requireUserAuth(req, res, next) {
-  const token = getBearerToken(req);
-
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  if (!JWT_SECRET) {
-    return res.status(500).json({ error: 'JWT_SECRET is not configured.' });
-  }
-
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const store = readAuthStore();
-    const user = store.users.find((entry) => entry.id === payload.id);
-
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    req.user = sanitizeUser(user);
-    return next();
-  } catch (_error) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-}
-
-function createPasswordResetToken(store, userId) {
-  const token = uuidv4().replace(/-/g, '');
-  const expiresAt = Date.now() + (15 * 60 * 1000);
-
-  store.passwordResets = store.passwordResets.filter((entry) => entry.userId !== userId && !entry.used);
-  store.passwordResets.push({
-    token,
-    userId,
-    expiresAt,
-    used: false,
-    createdAt: Date.now(),
-  });
-
-  return token;
-}
-
-function consumePasswordReset(store, token) {
-  const reset = store.passwordResets.find((entry) => entry.token === token && !entry.used);
-  if (!reset) return null;
-  if (reset.expiresAt <= Date.now()) return null;
-  reset.used = true;
-  reset.usedAt = Date.now();
-  return reset;
 }
 
 function resolveYtDlpBinary() {
@@ -220,32 +103,6 @@ function checkRateLimit(ip) {
   }
   entry.count += 1;
   return entry.count <= MAX_DOWNLOADS_PER_WINDOW;
-}
-
-function authMiddleware(req, res, next) {
-  console.log('[AUTH MIDDLEWARE]', req.method, req.path, {
-    hasAuth: !!req.headers.authorization,
-    authStartsWithBearer: req.headers.authorization?.startsWith('Bearer '),
-    isAuthRoute: req.path.startsWith('/api/auth'),
-    isHealthRoute: req.path === '/api/health' || req.path === '/health',
-    isTestCors: req.path === '/api/test-cors'
-  });
-
-  if (req.path === '/api/health' || req.path === '/health') return next();
-  if (req.path === '/api/test-cors') return next();
-  if (req.path.startsWith('/api/auth')) return next();
-  if (!WORKER_SECRET) {
-    console.log('[AUTH MIDDLEWARE] No WORKER_SECRET configured, allowing request');
-    return next();
-  }
-
-  if (req.headers.authorization === `Bearer ${WORKER_SECRET}`) {
-    console.log('[AUTH MIDDLEWARE] WORKER_SECRET match, allowing request');
-    return next();
-  }
-
-  console.log('[AUTH MIDDLEWARE] Unauthorized - no valid WORKER_SECRET');
-  return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
 }
 
 function estimateWaitRange(position) {
@@ -738,208 +595,8 @@ app.get('/api/test-cors', (req, res) => {
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
-  const { email: rawEmail, password, name: rawName } = req.body || {};
-  const email = normalizeEmail(rawEmail);
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
-
-  const store = readAuthStore();
-  const existing = store.users.find((entry) => entry.email === email);
-  if (existing) {
-    return res.status(400).json({ error: 'Email already exists' });
-  }
-
-  const user = {
-    id: uuidv4(),
-    email,
-    name: String(rawName || email.split('@')[0]).trim() || email.split('@')[0],
-    passwordHash: bcrypt.hashSync(String(password), 10),
-    createdAt: Date.now(),
-  };
-
-  store.users.push(user);
-  writeAuthStore(store);
-
-  return res.json({
-    data: {
-      user: sanitizeUser(user),
-      token: createUserToken(user),
-    },
-  });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { email: rawEmail, password } = req.body || {};
-  const email = normalizeEmail(rawEmail);
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
-
-  const store = readAuthStore();
-  const user = store.users.find((entry) => entry.email === email);
-
-  if (!user || !bcrypt.compareSync(String(password), user.passwordHash || '')) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-
-  return res.json({
-    data: {
-      user: sanitizeUser(user),
-      token: createUserToken(user),
-    },
-  });
-});
-
-app.post('/api/auth/google', async (req, res) => {
-  // Accept BOTH formats: token or credential
-  const token = req.body.token || req.body.credential;
-
-  if (!token) {
-    console.log('[GOOGLE AUTH] Missing token in request');
-    return res.status(400).json({ error: 'Token missing' });
-  }
-
-  console.log('[GOOGLE AUTH] Google token received:', token.substring(0, 50) + '...');
-
-  try {
-    // TEMPORARY MOCK RESPONSE FOR TESTING
-    // Remove this block when Google OAuth verification is ready
-    console.log('[GOOGLE AUTH] Using mock response for testing');
-    return res.json({
-      success: true,
-      data: {
-        user: {
-          id: 'test-user-id',
-          name: 'Test User',
-          email: 'test@example.com'
-        },
-        token: 'mock-jwt-token-for-testing'
-      }
-    });
-
-    // UNCOMMENT BELOW WHEN READY FOR REAL GOOGLE VERIFICATION
-    /*
-    console.log('[GOOGLE AUTH] Validating token with Google...');
-    const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
-    const googleData = await googleResponse.json();
-
-    if (!googleResponse.ok || googleData.error || !googleData.email) {
-      console.log('[GOOGLE AUTH] Invalid Google token:', { ok: googleResponse.ok, error: googleData.error });
-      return res.status(401).json({ error: 'Invalid Google token' });
-    }
-
-    const email = normalizeEmail(googleData.email);
-    console.log('[GOOGLE AUTH] Processing user:', { email, name: googleData.name });
-
-    const name = String(googleData.name || googleData.given_name || email.split('@')[0]).trim();
-    const store = readAuthStore();
-    let user = store.users.find((entry) => entry.email === email);
-
-    if (!user) {
-      console.log('[GOOGLE AUTH] Creating new user');
-      user = {
-        id: uuidv4(),
-        email,
-        name,
-        passwordHash: bcrypt.hashSync(uuidv4(), 10),
-        createdAt: Date.now(),
-      };
-      store.users.push(user);
-      writeAuthStore(store);
-    } else {
-      console.log('[GOOGLE AUTH] Found existing user');
-    }
-
-    const authToken = createUserToken(user);
-    console.log('[GOOGLE AUTH] Success - returning token');
-
-    return res.json({
-      success: true,
-      data: {
-        user: sanitizeUser(user),
-        token: authToken,
-      },
-    });
-    */
-  } catch (error) {
-    console.error('[GOOGLE AUTH ERROR]:', error);
-    return res.status(500).json({
-      error: 'Google auth failed',
-      message: error.message
-    });
-  }
-});
-
-app.get('/api/auth/me', requireUserAuth, (req, res) => {
-  return res.json({ data: { user: req.user } });
-});
-
-app.post('/api/auth/forgot-password', (req, res) => {
-  const { email: rawEmail } = req.body || {};
-  const email = normalizeEmail(rawEmail);
-
-  if (!email) {
-    return res.json({ message: 'If that email exists a reset link has been sent' });
-  }
-
-  const store = readAuthStore();
-  const user = store.users.find((entry) => entry.email === email);
-
-  if (user) {
-    const token = createPasswordResetToken(store, user.id);
-    writeAuthStore(store);
-    log('info', 'password reset requested', {
-      email,
-      resetLink: `${process.env.FRONTEND_URL || 'https://www.multitoolhub.space'}/reset-password?token=${token}`,
-    });
-  }
-
-  return res.json({ message: 'If that email exists a reset link has been sent' });
-});
-
-app.get('/api/auth/verify-reset-token/:token', (req, res) => {
-  const store = readAuthStore();
-  const reset = store.passwordResets.find((entry) => entry.token === req.params.token && !entry.used);
-
-  if (!reset || reset.expiresAt <= Date.now()) {
-    return res.json({ valid: false, error: 'Token expired or invalid' });
-  }
-
-  return res.json({ valid: true });
-});
-
-app.post('/api/auth/reset-password', (req, res) => {
-  const { token, newPassword } = req.body || {};
-  if (!token || !newPassword) {
-    return res.status(400).json({ error: 'Token and new password are required' });
-  }
-
-  const store = readAuthStore();
-  const reset = consumePasswordReset(store, token);
-  if (!reset) {
-    return res.status(400).json({ error: 'Token expired or invalid' });
-  }
-
-  const user = store.users.find((entry) => entry.id === reset.userId);
-  if (!user) {
-    return res.status(400).json({ error: 'Token expired or invalid' });
-  }
-
-  user.passwordHash = bcrypt.hashSync(String(newPassword), 10);
-  user.updatedAt = Date.now();
-  writeAuthStore(store);
-
-  return res.json({ message: 'Password reset successfully' });
-});
-
-app.use(authMiddleware);
-
 app.post('/api/video-info', async (req, res) => {
-  console.log('[VIDEO-INFO] Request received:', { url: req.body?.url, hasAuth: !!req.headers.authorization });
+  console.log('[VIDEO-INFO] Request received:', { url: req.body?.url });
 
   const { url } = req.body || {};
   if (!url || !isYouTubeUrl(url)) {
@@ -1069,12 +726,6 @@ setInterval(() => {
       jobs.delete(jobId);
     }
   }
-  const store = readAuthStore();
-  const nextPasswordResets = store.passwordResets.filter((entry) => !entry.used && entry.expiresAt > now);
-  if (nextPasswordResets.length !== store.passwordResets.length) {
-    store.passwordResets = nextPasswordResets;
-    writeAuthStore(store);
-  }
   updateQueuedJobMetadata();
 }, Math.min(TEMP_TTL, JOB_TTL)).unref();
 
@@ -1102,8 +753,6 @@ const server = app.listen(PORT, () => {
     ytDlpReady: !!ytDlp,
   });
   console.log('[STARTUP] Server listening on port', PORT);
-  console.log('[STARTUP] WORKER_SECRET configured:', !!WORKER_SECRET);
-  console.log('[STARTUP] JWT_SECRET configured:', !!JWT_SECRET);
   console.log('[STARTUP] yt-dlp status:', ytDlp ? 'READY' : 'FAILED (server degraded)');
   console.log('[STARTUP] Test route: GET /api/test-cors');
 });

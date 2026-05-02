@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd \"c:\\\\Users\\\\Shame\\\\code\\\\New folder\" ; git push origin main$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
