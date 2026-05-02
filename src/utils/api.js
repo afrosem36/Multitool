@@ -1,5 +1,11 @@
 import { API_BASE_URL, WORKER_SECRET } from '../config';
 
+function shouldAttachWorkerSecret(endpoint, headers = {}) {
+  if (!WORKER_SECRET) return false;
+  if (headers.Authorization || headers.authorization) return false;
+  return !endpoint.startsWith('/api/auth');
+}
+
 export async function parseJsonResponse(response) {
   const text = await response.text();
   let data;
@@ -37,7 +43,7 @@ export async function apiFetch(endpoint, options = {}) {
   // Merge headers
   const headers = {
     ...defaultHeaders,
-    ...(WORKER_SECRET ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
+    ...(shouldAttachWorkerSecret(endpoint, options.headers) ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
     ...options.headers,
   };
 
