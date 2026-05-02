@@ -795,16 +795,34 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/auth/google', async (req, res) => {
-  console.log('[GOOGLE AUTH] Request received:', { hasToken: !!req.body?.token, origin: req.headers.origin });
-
-  const { token } = req.body || {};
+  // Accept BOTH formats: token or credential
+  const token = req.body.token || req.body.credential;
 
   if (!token) {
     console.log('[GOOGLE AUTH] Missing token in request');
     return res.status(400).json({ error: 'Token missing' });
   }
 
+  console.log('[GOOGLE AUTH] Google token received:', token.substring(0, 50) + '...');
+
   try {
+    // TEMPORARY MOCK RESPONSE FOR TESTING
+    // Remove this block when Google OAuth verification is ready
+    console.log('[GOOGLE AUTH] Using mock response for testing');
+    return res.json({
+      success: true,
+      data: {
+        user: {
+          id: 'test-user-id',
+          name: 'Test User',
+          email: 'test@example.com'
+        },
+        token: 'mock-jwt-token-for-testing'
+      }
+    });
+
+    // UNCOMMENT BELOW WHEN READY FOR REAL GOOGLE VERIFICATION
+    /*
     console.log('[GOOGLE AUTH] Validating token with Google...');
     const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
     const googleData = await googleResponse.json();
@@ -846,6 +864,7 @@ app.post('/api/auth/google', async (req, res) => {
         token: authToken,
       },
     });
+    */
   } catch (error) {
     console.error('[GOOGLE AUTH ERROR]:', error);
     return res.status(500).json({
