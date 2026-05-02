@@ -8,9 +8,14 @@ import fs from 'node:fs';
 import jwt from 'jsonwebtoken';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
 import pkg from 'yt-dlp-wrap';
 const { default: YTDlpWrap } = pkg;
+
+// ESM compatibility for __filename and __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
 const TMP_DIR = process.env.TMP_DIR || os.tmpdir();
