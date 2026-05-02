@@ -1,4 +1,3 @@
-import cors from "cors"
 'use strict';
 require('dotenv').config();
 
@@ -536,7 +535,8 @@ app.use(cors({
     'https://www.multitoolhub.space',
     'http://localhost:5173',
   ],
-  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.options('*', cors());
