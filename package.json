@@ -20,6 +20,7 @@
     "@hello-pangea/dnd": "latest",
     "@pdfsmaller/pdf-encrypt-lite": "latest",
     "@vercel/analytics": "^2.0.1",
+    "cors": "^2.8.6",
     "docx": "^8.5.0",
     "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",

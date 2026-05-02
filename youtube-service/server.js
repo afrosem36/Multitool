@@ -1,3 +1,4 @@
+import cors from "cors"
 'use strict';
 require('dotenv').config();
 
@@ -39,11 +40,6 @@ const PROXIES = (process.env.PROXY_LIST || '')
   .map((value) => value.trim())
   .filter(Boolean)
   .map((url) => ({ url, failures: 0, disabledUntil: 0 }));
-
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:8787,https://multitoolhub.space,https://www.multitoolhub.space')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 
 function log(level, message, meta = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level, message, ...meta }));
@@ -536,14 +532,12 @@ function sanitizeFilename(name) {
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('CORS: origin not allowed'));
-  },
-  credentials: true,
+  origin: [
+    'https://www.multitoolhub.space',
+    'http://localhost:5173',
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Type'],
 }));
 app.options('*', cors());
 
