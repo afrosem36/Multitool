@@ -204,6 +204,7 @@ function checkRateLimit(ip) {
 
 function authMiddleware(req, res, next) {
   if (req.path === '/api/health' || req.path === '/health') return next();
+  if (req.path === '/api/test-cors') return next();
   if (req.path.startsWith('/api/auth')) return next();
   if (!WORKER_SECRET) return next();
 
@@ -657,6 +658,12 @@ app.use(cors({
 }));
 app.options('*', cors());
 
+// Debug logger middleware
+app.use((req, res, next) => {
+  console.log('[REQUEST]', req.method, req.path, { origin: req.headers.origin || 'no-origin', ts: new Date().toISOString() });
+  next();
+});
+
 app.get('/api/health', (_req, res) => res.type('text/plain').send('OK'));
 app.get('/health', (_req, res) => res.json({
   status: 'ok',
@@ -665,6 +672,18 @@ app.get('/health', (_req, res) => res.json({
   workers: WORKERS,
   proxies: PROXIES.length,
 }));
+
+// CORS test endpoint
+app.get('/api/test-cors', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working ✅',
+    origin: req.headers.origin || 'no origin',
+    timestamp: new Date().toISOString(),
+    serverFile: __filename,
+  });
+});
+
 app.post('/api/auth/register', (req, res) => {
   const { email: rawEmail, password, name: rawName } = req.body || {};
   const email = normalizeEmail(rawEmail);
