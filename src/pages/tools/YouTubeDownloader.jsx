@@ -9,7 +9,11 @@ const POLL_INTERVAL = 1500;
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 const WORKER_SECRET = import.meta.env.VITE_WORKER_SECRET || '';
 
-const authHeaders = (headers = {}) => ({
+/**
+ * Add WORKER_SECRET header to protected routes only
+ * Protected routes: /api/video-info, /api/download, /api/progress
+ */
+const addWorkerSecret = (headers = {}) => ({
   ...headers,
   ...(WORKER_SECRET ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
 });
@@ -31,7 +35,8 @@ const apiJson = async (endpoint, options = {}) => {
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
-    headers: authHeaders(options.headers || {}),
+    // Protected routes: /api/video-info, /api/download require WORKER_SECRET
+    headers: addWorkerSecret(options.headers || {}),
   });
   const data = await parseJsonSafely(response);
   if (!response.ok) throw new Error(data.error || data.message || 'Request failed');
@@ -48,8 +53,9 @@ const apiBlob = async (endpoint) => {
     throw new Error('Missing VITE_API_URL environment variable.');
   }
 
+  // Protected routes: /api/download/:id/file requires WORKER_SECRET
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: authHeaders(),
+    headers: addWorkerSecret(),
   });
 
   if (!response.ok) {
