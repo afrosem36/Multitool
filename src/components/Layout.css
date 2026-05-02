@@ -4,13 +4,13 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  pointer-events: none;
 }
 
 /* Vignette mask: transparent center (shows boxes) → solid at edges (hides boxes) */
 .bg-boxes-mask {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background: radial-gradient(
     ellipse 70% 70% at 50% 50%,
     transparent 0%,

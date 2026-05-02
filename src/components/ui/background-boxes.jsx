@@ -38,7 +38,6 @@ export const BoxesCore = React.memo(function BoxesCore({ style, className }) {
         transform: 'translate(-40%,-60%) skewX(-48deg) skewY(14deg) scale(0.675) rotate(0deg) translateZ(0)',
         display: 'flex',
         zIndex: 0,
-        pointerEvents: 'none',
         padding: '1rem',
         ...style,
       }}

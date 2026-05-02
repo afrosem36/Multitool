@@ -999,6 +999,67 @@ app.post('/api/upload-asset', async (c) => {
   return c.json({ data: { key } });
 });
 
+// ── Admin background management ──────────────────────────────────
+
+const ADMIN_EMAIL = 'afrosem36@gmail.com';
+
+app.post('/api/admin/upload-background', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (user?.email !== ADMIN_EMAIL) return c.json({ error: 'Forbidden' }, 403);
+
+  const formData = await c.req.formData();
+  const file = formData.get('file');
+  if (!file || typeof file === 'string') return c.json({ error: 'File is required' }, 400);
+
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 bucket is not configured' }, 500);
+
+  const safeName = sanitizeFileName(file.name || 'background').replace(/\//g, '_');
+  const key = `bg_${Date.now()}_${nanoid(8)}_${safeName}`;
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    await bucket.put(key, arrayBuffer, {
+      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+      customMetadata: { originalName: safeName },
+    });
+  } catch (err) {
+    console.error('Background upload error:', err);
+    return c.json({ error: 'Failed to upload background' }, 500);
+  }
+
+  const url = `${getPublicOrigin(c)}/api/background/${key}`;
+  return c.json({ key, url });
+});
+
+app.delete('/api/admin/background/:key', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (user?.email !== ADMIN_EMAIL) return c.json({ error: 'Forbidden' }, 403);
+
+  const key = c.req.param('key');
+  const bucket = c.env.MY_BUCKET;
+  if (bucket && key) {
+    try { await bucket.delete(key); } catch {}
+  }
+  return c.json({ success: true });
+});
+
+app.get('/api/background/:key', async (c) => {
+  const key = c.req.param('key');
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 not configured' }, 500);
+
+  const object = await bucket.get(key);
+  if (!object) return c.json({ error: 'Not found' }, 404);
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
+});
+
 app.post('/api/share/upload', async (c) => {
   const db = getDb(c.env);
   const user = c.get('user');
