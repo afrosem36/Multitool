@@ -77,7 +77,9 @@ const SqlPractice = React.lazy(() => import('./pages/tools/SqlPractice'));
 const MojibakeDecoder = React.lazy(() => import('./pages/tools/MojibakeDecoder'));
 const GamesHub = React.lazy(() => import('./pages/GamesHub'));
 const Trending = React.lazy(() => import('./pages/Trending'));
+const AdminPage = React.lazy(() => import('./pages/AdminPage'));
 import { Login, Signup } from './pages/AuthPages';
+import GlobalBackground from './components/GlobalBackground';
 
 const PageLoader = () => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
@@ -198,6 +200,7 @@ function AppRoutes() {
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/contact-us" element={<Contact />} />
+        <Route path="/admin" element={<AdminPage />} />
         {guideArticles.map((article) => (
           <Route key={article.path} path={article.path} element={<ArticlePage />} />
         ))}
@@ -219,6 +222,7 @@ function App() {
 
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <GlobalBackground />
       <ScrollToTop />
       <Suspense fallback={<PageLoader />}>
         <AppRoutes />
