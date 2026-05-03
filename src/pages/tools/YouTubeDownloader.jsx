@@ -321,7 +321,7 @@ const YouTubeDownloader = () => {
         <div className="ytd-intro">
           <div className="ytd-highlight">
             <Zap size={16} />
-            <span>Supports best, 720p, 1080p, 4K, and 8K with merged audio.</span>
+            <span>Only resolutions the video actually supports are shown. Audio is always merged.</span>
           </div>
           <div className="ytd-highlight">
             <ShieldCheck size={16} />
@@ -388,6 +388,14 @@ const YouTubeDownloader = () => {
                 ))}
               </div>
             </div>
+            {(quality === '4k' || quality === '8k') && (
+              <div className="ytd-warning-note">
+                <AlertCircle size={13} />
+                <span>
+                  ⚠️ You selected <strong>{formatQuality(quality)}</strong> — this requires downloading separate video and audio streams and merging them. Please be patient, this may take several minutes for the best quality result.
+                </span>
+              </div>
+            )}
             <button onClick={handleDownload} className="btn-primary ytd-dl-btn" disabled={!canDownload}>
               <ArrowDown size={18} />
               {isFetchingFile ? 'Preparing...' : `Download ${formatQuality(quality)} MP4`}

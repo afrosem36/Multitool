@@ -177,7 +177,7 @@ function deleteFromR2(key) {
     } catch (err) {
       log('warn', 'r2 delete failed', { key, error: err.message });
     }
-  }, 24 * 60 * 60 * 1000);
+  }, 10 * 60 * 1000);
 }
 
 async function getCDNUrl(key) {
@@ -360,15 +360,15 @@ function normalizeQuality(quality = 'best') {
 function formatExpression(quality) {
   switch (normalizeQuality(quality)) {
     case '8k':
-      return 'bv*[height<=4320]+ba/best';
+      return 'bestvideo[height<=4320]+bestaudio/bestvideo[height<=4320]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
     case '4k':
-      return 'bv*[height<=2160]+ba/best';
+      return 'bestvideo[height<=2160]+bestaudio/bestvideo[height<=2160]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
     case '1080':
-      return 'bv*[height<=1080]+ba/best';
+      return 'bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
     case '720':
-      return 'bv*[height<=720]+ba/best';
+      return 'bestvideo[height<=720]+bestaudio/bestvideo[height<=720]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
     default:
-      return 'bv*+ba/best';
+      return 'bestvideo+bestaudio/best';
   }
 }
 
@@ -395,7 +395,7 @@ function baseArgs(proxy) {
     '--newline',
     '--force-overwrites',
     '--extractor-args',
-    'youtube:player_client=android',
+    'youtube:player_client=web,android',
     '--user-agent',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     '--add-header',
@@ -681,7 +681,7 @@ async function getVideoInfo(url) {
         '--no-playlist',
         '--quiet',
         '--extractor-args',
-        'youtube:player_client=android',
+        'youtube:player_client=web,android',
       ];
       if (proxy) args.push('--proxy', proxy);
 
@@ -694,12 +694,28 @@ async function getVideoInfo(url) {
         throw error;
       }
 
+      // Detect actual available resolutions from the format list
+      const availableHeights = new Set();
+      for (const fmt of (raw.formats || [])) {
+        if (fmt.height && fmt.height > 0 && fmt.vcodec && fmt.vcodec !== 'none') {
+          availableHeights.add(fmt.height);
+        }
+      }
+      const maxHeight = availableHeights.size > 0 ? Math.max(...availableHeights) : 0;
+      const qualityOptions = [];
+      if (maxHeight >= 4320) qualityOptions.push('8k');
+      if (maxHeight >= 2160) qualityOptions.push('4k');
+      if (maxHeight >= 1080) qualityOptions.push('1080');
+      if (maxHeight >= 720) qualityOptions.push('720');
+      qualityOptions.push('best');
+
       return {
         title: raw.title || 'Unknown title',
         thumbnail: raw.thumbnail || null,
         duration: raw.duration || 0,
         channel: raw.uploader || raw.channel || '',
-        formats: ['best', '720', '1080', '4k', '8k'],
+        formats: qualityOptions,
+        maxHeight,
       };
     } catch (error) {
       log('warn', 'video info attempt failed', { attempt: attempt + 1, error: error.message, proxy: proxy ? redactProxy(proxy) : 'direct' });
