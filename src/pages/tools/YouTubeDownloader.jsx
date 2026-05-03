@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, Clock, Link2, Search, ShieldCheck, TimerReset, X, Zap } from 'lucide-react';
+import { ArrowDown, Clock, Link2, Search, ShieldCheck, TimerReset, X, Zap, AlertCircle, ChevronLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import AdPlaceholder from '../../components/shared/AdPlaceholder';
 import { useToolHistory } from '../../hooks/useToolHistory';
 import '../ToolStyles.css';
@@ -92,40 +93,51 @@ const statusLabel = (job) => {
   const progress = Number(job.progress || job.percent || 0);
   switch (job.status) {
     case 'queued':
-      return 'Queued - waiting for a download slot...';
+      return `⏳ Waiting in queue (Position: ${job.position || '?'})`;
     case 'downloading':
-      return `Downloading ${progress.toFixed(1)}%${job.speed ? ` at ${job.speed}` : ''}${job.eta ? ` - ETA ${job.eta}` : ''}`;
+      return `📥 Downloading & merging ${progress.toFixed(1)}%${job.speed ? ` • ${job.speed}` : ''}${job.eta ? ` • ETA ${job.eta}` : ''}`;
     case 'merging':
-      return 'Merging video + audio...';
+      return '🔄 Merging video + audio...';
+    case 'uploading':
+      return '☁️ Uploading to CDN...';
     case 'ready':
-      return 'Ready - starting your download...';
+      return job.cached ? '⚡ Ready to download (from cache)' : '✅ Ready - starting your download...';
     case 'retrying':
-      return job.message || 'Retrying with another server...';
+      return job.message || '🔁 Retrying with another server...';
     case 'starting':
-      return 'Starting your download...';
+      return '🚀 Starting your download...';
     case 'error':
-      return job.error || 'Download failed.';
+      return `❌ ${job.error || 'Download failed.'}`;
     case 'cancelled':
-      return 'Cancelled.';
+      return '⊘ Cancelled.';
     default:
       return '';
   }
 };
 
 const YouTubeDownloader = () => {
+  const navigate = useNavigate();
   const [url, setUrl] = useState('');
   const [info, setInfo] = useState(null);
   const [quality, setQuality] = useState('best');
   const [infoState, setInfoState] = useState({ status: 'idle', error: '' });
   const [job, setJob] = useState(null);
   const [isFetchingFile, setIsFetchingFile] = useState(false);
+  const [showNotification, setShowNotification] = useState(false);
   const pollRef = useRef(null);
   const jobIdRef = useRef(null);
+  const notificationRef = useRef(null);
 
   const { addHistory } = useToolHistory();
   useEffect(() => {
     addHistory('/tools/youtube-downloader', 'YouTube Downloader', 'utility');
   }, [addHistory]);
+
+  const showNotificationBar = (message, duration = 5000) => {
+    setShowNotification(message);
+    if (notificationRef.current) clearTimeout(notificationRef.current);
+    notificationRef.current = setTimeout(() => setShowNotification(false), duration);
+  };
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
@@ -209,7 +221,7 @@ const YouTubeDownloader = () => {
       error: '',
       position: 0,
       estimatedWait: 'Calculating...',
-      message: 'Creating your job...',
+      message: '⏳ Your video is being prepared...',
     });
 
     try {
@@ -225,10 +237,33 @@ const YouTubeDownloader = () => {
         }),
       });
 
+      // Check if video was cached (instant delivery)
+      if (data.cached) {
+        showNotificationBar('✨ Video already cached! Starting download...', 3000);
+        setJob({
+          status: 'ready',
+          progress: 100,
+          percent: 100,
+          cached: true,
+          message: 'Ready to download (from cache)',
+        });
+        setTimeout(() => {
+          const fileUrl = data.url;
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = info.title || 'video.mp4';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }, 500);
+        return;
+      }
+
       jobIdRef.current = data.jobId;
       startPolling(data.jobId);
     } catch (err) {
       setJob({ status: 'error', progress: 0, percent: 0, speed: '', eta: '', error: err.message });
+      showNotificationBar('❌ Something went wrong. Please try again — your video may still be processing.', 5000);
     }
   };
 
@@ -250,9 +285,23 @@ const YouTubeDownloader = () => {
 
   return (
     <div className="tool-container container">
+      {showNotification && (
+        <div className="ytd-notification-bar" onMouseEnter={() => notificationRef.current && clearTimeout(notificationRef.current)}>
+          {showNotification}
+        </div>
+      )}
+
       <div className="tool-header text-center animate-fade-in">
+        <button className="ytd-back-btn" onClick={() => navigate(-1)} title="Go back">
+          <ChevronLeft size={20} />
+        </button>
         <h1>YouTube Downloader</h1>
         <p>Queue-friendly video downloads with audio merging, retries, and progress tracking.</p>
+      </div>
+
+      <div className="ytd-dev-notice">
+        <AlertCircle size={16} />
+        <span>🚧 Under Development — Performance may vary. Downloads may take several seconds.</span>
       </div>
 
       <div className="tool-content glass-panel animate-fade-in">
@@ -355,6 +404,13 @@ const YouTubeDownloader = () => {
                   className={`ytd-bar-fill ${isReady ? 'ytd-bar-done' : ''}`}
                   style={{ width: `${isReady ? 100 : progress}%` }}
                 />
+              </div>
+            )}
+
+            {isDownloading && (
+              <div className="ytd-warning-note">
+                <AlertCircle size={13} />
+                <span>⚠️ The progress bar may appear paused — your video is still processing in the background.</span>
               </div>
             )}
 

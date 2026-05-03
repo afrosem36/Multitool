@@ -1,3 +1,91 @@
+.ytd-notification-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #1f2937, #111827);
+  color: #10b981;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  font-size: 0.95rem;
+  z-index: 999;
+  border-bottom: 2px solid #10b981;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ytd-back-btn {
+  position: absolute;
+  left: 1.5rem;
+  top: 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ytd-back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  transform: translateX(-2px);
+}
+
+.ytd-dev-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 12px;
+  color: #f59e0b;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ytd-dev-notice svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.ytd-warning-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #f59e0b;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  padding: 0.65rem 0.85rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ytd-warning-note svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
 .ytd-intro {
   display: grid;
   gap: 0.75rem;

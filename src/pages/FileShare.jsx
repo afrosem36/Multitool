@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import styled from 'styled-components';
-import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset, ChevronLeft, AlertCircle } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import FormBuilder from '../components/FormBuilder';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,6 +23,81 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  position: relative;
+`;
+
+const BackButton = styled.button`
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    transform: translateX(-2px);
+  }
+`;
+
+const DevNotice = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 12px;
+  color: #f59e0b;
+  font-size: 0.85rem;
+  line-height: 1.5;
+
+  svg {
+    flex-shrink: 0;
+    color: #f59e0b;
+  }
+`;
+
+const ExpiryTimer = styled.div`
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: linear-gradient(135deg, #1f2937, #111827);
+  border: 2px solid #10b981;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  color: #10b981;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  animation: slideUp 0.3s ease;
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @media (max-width: 768px) {
+    bottom: 1rem;
+    right: 1rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.8rem;
+  }
 `;
 
 const Header = styled.div`
@@ -210,6 +285,7 @@ const Button = styled(Link)`
 export default function FileShare() {
   const { token, user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const expiryOptions = [
     { value: 'never', label: 'Never expire', seconds: 0 },
     { value: '1h', label: '1 hour', seconds: 3600 },
@@ -231,8 +307,37 @@ export default function FileShare() {
   const [bgFile, setBgFile] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  
+  const [countdown, setCountdown] = useState(null);
+
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!expiresAt) {
+      setCountdown(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const expiryTime = new Date(expiresAt).getTime();
+      const diff = expiryTime - now;
+
+      if (diff <= 0) {
+        setCountdown('Expired');
+        return;
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setCountdown(`${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
 
   const handleDragEnter = (e) => { e.preventDefault(); setIsDragActive(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragActive(false); };
@@ -358,10 +463,25 @@ export default function FileShare() {
 
   return (
     <Container>
+      <BackButton onClick={() => navigate(-1)} title="Go back">
+        <ChevronLeft size={20} />
+      </BackButton>
+
       <Header>
         <h1>File Sharing & URL Shortener</h1>
         <p>Securely upload files and generate a short URL instantly.</p>
       </Header>
+
+      <DevNotice>
+        <AlertCircle size={16} />
+        <span>ℹ️ Files are securely stored and automatically deleted after expiry.</span>
+      </DevNotice>
+
+      {countdown && expiresAt && (
+        <ExpiryTimer>
+          ⏳ File expires in: {countdown}
+        </ExpiryTimer>
+      )}
 
       {!uploading && !shortUrl && (
         <>

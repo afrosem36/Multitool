@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Gamepad2, ExternalLink, X } from 'lucide-react';
+import { Gamepad2, ExternalLink, X, ChevronLeft, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const BLOXORZ = {
   name: 'Bloxorz',
@@ -55,7 +56,8 @@ function GamePlayer({ onClose }) {
           {gameMode === 'loading' && (
             <div className="gh-loader">
               <div className="gh-spinner" />
-              <p>Loading Bloxorz…</p>
+              <p>⏳ Preparing your session...</p>
+              <p style={{ fontSize: '0.75rem', color: '#475569', marginTop: '0.5rem' }}>This may take a few seconds depending on network speed.</p>
             </div>
           )}
 
@@ -102,13 +104,18 @@ function GamePlayer({ onClose }) {
 }
 
 export default function GamesHub() {
+  const navigate = useNavigate();
   const [playing, setPlaying] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
     <div className="gh-root">
       <style>{`
-        .gh-root { min-height: 100vh; padding: 2.5rem 1.5rem 5rem; max-width: 900px; margin: 0 auto; }
+        .gh-root { min-height: 100vh; padding: 2.5rem 1.5rem 5rem; max-width: 900px; margin: 0 auto; position: relative; }
+        .gh-back-btn { position: absolute; top: 1.5rem; left: 1.5rem; background: transparent; border: none; color: var(--text-secondary, #94a3b8); cursor: pointer; padding: 0.5rem; border-radius: 8px; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; }
+        .gh-back-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-primary, #e2e8f0); transform: translateX(-2px); }
+        .gh-dev-notice { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem; margin-bottom: 2rem; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 12px; color: #f59e0b; font-size: 0.85rem; line-height: 1.5; }
+        .gh-dev-notice svg { flex-shrink: 0; color: #f59e0b; }
 
         .gh-hero-title { font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, #6366f1, #a78bfa, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin: 0 0 0.4rem; }
         .gh-hero-sub { color: var(--text-secondary, #94a3b8); font-size: 0.95rem; margin: 0 0 2.5rem; }
@@ -165,8 +172,17 @@ export default function GamesHub() {
         }
       `}</style>
 
+      <button className="gh-back-btn" onClick={() => navigate(-1)} title="Go back">
+        <ChevronLeft size={20} />
+      </button>
+
       <h1 className="gh-hero-title">🎮 Games Hub</h1>
       <p className="gh-hero-sub">Free browser games — no downloads, no installs</p>
+
+      <div className="gh-dev-notice">
+        <AlertCircle size={16} />
+        <span>⚠️ This feature is under development. Some actions may take longer than expected.</span>
+      </div>
 
       {/* Bloxorz card */}
       <div className="gh-card">
