@@ -1,10 +1,12 @@
 import 'dotenv/config';
+import crypto from "crypto";
 import { execSync } from 'node:child_process';
 import cors from 'cors';
 import express from 'express';
 import ffmpegPath from 'ffmpeg-static';
 import fs from 'node:fs';
 import os from 'node:os';
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
@@ -123,7 +125,12 @@ function shellQuote(value) {
 
 // R2 CDN cache helpers
 function getCacheKey(url, quality) {
-  const hash = require('crypto').createHash('sha256').update(`${url}:${quality}`).digest('hex').slice(0, 16);
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${url}:${quality}`)
+    .digest("hex")
+    .slice(0, 16);
+
   return `yt-${hash}-${quality}.mp4`;
 }
 
@@ -131,6 +138,7 @@ async function checkCacheExists(key) {
   if (!r2Client) return false;
   try {
     await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    console.log('⚡ CDN HIT — skipping download');
     return true;
   } catch {
     return false;
@@ -155,6 +163,21 @@ async function uploadToR2(filePath, key) {
     log('warn', 'r2 upload failed', { key, error: err.message });
     return null;
   }
+}
+
+function deleteFromR2(key) {
+  if (!r2Client) return;
+  setTimeout(async () => {
+    try {
+      await r2Client.send(new DeleteObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+      }));
+      log('info', 'deleted from r2', { key });
+    } catch (err) {
+      log('warn', 'r2 delete failed', { key, error: err.message });
+    }
+  }, 24 * 60 * 60 * 1000);
 }
 
 async function getCDNUrl(key) {
@@ -604,6 +627,7 @@ async function runDownloadWithFailover(job) {
           job.cached = true;
           job.cachedUrl = cdnUrl;
           job.message = 'Video ready (cached)';
+          deleteFromR2(job.cacheKey);
         }
       }
       return;
@@ -866,7 +890,16 @@ app.get('/api/download/:id/file', (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found or expired.', code: 'JOB_NOT_FOUND' });
   if (job.status === 'error') return res.status(500).json({ error: job.error || 'Download failed.', code: 'DOWNLOAD_FAILED' });
   if (job.status !== 'ready') return res.status(202).json({ error: 'File is not ready yet.', status: job.status });
-  if (!fs.existsSync(job.filePath)) return res.status(410).json({ error: 'File expired.', code: 'FILE_EXPIRED' });
+
+  // If cached in CDN → redirect instantly
+  if (job.cached && job.cachedUrl) {
+    return res.redirect(job.cachedUrl);
+  }
+
+  // Fallback to local file (first request)
+  if (!fs.existsSync(job.filePath)) {
+    return res.status(410).json({ error: 'File expired.', code: 'FILE_EXPIRED' });
+  }
 
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
