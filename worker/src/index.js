@@ -1171,6 +1171,17 @@ app.get('/api/share/analytics', requireAuth, async (c) => {
   });
 });
 
+// Get all links for the authenticated user
+app.get('/api/links', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const rows = await db.prepare(
+    `SELECT slug, long_url, original_name, expires_at, created_at
+     FROM links WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`
+  ).bind(user.id).all();
+  return c.json({ data: rows.results || [] });
+});
+
 // Delete specific slugs (URL shortener links or file shares)
 app.delete('/api/links', requireAuth, async (c) => {
   const db = getDb(c.env);
