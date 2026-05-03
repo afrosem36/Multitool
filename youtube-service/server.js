@@ -360,13 +360,13 @@ function normalizeQuality(quality = 'best') {
 function formatExpression(quality) {
   switch (normalizeQuality(quality)) {
     case '8k':
-      return 'bestvideo[height<=4320]+bestaudio/bestvideo[height<=4320]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
+      return 'bestvideo[height<=4320]+bestaudio/bestvideo+bestaudio/best';
     case '4k':
-      return 'bestvideo[height<=2160]+bestaudio/bestvideo[height<=2160]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
+      return 'bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best';
     case '1080':
-      return 'bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
+      return 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best';
     case '720':
-      return 'bestvideo[height<=720]+bestaudio/bestvideo[height<=720]+bestaudio[abr<=320]/bestvideo+bestaudio/best';
+      return 'bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best';
     default:
       return 'bestvideo+bestaudio/best';
   }
@@ -394,8 +394,9 @@ function baseArgs(proxy) {
     '--no-warnings',
     '--newline',
     '--force-overwrites',
+    // android client avoids YouTube download throttling — do NOT use web here
     '--extractor-args',
-    'youtube:player_client=web,android',
+    'youtube:player_client=android',
     '--user-agent',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     '--add-header',
