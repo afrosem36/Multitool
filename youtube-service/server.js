@@ -9,11 +9,40 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
 import YTDlpWrapPackage from 'yt-dlp-wrap';
+import { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 const YTDlpWrap = YTDlpWrapPackage.default || YTDlpWrapPackage;
 
 // ESM compatibility for __filename and __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Cloudflare R2 CDN client
+let r2Client = null;
+const R2_BUCKET = process.env.R2_BUCKET || 'videos';
+const R2_CDN_URL = process.env.R2_CDN_URL || '';
+const R2_ENDPOINT = process.env.R2_ENDPOINT || '';
+const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY || '';
+const R2_SECRET_KEY = process.env.R2_SECRET_KEY || '';
+
+function initR2() {
+  if (!R2_ENDPOINT || !R2_ACCESS_KEY || !R2_SECRET_KEY) {
+    console.log('[R2] Skipped - missing credentials');
+    return;
+  }
+  try {
+    r2Client = new S3Client({
+      region: 'auto',
+      endpoint: R2_ENDPOINT,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY,
+      },
+    });
+    console.log('[R2] CDN initialized');
+  } catch (err) {
+    console.error('[R2] Init failed:', err.message);
+  }
+}
 
 const PORT = process.env.PORT || 8080;
 const TMP_DIR = process.env.TMP_DIR || os.tmpdir();
@@ -92,7 +121,54 @@ function shellQuote(value) {
   return `"${String(value).replace(/"/g, '\\"')}"`;
 }
 
+// R2 CDN cache helpers
+function getCacheKey(url, quality) {
+  const hash = require('crypto').createHash('sha256').update(`${url}:${quality}`).digest('hex').slice(0, 16);
+  return `yt-${hash}-${quality}.mp4`;
+}
+
+async function checkCacheExists(key) {
+  if (!r2Client) return false;
+  try {
+    await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function uploadToR2(filePath, key) {
+  if (!r2Client || !fs.existsSync(filePath)) return null;
+  try {
+    const fileSize = fs.statSync(filePath).size;
+    const fileStream = fs.createReadStream(filePath);
+    await r2Client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: fileStream,
+      ContentType: 'video/mp4',
+    }));
+    const cdnUrl = R2_CDN_URL ? `${R2_CDN_URL}/${key}` : `https://cdn.example.com/${key}`;
+    log('info', 'uploaded to r2', { key, size: fileSize, cdnUrl });
+    return cdnUrl;
+  } catch (err) {
+    log('warn', 'r2 upload failed', { key, error: err.message });
+    return null;
+  }
+}
+
+async function getCDNUrl(key) {
+  if (!r2Client) return null;
+  try {
+    await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    return R2_CDN_URL ? `${R2_CDN_URL}/${key}` : null;
+  } catch {
+    return null;
+  }
+}
+
 console.log('[STARTUP] Server initialization starting...');
+initR2();
 
 let ytDlp = null;
 try {
@@ -326,13 +402,18 @@ function cleanupJob(jobId, delay = JOB_TTL) {
 
 function createJob({ url, quality, ip, user, title = '', duration = 0, formats = [] }) {
   const jobId = uuidv4();
+  const normalizedQuality = normalizeQuality(quality);
+  const cacheKey = getCacheKey(url, normalizedQuality);
   const filePath = path.join(TMP_DIR, `youtube_${jobId}.mp4`);
   const premium = isPremium(user);
   const job = {
     jobId,
     url,
-    quality: normalizeQuality(quality),
+    quality: normalizedQuality,
     premium,
+    cacheKey,
+    cached: false,
+    cachedUrl: null,
     status: 'queued',
     progress: 0,
     percent: 0,
@@ -452,6 +533,19 @@ function runYtDlp(job, quality, proxy, worker) {
 }
 
 async function runDownloadWithFailover(job) {
+  // Check cache first for instant delivery
+  if (await checkCacheExists(job.cacheKey)) {
+    job.status = 'ready';
+    job.progress = 100;
+    job.percent = 100;
+    job.cached = true;
+    job.cachedUrl = await getCDNUrl(job.cacheKey);
+    job.message = 'Video ready (cached)';
+    job.completedAt = Date.now();
+    log('info', 'cache hit', { jobId: job.jobId, key: job.cacheKey });
+    return;
+  }
+
   const qualities = fallbackQualities(job.quality);
   const errors = [];
   let lastAssignedWorker = '';
@@ -501,6 +595,17 @@ async function runDownloadWithFailover(job) {
       job.completedAt = Date.now();
       job.message = USER_WAIT_MESSAGE;
       log('info', 'download ready', { jobId: job.jobId, worker, quality, bytes: job.fileSize });
+
+      // Upload to R2 CDN for caching
+      if (r2Client) {
+        job.message = 'Uploading to CDN...';
+        const cdnUrl = await uploadToR2(job.filePath, job.cacheKey);
+        if (cdnUrl) {
+          job.cached = true;
+          job.cachedUrl = cdnUrl;
+          job.message = 'Video ready (cached)';
+        }
+      }
       return;
     } catch (error) {
       errors.push(error);
