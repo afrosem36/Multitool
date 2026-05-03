@@ -49,7 +49,8 @@ import {
   Code2,
   Gamepad2,
   Youtube,
-  Download
+  Download,
+  Car
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -557,6 +558,14 @@ export const calculatorTools = [
     path: '/calculator/home-loan',
     icon: Home,
     color: 'rgba(34, 197, 94, 0.1)'
+  },
+  {
+    id: 'vehicle-mileage',
+    name: 'Vehicle & Mileage Calculator',
+    description: 'Compare fuel costs, estimate trip expenses, and find the most economical ride.',
+    path: '/calculator/vehicle-mileage',
+    icon: Car,
+    color: 'rgba(99, 102, 241, 0.1)'
   },
   {
     id: 'unit-converter',
