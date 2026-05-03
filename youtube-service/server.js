@@ -825,13 +825,28 @@ app.post('/api/video-info', async (req, res) => {
   }
 });
 
-app.post('/api/download', (req, res) => {
+app.post('/api/download', async (req, res) => {
   const ip = getClientIp(req);
   const withinSoftLimit = checkRateLimit(ip);
 
   const { url, quality = 'best', title = '', duration = 0, formats = [] } = req.body || {};
   if (!url || !isYouTubeUrl(url)) {
     return res.status(400).json({ error: 'Invalid or missing YouTube URL.', code: 'INVALID_URL' });
+  }
+
+  // Check cache before creating a job
+  const normalizedQuality = normalizeQuality(quality);
+  const cacheKey = getCacheKey(url, normalizedQuality);
+
+  if (await checkCacheExists(cacheKey)) {
+    console.log('⚡ CDN HIT — skipping download');
+    const cdnUrl = R2_CDN_URL ? `${R2_CDN_URL}/${cacheKey}` : null;
+    return res.json({
+      success: true,
+      cached: true,
+      url: cdnUrl,
+      message: 'Video ready (cached)',
+    });
   }
 
   const user = getRequestUser(req);
@@ -893,6 +908,7 @@ app.get('/api/download/:id/file', (req, res) => {
 
   // If cached in CDN → redirect instantly
   if (job.cached && job.cachedUrl) {
+    console.log('⚡ Redirecting to CDN:', job.cachedUrl);
     return res.redirect(job.cachedUrl);
   }
 
