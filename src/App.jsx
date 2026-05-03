@@ -48,6 +48,7 @@ const ZodiacCalculator = React.lazy(() => import('./pages/ZodiacCalculator'));
 const WorkingDayCalculator = React.lazy(() => import('./pages/WorkingDayCalculator'));
 const SalesTaxCalculator = React.lazy(() => import('./pages/SalesTaxCalculator'));
 const HomeLoanCalculator = React.lazy(() => import('./pages/HomeLoanCalculator'));
+const VehicleMileageCalculator = React.lazy(() => import('./pages/VehicleMileageCalculator'));
 const CurrencyConverter = React.lazy(() => import('./pages/CurrencyConverter'));
 const SkyToggleDemo = React.lazy(() => import('./pages/SkyToggleDemo'));
 const FileShare = React.lazy(() => import('./pages/FileShare'));
@@ -156,6 +157,7 @@ function AppRoutes() {
         <Route path="/calculator/working-days" element={<WorkingDayCalculator />} />
         <Route path="/calculator/sales-tax" element={<SalesTaxCalculator />} />
         <Route path="/calculator/home-loan" element={<HomeLoanCalculator />} />
+        <Route path="/calculator/vehicle-mileage" element={<VehicleMileageCalculator />} />
         <Route path="/calculator/currency" element={<CurrencyConverter />} />
         <Route path="/calculator/unit-converter" element={<UnitConverter />} />
         {FEATURE_FLAGS.ENABLE_TIME_CONVERTER && (

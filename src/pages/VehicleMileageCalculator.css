@@ -1,0 +1,484 @@
+/* ════════════════════════════════════════════════
+   Vehicle & Mileage Calculator — Premium UI
+   ════════════════════════════════════════════════ */
+
+.vmc-container {
+  max-width: 760px;
+}
+
+/* ─── Hero ─────────────────────────────────────── */
+
+.vmc-hero {
+  margin-bottom: 2rem;
+}
+
+.vmc-hero-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem;
+  font-size: 2rem;
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.4);
+}
+
+.vmc-hero-title {
+  font-size: clamp(1.75rem, 5vw, 2.4rem);
+  font-weight: 800;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0 0 0.5rem;
+  line-height: 1.15;
+}
+
+.vmc-hero-sub {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* ─── Mode Cards Grid ──────────────────────────── */
+
+.vmc-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.vmc-card {
+  position: relative;
+  padding: 1.4rem 1.2rem;
+  border-radius: 16px;
+  border: 1.5px solid var(--border-color);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  text-align: left;
+  user-select: none;
+  overflow: hidden;
+}
+
+.vmc-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(99,102,241,0.06) 0%, transparent 100%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.vmc-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.vmc-card:hover::before {
+  opacity: 1;
+}
+
+.vmc-card.active {
+  border-color: var(--accent-primary);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.25),
+    0 12px 40px rgba(99, 102, 241, 0.2);
+}
+
+.vmc-card.active::before {
+  opacity: 1;
+}
+
+.vmc-card-emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+  margin-bottom: 0.2rem;
+}
+
+.vmc-card-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.vmc-card-desc {
+  font-size: 0.79rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.vmc-card-active-dot {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+
+/* ─── Select Prompt ────────────────────────────── */
+
+.vmc-select-prompt {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* ─── Calculator Panel ─────────────────────────── */
+
+.vmc-panel {
+  padding: clamp(1.25rem, 5vw, 2rem);
+  animation: vmcSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vmcSlideIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+.vmc-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vmc-panel-emoji {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.vmc-panel-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.vmc-panel-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* ─── Helper text ──────────────────────────────── */
+
+.vmc-helper {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+/* ─── Inputs Grid ──────────────────────────────── */
+
+.vmc-inputs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.vmc-full {
+  grid-column: 1 / -1;
+}
+
+.vmc-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.vmc-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.vmc-input-row {
+  display: flex;
+  align-items: stretch;
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.18s ease;
+}
+
+.vmc-input-row:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.vmc-input {
+  flex: 1;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.vmc-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.vmc-input-unit {
+  padding: 0 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ─── Toggle Buttons ───────────────────────────── */
+
+.vmc-toggle-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.vmc-toggle {
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.vmc-toggle:hover {
+  border-color: rgba(99, 102, 241, 0.55);
+  color: var(--text-primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.vmc-toggle.active {
+  background: var(--accent-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+/* ─── Results Area ─────────────────────────────── */
+
+.vmc-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  animation: vmcFadeUp 0.3s ease both;
+}
+
+@keyframes vmcFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.vmc-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  opacity: 0.65;
+  margin-bottom: 0.1rem;
+}
+
+.vmc-result-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s;
+}
+
+.vmc-result-label {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.vmc-result-note {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  margin-top: 0.15rem;
+}
+
+.vmc-result-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.vmc-result-value.green  { color: #10b981; }
+.vmc-result-value.accent { color: var(--accent-primary); }
+.vmc-result-value.red    { color: #ef4444; }
+
+/* ─── Compare Grid (PvD / EV) ──────────────────── */
+
+.vmc-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.vmc-compare-card {
+  padding: 1.4rem 1.2rem;
+  border-radius: 16px;
+  border: 1.5px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.vmc-compare-card.winner {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.vmc-compare-card.loser {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.vmc-compare-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+
+.vmc-compare-value {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.vmc-compare-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.vmc-cheaper-tag {
+  margin-top: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #10b981;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Winner Banner ────────────────────────────── */
+
+.vmc-winner-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  background: rgba(16, 185, 129, 0.09);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.vmc-banner-warn {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #f59e0b;
+}
+
+.vmc-winner-sub {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-top: 0.2rem;
+  font-weight: 500;
+}
+
+/* ─── Responsive ───────────────────────────────── */
+
+@media (max-width: 600px) {
+  .vmc-cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .vmc-card {
+    padding: 1.1rem 0.9rem;
+  }
+
+  .vmc-card-emoji {
+    font-size: 1.5rem;
+  }
+
+  .vmc-inputs-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vmc-full {
+    grid-column: 1;
+  }
+
+  .vmc-compare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vmc-compare-value {
+    font-size: 1.6rem;
+  }
+
+  .vmc-panel-header {
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .vmc-cards {
+    grid-template-columns: 1fr;
+  }
+}
