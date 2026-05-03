@@ -545,11 +545,15 @@ function sanitizeFilename(name) {
   return String(name || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+const WORKER_SECRET = process.env.WORKER_SECRET || '';
+
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+
+// 1. CORS — must be first so preflight OPTIONS responses include the right headers
 app.use(cors({
   origin: [
     'https://www.multitoolhub.space',
+    'https://multitoolhub.space',
     'http://localhost:5173',
   ],
   credentials: true,
@@ -558,16 +562,28 @@ app.use(cors({
 }));
 app.options('*', cors());
 
-// Health check route
-app.get('/', (req, res) => {
-  res.send('Server is alive');
-});
-
-// Debug logger middleware
+// 2. Debug logger
 app.use((req, res, next) => {
   console.log('[REQUEST]', req.method, req.path, { origin: req.headers.origin || 'no-origin', ts: new Date().toISOString() });
   next();
 });
+
+// 3. JSON body parser
+app.use(express.json({ limit: '1mb' }));
+
+// 4. Auth guard — skips health/test/auth routes; only active when WORKER_SECRET is set
+app.use((req, res, next) => {
+  const OPEN_PATHS = ['/', '/api/health', '/health', '/api/test-cors'];
+  if (OPEN_PATHS.includes(req.path) || req.path.startsWith('/api/auth')) return next();
+  if (!WORKER_SECRET) return next(); // dev mode — no secret configured
+  if (req.headers.authorization !== `Bearer ${WORKER_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
+  }
+  return next();
+});
+
+// Health / root
+app.get('/', (_req, res) => res.send('Server is alive'));
 
 app.get('/api/health', (_req, res) => res.type('text/plain').send('OK'));
 app.get('/health', (_req, res) => res.json({
