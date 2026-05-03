@@ -40,8 +40,12 @@ const WORKERS = (process.env.WORKERS || DEFAULT_WORKERS.join(','))
 const PROXIES = (process.env.PROXY_LIST || '')
   .split(',')
   .map((value) => value.trim())
-  .filter(Boolean)
-  .map((url) => ({ url, failures: 0, disabledUntil: 0 }));
+  .filter(Boolean);
+
+function getRandomProxy() {
+  if (!PROXIES.length) return null;
+  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+}
 
 function log(level, message, meta = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level, message, ...meta }));
@@ -80,7 +84,6 @@ try {
   ytDlp = null;
 }
 
-let proxyIndex = 0;
 let workerIndex = 0;
 let activeJobs = 0;
 const queue = [];
@@ -182,39 +185,6 @@ function getWorkerSequence() {
   return [firstWorker, ...remainingWorkers];
 }
 
-function getNextProxy() {
-  if (!PROXIES.length) return null;
-  const now = Date.now();
-  for (let index = 0; index < PROXIES.length; index += 1) {
-    const proxy = PROXIES[proxyIndex % PROXIES.length];
-    proxyIndex += 1;
-    if (now >= proxy.disabledUntil) return proxy;
-  }
-
-  const soonest = PROXIES.reduce((best, proxy) => (proxy.disabledUntil < best.disabledUntil ? proxy : best));
-  soonest.failures = 0;
-  soonest.disabledUntil = 0;
-  return soonest;
-}
-
-function markProxySuccess(proxy) {
-  if (!proxy) return;
-  proxy.failures = 0;
-  proxy.disabledUntil = 0;
-}
-
-function markProxyFailure(proxy) {
-  if (!proxy) return;
-  proxy.failures += 1;
-  if (proxy.failures >= 3) {
-    proxy.disabledUntil = Date.now() + PROXY_DISABLE_MS;
-    log('warn', 'proxy disabled temporarily', { proxy: redactProxy(proxy.url), failures: proxy.failures });
-  }
-}
-
-function redactProxy(url) {
-  return url.replace(/\/\/([^:@]+):([^@]+)@/, '//***:***@');
-}
 
 function isYouTubeUrl(url) {
   try {
@@ -274,7 +244,7 @@ function baseArgs(proxy) {
     '--add-header',
     'Accept-Language:en-US,en;q=0.9',
   ];
-  if (proxy) args.push('--proxy', proxy.url);
+  if (proxy) args.push('--proxy', proxy);
   return args;
 }
 
@@ -428,19 +398,19 @@ async function runDownloadWithFailover(job) {
   for (let retryIndex = 0; retryIndex < Math.min(MAX_JOB_RETRIES, attemptPlan.length); retryIndex += 1) {
     const { worker, quality } = attemptPlan[retryIndex];
     lastAssignedWorker = worker;
-    const proxy = getNextProxy();
+    const proxy = getRandomProxy();
     safeDelete(job.filePath);
     job.retryCount = retryIndex;
     job.status = retryIndex === 0 ? 'downloading' : 'retrying';
     job.worker = worker;
-    job.proxy = proxy ? redactProxy(proxy.url) : 'direct';
+    job.proxy = proxy || 'direct';
     job.formatUsed = quality;
     job.message = retryIndex === 0 ? USER_WAIT_MESSAGE : RETRYING_MESSAGE;
     job.attemptHistory.push({
       retry: retryIndex + 1,
       worker,
       quality,
-      proxy: proxy ? redactProxy(proxy.url) : 'direct',
+      proxy: proxy || 'direct',
       startedAt: Date.now(),
     });
     log('info', 'download attempt', {
@@ -448,12 +418,11 @@ async function runDownloadWithFailover(job) {
       retry: retryIndex + 1,
       worker,
       quality,
-      proxy: proxy ? redactProxy(proxy.url) : 'direct',
+      proxy: proxy || 'direct',
     });
 
     try {
       await runYtDlp(job, quality, proxy, worker);
-      markProxySuccess(proxy);
       const stat = fs.statSync(job.filePath);
       job.fileSize = stat.size;
       job.filename = sanitizeFilename(`${job.jobId}_${quality}.mp4`);
@@ -465,7 +434,6 @@ async function runDownloadWithFailover(job) {
       log('info', 'download ready', { jobId: job.jobId, worker, quality, bytes: job.fileSize });
       return;
     } catch (error) {
-      markProxyFailure(proxy);
       errors.push(error);
       job.error = parseYtDlpError(error);
       job.status = 'retrying';
@@ -498,14 +466,15 @@ async function getVideoInfo(url) {
   if (!ytDlp) {
     throw new Error('yt-dlp is not initialized. Server startup failed.');
   }
-  const attempts = PROXIES.length ? Math.max(2, Math.min(PROXIES.length, 3)) : 1;
-  let lastError;
 
-  for (let index = 0; index < attempts; index += 1) {
-    const proxy = getNextProxy();
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      const proxy = getRandomProxy();
+      if (proxy) console.log(`[VIDEO-INFO] Attempt ${attempt + 1}/3 using proxy:`, proxy);
+
       const raw = await ytDlp.getVideoInfo(url, baseArgs(proxy));
-      markProxySuccess(proxy);
+
       if (raw.is_live) {
         const error = new Error('Live streams are not supported.');
         error.statusCode = 422;
@@ -520,12 +489,12 @@ async function getVideoInfo(url) {
         formats: ['best', '720', '1080', '4k', '8k'],
       };
     } catch (error) {
-      markProxyFailure(proxy);
+      console.log(`[VIDEO-INFO] Attempt ${attempt + 1} failed:`, error.message);
       lastError = error;
     }
   }
 
-  throw lastError || new Error('Unable to fetch video info.');
+  throw lastError || new Error('Unable to fetch video info after 3 attempts.');
 }
 
 function parseYtDlpError(error) {
