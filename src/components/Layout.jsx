@@ -75,25 +75,40 @@ const Layout = () => {
     }
   }, [location.pathname]);
 
-  // Navbar auto-hide: show on hover at top edge; hide only when mouse is outside
-  // the navbar element AND below 90px. navHoveredRef prevents hiding while a dropdown is open.
+  // Navbar auto-hide: show on hover at top edge; hide after 7 seconds of inactivity.
+  // navHoveredRef prevents hiding while navbar is hovered.
   useEffect(() => {
     let rafId = null;
+    let hideTimeoutId = null;
+
+    const resetHideTimer = () => {
+      if (hideTimeoutId) clearTimeout(hideTimeoutId);
+      hideTimeoutId = setTimeout(() => {
+        if (!navHoveredRef.current) {
+          setNavbarVisible(false);
+        }
+      }, 7000);
+    };
+
     const handleMouseMove = (e) => {
       if (rafId) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
         if (e.clientY <= 20) {
           setNavbarVisible(true);
+          resetHideTimer();
         } else if (e.clientY > 90 && !navHoveredRef.current) {
+          if (hideTimeoutId) clearTimeout(hideTimeoutId);
           setNavbarVisible(false);
         }
       });
     };
+
     document.addEventListener('mousemove', handleMouseMove);
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       if (rafId) cancelAnimationFrame(rafId);
+      if (hideTimeoutId) clearTimeout(hideTimeoutId);
     };
   }, []);
 
