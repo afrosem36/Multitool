@@ -360,15 +360,15 @@ function normalizeQuality(quality = 'best') {
 function formatExpression(quality) {
   switch (normalizeQuality(quality)) {
     case '8k':
-      return 'bestvideo[height<=4320]+bestaudio/bestvideo+bestaudio/best';
+      return 'bv*[height<=4320]+ba/best';
     case '4k':
-      return 'bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best';
+      return 'bv*[height<=2160]+ba/best';
     case '1080':
-      return 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best';
+      return 'bv*[height<=1080]+ba/best';
     case '720':
-      return 'bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best';
+      return 'bv*[height<=720]+ba/best';
     default:
-      return 'bestvideo+bestaudio/best';
+      return 'bv*+ba/best';
   }
 }
 
