@@ -52,11 +52,18 @@ function log(level, message, meta = {}) {
 }
 
 function resolveYtDlpBinary() {
-  if (process.env.YTDLP_PATH) return process.env.YTDLP_PATH;
+  // IMPORTANT: Only use yt-dlp binary path, NEVER secrets
+  if (process.env.YTDLP_PATH) {
+    console.log('[YTDLP] Using YTDLP_PATH env var:', process.env.YTDLP_PATH);
+    return process.env.YTDLP_PATH;
+  }
   try {
     const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
-    return execSync(cmd, { encoding: 'utf8' }).trim().split('\n')[0].trim();
-  } catch {
+    const path = execSync(cmd, { encoding: 'utf8' }).trim().split('\n')[0].trim();
+    console.log('[YTDLP] Found yt-dlp at:', path);
+    return path;
+  } catch (err) {
+    console.log('[YTDLP] which/where failed, using fallback "yt-dlp":', err.message);
     return 'yt-dlp';
   }
 }
@@ -66,7 +73,13 @@ console.log('[STARTUP] Server initialization starting...');
 let ytDlp = null;
 try {
   console.log('[STARTUP] Initializing yt-dlp...');
-  ytDlp = new (YTDlpWrap.default || YTDlpWrap)(resolveYtDlpBinary());
+  const ytDlpBinary = resolveYtDlpBinary();
+  console.log('[STARTUP] yt-dlp binary path:', ytDlpBinary);
+  // SECURITY: Ensure we NEVER use WORKER_SECRET or any auth token here
+  if (ytDlpBinary.includes('secret') || ytDlpBinary.includes('SECRET') || ytDlpBinary.includes('token')) {
+    throw new Error('CRITICAL: yt-dlp binary path contains a secret! This must NEVER happen.');
+  }
+  ytDlp = new (YTDlpWrap.default || YTDlpWrap)(ytDlpBinary);
   console.log('[STARTUP] yt-dlp instance created successfully');
   
   try {
