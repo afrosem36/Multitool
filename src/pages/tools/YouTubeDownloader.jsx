@@ -216,7 +216,13 @@ const YouTubeDownloader = () => {
       const data = await apiJson('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), quality }),
+        body: JSON.stringify({
+          url: url.trim(),
+          quality,
+          title: info.title,
+          duration: info.duration,
+          formats: info.formats,
+        }),
       });
 
       jobIdRef.current = data.jobId;

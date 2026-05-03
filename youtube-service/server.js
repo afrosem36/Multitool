@@ -8,8 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
-import pkg from 'yt-dlp-wrap';
-const { default: YTDlpWrap } = pkg;
+import YTDlpWrapPackage from 'yt-dlp-wrap';
+const YTDlpWrap = YTDlpWrapPackage.default || YTDlpWrapPackage;
 
 // ESM compatibility for __filename and __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +17,8 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
 const TMP_DIR = process.env.TMP_DIR || os.tmpdir();
-const MAX_CONCURRENT = Number.parseInt(process.env.MAX_CONCURRENT || '10', 10);
+const MAX_CONCURRENT = Number.parseInt(process.env.MAX_CONCURRENT || '3', 10);
+const MAX_CONCURRENT_PREMIUM = Number.parseInt(process.env.MAX_CONCURRENT_PREMIUM || '6', 10);
 const TEMP_TTL = Number.parseInt(process.env.TEMP_TTL_MINUTES || '10', 10) * 60 * 1000;
 const JOB_TTL = Number.parseInt(process.env.JOB_TTL_MINUTES || '20', 10) * 60 * 1000;
 const PROXY_DISABLE_MS = Number.parseInt(process.env.PROXY_DISABLE_MINUTES || '5', 10) * 60 * 1000;
@@ -30,9 +31,15 @@ const QUEUE_WAIT_DETAIL = 'Please wait. High-quality downloads (4K/8K with audio
 const RETRYING_MESSAGE = 'Retrying on another server...';
 const AVERAGE_JOB_SECONDS_MIN = Number.parseInt(process.env.AVERAGE_JOB_SECONDS_MIN || '20', 10);
 const AVERAGE_JOB_SECONDS_MAX = Number.parseInt(process.env.AVERAGE_JOB_SECONDS_MAX || '60', 10);
-const JOB_TIMEOUT_MS = Number.parseInt(process.env.JOB_TIMEOUT_MS || '30000', 10);
-const MAX_JOB_RETRIES = Number.parseInt(process.env.MAX_JOB_RETRIES || '3', 10);
+const QUEUE_SECONDS_PER_JOB = Number.parseInt(process.env.QUEUE_SECONDS_PER_JOB || '5', 10);
+const JOB_TIMEOUT_MS = Number.parseInt(process.env.JOB_TIMEOUT_MS || '1800000', 10);
+const MAX_JOB_RETRIES = Number.parseInt(process.env.MAX_JOB_RETRIES || '5', 10);
 const WORKERS = (process.env.WORKERS || DEFAULT_WORKERS.join(','))
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://www.multitoolhub.space,https://multitoolhub.space,http://localhost:5173')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -42,30 +49,47 @@ const PROXIES = (process.env.PROXY_LIST || '')
   .map((value) => value.trim())
   .filter(Boolean);
 
-function getRandomProxy() {
-  if (!PROXIES.length) return null;
-  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+const failedProxies = new Map();
+
+function redactProxy(proxy) {
+  if (!proxy) return '';
+  try {
+    const parsed = new URL(proxy);
+    if (parsed.username || parsed.password) {
+      parsed.username = parsed.username ? '***' : '';
+      parsed.password = parsed.password ? '***' : '';
+    }
+    return parsed.toString();
+  } catch {
+    return String(proxy).replace(/\/\/([^:@/]+):([^@/]+)@/, '//***:***@');
+  }
+}
+
+function pruneFailedProxies() {
+  const now = Date.now();
+  for (const [proxy, failedAt] of failedProxies.entries()) {
+    if (now - failedAt > PROXY_DISABLE_MS) failedProxies.delete(proxy);
+  }
+}
+
+function getWorkingProxy() {
+  pruneFailedProxies();
+  const available = PROXIES.filter((proxy) => !failedProxies.has(proxy));
+  if (!available.length) return null;
+  return available[Math.floor(Math.random() * available.length)];
+}
+
+function markProxyFailed(proxy) {
+  if (!proxy) return;
+  failedProxies.set(proxy, Date.now());
 }
 
 function log(level, message, meta = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level, message, ...meta }));
 }
 
-function resolveYtDlpBinary() {
-  // IMPORTANT: Only use yt-dlp binary path, NEVER secrets
-  if (process.env.YTDLP_PATH) {
-    console.log('[YTDLP] Using YTDLP_PATH env var:', process.env.YTDLP_PATH);
-    return process.env.YTDLP_PATH;
-  }
-  try {
-    const cmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
-    const path = execSync(cmd, { encoding: 'utf8' }).trim().split('\n')[0].trim();
-    console.log('[YTDLP] Found yt-dlp at:', path);
-    return path;
-  } catch (err) {
-    console.log('[YTDLP] which/where failed, using fallback "yt-dlp":', err.message);
-    return 'yt-dlp';
-  }
+function shellQuote(value) {
+  return `"${String(value).replace(/"/g, '\\"')}"`;
 }
 
 console.log('[STARTUP] Server initialization starting...');
@@ -73,22 +97,21 @@ console.log('[STARTUP] Server initialization starting...');
 let ytDlp = null;
 try {
   console.log('[STARTUP] Initializing yt-dlp...');
-  const ytDlpBinary = resolveYtDlpBinary();
+  const ytDlpBinary = process.env.YTDLP_PATH || 'yt-dlp';
   console.log('[STARTUP] yt-dlp binary path:', ytDlpBinary);
-  // SECURITY: Ensure we NEVER use WORKER_SECRET or any auth token here
-  if (ytDlpBinary.includes('secret') || ytDlpBinary.includes('SECRET') || ytDlpBinary.includes('token')) {
+  if (/secret|token/i.test(ytDlpBinary)) {
     throw new Error('CRITICAL: yt-dlp binary path contains a secret! This must NEVER happen.');
   }
-  ytDlp = new (YTDlpWrap.default || YTDlpWrap)(ytDlpBinary);
+  ytDlp = new YTDlpWrap(ytDlpBinary);
   console.log('[STARTUP] yt-dlp instance created successfully');
-  
+
   try {
-    execSync('yt-dlp --update-to stable', { stdio: 'ignore', timeout: 30000 });
-    log('info', 'yt-dlp verified');
-    console.log('[STARTUP] yt-dlp verified and updated');
-  } catch (updateError) {
-    log('warn', 'yt-dlp update skipped', { error: updateError.message });
-    console.log('[STARTUP] yt-dlp update skipped:', updateError.message);
+    execSync(`${shellQuote(ytDlpBinary)} --version`, { stdio: 'pipe' });
+    console.log('[YTDLP] Binary verified');
+    log('info', 'yt-dlp binary verified');
+  } catch (verifyError) {
+    console.error('[YTDLP] NOT FOUND:', verifyError.message);
+    throw verifyError;
   }
 } catch (initError) {
   log('error', 'yt-dlp initialization failed', { error: initError.message });
@@ -99,6 +122,7 @@ try {
 
 let workerIndex = 0;
 let activeJobs = 0;
+let activePremiumJobs = 0;
 const queue = [];
 const jobs = new Map();
 const rateLimits = new Map();
@@ -121,6 +145,28 @@ function checkRateLimit(ip) {
   return entry.count <= MAX_DOWNLOADS_PER_WINDOW;
 }
 
+function isPremium(user) {
+  if (!user) return false;
+  const plan = String(user.plan || user.tier || user.subscription || '').toLowerCase();
+  return plan === 'premium' || plan === 'pro' || user.isPremium === true;
+}
+
+function getRequestUser(req) {
+  const headerPlan = req.headers['x-user-plan'] || req.headers['x-plan'];
+  return {
+    plan: req.body?.user?.plan || req.body?.plan || headerPlan || 'free',
+    isPremium: req.body?.user?.isPremium || req.body?.isPremium,
+  };
+}
+
+function estimateWaitSeconds(position) {
+  return Math.max(0, Number(position || 0) * QUEUE_SECONDS_PER_JOB);
+}
+
+function formatWaitSeconds(seconds) {
+  return `${Math.max(0, Number(seconds || 0))} seconds`;
+}
+
 function estimateWaitRange(position) {
   const minSeconds = Math.max(10, position * AVERAGE_JOB_SECONDS_MIN);
   const maxSeconds = Math.max(minSeconds, position * AVERAGE_JOB_SECONDS_MAX);
@@ -130,18 +176,31 @@ function estimateWaitRange(position) {
 function updateQueuedJobMetadata() {
   queue.forEach((job, index) => {
     job.queuePosition = index + 1;
-    job.estimatedWait = estimateWaitRange(job.queuePosition);
+    job.estimatedWaitSeconds = estimateWaitSeconds(job.queuePosition);
+    job.estimatedWait = formatWaitSeconds(job.estimatedWaitSeconds);
     job.message = QUEUE_WAIT_DETAIL;
   });
 }
 
+function getNextRunnableQueueIndex() {
+  const hasPremiumCapacity = activeJobs < MAX_CONCURRENT_PREMIUM;
+  const hasStandardCapacity = activeJobs < MAX_CONCURRENT;
+  if (!hasPremiumCapacity) return -1;
+  if (hasStandardCapacity) return 0;
+  return queue.findIndex((job) => job.premium);
+}
+
 function startQueuedJobs() {
-  while (activeJobs < MAX_CONCURRENT && queue.length > 0) {
-    const nextJob = queue.shift();
+  while (queue.length > 0) {
+    const nextIndex = getNextRunnableQueueIndex();
+    if (nextIndex < 0) break;
+    const [nextJob] = queue.splice(nextIndex, 1);
     activeJobs += 1;
+    if (nextJob.premium) activePremiumJobs += 1;
     nextJob.status = 'starting';
     nextJob.queuePosition = 0;
-    nextJob.estimatedWait = '0-20 seconds';
+    nextJob.estimatedWaitSeconds = 0;
+    nextJob.estimatedWait = '0 seconds';
     nextJob.message = USER_WAIT_MESSAGE;
     nextJob.startedAt = Date.now();
     runDownloadWithFailover(nextJob)
@@ -153,6 +212,7 @@ function startQueuedJobs() {
       })
       .finally(() => {
         activeJobs = Math.max(0, activeJobs - 1);
+        if (nextJob.premium) activePremiumJobs = Math.max(0, activePremiumJobs - 1);
         startQueuedJobs();
       });
   }
@@ -160,30 +220,11 @@ function startQueuedJobs() {
 }
 
 function scheduleJob(job) {
-  if (activeJobs < MAX_CONCURRENT) {
-    activeJobs += 1;
-    job.status = 'starting';
-    job.queuePosition = 0;
-    job.estimatedWait = '0-20 seconds';
-    job.message = USER_WAIT_MESSAGE;
-    job.startedAt = Date.now();
-    runDownloadWithFailover(job)
-      .catch((error) => {
-        job.status = 'error';
-        job.error = parseYtDlpError(error);
-        job.message = 'Retrying with another server...';
-        log('error', 'unhandled download failure', { jobId: job.jobId, error: error.message });
-      })
-      .finally(() => {
-        activeJobs = Math.max(0, activeJobs - 1);
-        startQueuedJobs();
-      });
-    return;
-  }
-
-  queue.push(job);
+  if (job.premium) queue.unshift(job);
+  else queue.push(job);
   job.status = 'queued';
   updateQueuedJobMetadata();
+  startQueuedJobs();
 }
 
 function getNextWorker() {
@@ -249,9 +290,13 @@ function fallbackQualities(quality) {
 function baseArgs(proxy) {
   const args = [
     '--no-playlist',
+    '--quiet',
+    '--progress',
     '--no-warnings',
     '--newline',
     '--force-overwrites',
+    '--extractor-args',
+    'youtube:player_client=android',
     '--user-agent',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     '--add-header',
@@ -266,6 +311,10 @@ function safeDelete(filePath) {
   fs.promises.unlink(filePath).catch(() => {});
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function cleanupJob(jobId, delay = JOB_TTL) {
   setTimeout(() => {
     const job = jobs.get(jobId);
@@ -275,13 +324,15 @@ function cleanupJob(jobId, delay = JOB_TTL) {
   }, delay);
 }
 
-function createJob({ url, quality, ip }) {
+function createJob({ url, quality, ip, user, title = '', duration = 0, formats = [] }) {
   const jobId = uuidv4();
   const filePath = path.join(TMP_DIR, `youtube_${jobId}.mp4`);
+  const premium = isPremium(user);
   const job = {
     jobId,
     url,
     quality: normalizeQuality(quality),
+    premium,
     status: 'queued',
     progress: 0,
     percent: 0,
@@ -293,6 +344,10 @@ function createJob({ url, quality, ip }) {
     filePath,
     fileSize: 0,
     filename: `youtube_${jobId}.mp4`,
+    title,
+    duration,
+    formats,
+    downloadUrl: `/api/download/${jobId}/file`,
     error: null,
     message: USER_WAIT_MESSAGE,
     retryCount: 0,
@@ -300,7 +355,8 @@ function createJob({ url, quality, ip }) {
     attemptHistory: [],
     activeProcess: null,
     queuePosition: 0,
-    estimatedWait: '0-20 seconds',
+    estimatedWaitSeconds: 0,
+    estimatedWait: '0 seconds',
     createdAt: Date.now(),
     startedAt: null,
     completedAt: null,
@@ -356,7 +412,7 @@ function runYtDlp(job, quality, proxy, worker) {
 
     job.status = 'downloading';
     job.worker = worker;
-    job.proxy = proxy ? redactProxy(proxy.url) : 'direct';
+    job.proxy = proxy ? redactProxy(proxy) : 'direct';
     job.formatUsed = quality;
     job.progress = 0;
     job.percent = 0;
@@ -411,19 +467,19 @@ async function runDownloadWithFailover(job) {
   for (let retryIndex = 0; retryIndex < Math.min(MAX_JOB_RETRIES, attemptPlan.length); retryIndex += 1) {
     const { worker, quality } = attemptPlan[retryIndex];
     lastAssignedWorker = worker;
-    const proxy = getRandomProxy();
+    const proxy = getWorkingProxy();
     safeDelete(job.filePath);
     job.retryCount = retryIndex;
     job.status = retryIndex === 0 ? 'downloading' : 'retrying';
     job.worker = worker;
-    job.proxy = proxy || 'direct';
+    job.proxy = proxy ? redactProxy(proxy) : 'direct';
     job.formatUsed = quality;
     job.message = retryIndex === 0 ? USER_WAIT_MESSAGE : RETRYING_MESSAGE;
     job.attemptHistory.push({
       retry: retryIndex + 1,
       worker,
       quality,
-      proxy: proxy || 'direct',
+      proxy: proxy ? redactProxy(proxy) : 'direct',
       startedAt: Date.now(),
     });
     log('info', 'download attempt', {
@@ -431,7 +487,7 @@ async function runDownloadWithFailover(job) {
       retry: retryIndex + 1,
       worker,
       quality,
-      proxy: proxy || 'direct',
+      proxy: proxy ? redactProxy(proxy) : 'direct',
     });
 
     try {
@@ -466,6 +522,10 @@ async function runDownloadWithFailover(job) {
         }
         job.activeProcess = null;
       }
+      markProxyFailed(proxy);
+      if (retryIndex < Math.min(MAX_JOB_RETRIES, attemptPlan.length) - 1) {
+        await delay(800);
+      }
     }
   }
 
@@ -481,12 +541,23 @@ async function getVideoInfo(url) {
   }
 
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < MAX_JOB_RETRIES; attempt += 1) {
+    const proxy = getWorkingProxy();
     try {
-      const proxy = getRandomProxy();
-      if (proxy) console.log(`[VIDEO-INFO] Attempt ${attempt + 1}/3 using proxy:`, proxy);
+      if (proxy) log('info', 'video info using proxy', { attempt: attempt + 1, proxy: redactProxy(proxy) });
 
-      const raw = await ytDlp.getVideoInfo(url, baseArgs(proxy));
+      const args = [
+        url,
+        '-J',
+        '--no-playlist',
+        '--quiet',
+        '--extractor-args',
+        'youtube:player_client=android',
+      ];
+      if (proxy) args.push('--proxy', proxy);
+
+      const stdout = await ytDlp.execPromise(args);
+      const raw = typeof stdout === 'string' ? JSON.parse(stdout) : stdout;
 
       if (raw.is_live) {
         const error = new Error('Live streams are not supported.');
@@ -502,12 +573,14 @@ async function getVideoInfo(url) {
         formats: ['best', '720', '1080', '4k', '8k'],
       };
     } catch (error) {
-      console.log(`[VIDEO-INFO] Attempt ${attempt + 1} failed:`, error.message);
+      log('warn', 'video info attempt failed', { attempt: attempt + 1, error: error.message, proxy: proxy ? redactProxy(proxy) : 'direct' });
+      markProxyFailed(proxy);
       lastError = error;
+      if (attempt < MAX_JOB_RETRIES - 1) await delay(800);
     }
   }
 
-  throw lastError || new Error('Unable to fetch video info after 3 attempts.');
+  throw lastError || new Error(`Unable to fetch video info after ${MAX_JOB_RETRIES} attempts.`);
 }
 
 function parseYtDlpError(error) {
@@ -533,11 +606,7 @@ const app = express();
 
 // 1. CORS — must be first so preflight OPTIONS responses include the right headers
 app.use(cors({
-  origin: [
-    'https://www.multitoolhub.space',
-    'https://multitoolhub.space',
-    'http://localhost:5173',
-  ],
+  origin: ALLOWED_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -576,9 +645,13 @@ app.get('/api/health', (_req, res) => res.type('text/plain').send('OK'));
 app.get('/health', (_req, res) => res.json({
   status: 'ok',
   active: activeJobs,
+  activePremium: activePremiumJobs,
   queued: queue.length,
   workers: WORKERS,
   proxies: PROXIES.length,
+  failedProxies: failedProxies.size,
+  maxConcurrent: MAX_CONCURRENT,
+  maxConcurrentPremium: MAX_CONCURRENT_PREMIUM,
 }));
 
 // CORS test endpoint
@@ -611,7 +684,11 @@ app.post('/api/video-info', async (req, res) => {
     console.log('[VIDEO-INFO] Getting video info for:', url);
     const info = await getVideoInfo(url);
     console.log('[VIDEO-INFO] Success - returning info');
-    return res.json(info);
+    return res.json({
+      success: true,
+      ...info,
+      downloadUrl: null,
+    });
   } catch (error) {
     console.log('[VIDEO-INFO] Error:', error.message);
     const status = error.statusCode || 500;
@@ -623,24 +700,31 @@ app.post('/api/download', (req, res) => {
   const ip = getClientIp(req);
   const withinSoftLimit = checkRateLimit(ip);
 
-  const { url, quality = 'best' } = req.body || {};
+  const { url, quality = 'best', title = '', duration = 0, formats = [] } = req.body || {};
   if (!url || !isYouTubeUrl(url)) {
     return res.status(400).json({ error: 'Invalid or missing YouTube URL.', code: 'INVALID_URL' });
   }
 
-  const job = createJob({ url, quality, ip });
+  const user = getRequestUser(req);
+  const job = createJob({ url, quality, ip, user, title, duration, formats });
   if (!withinSoftLimit) {
     job.message = QUEUE_WAIT_DETAIL;
   }
   scheduleJob(job);
   res.status(202).json({
+    success: true,
     jobId: job.jobId,
     status: job.status,
     position: job.queuePosition,
+    estimatedWaitSeconds: job.estimatedWaitSeconds,
     estimatedWait: job.estimatedWait,
+    premium: job.premium,
+    title: job.title,
+    duration: job.duration,
+    formats: job.formats,
     message: job.status === 'queued' ? QUEUE_WAIT_DETAIL : USER_WAIT_MESSAGE,
     progressUrl: `/api/progress/${job.jobId}`,
-    downloadUrl: `/api/download/${job.jobId}/file`,
+    downloadUrl: job.downloadUrl,
   });
 });
 
@@ -649,20 +733,26 @@ app.get('/api/progress/:id', (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found or expired.', code: 'JOB_NOT_FOUND' });
 
   return res.json({
+    success: job.status === 'ready',
     jobId: job.jobId,
     status: job.status,
     progress: job.progress,
     percent: job.progress,
     position: job.queuePosition,
+    estimatedWaitSeconds: job.estimatedWaitSeconds,
     estimatedWait: job.estimatedWait,
     speed: job.speed,
     eta: job.eta,
     worker: job.worker,
     proxy: job.proxy,
     formatUsed: job.formatUsed,
+    premium: job.premium,
+    title: job.title,
+    duration: job.duration,
+    formats: job.formats,
     error: job.error,
     message: job.message,
-    downloadUrl: job.status === 'ready' ? `/api/download/${job.jobId}/file` : null,
+    downloadUrl: job.status === 'ready' ? job.downloadUrl : null,
   });
 });
 
@@ -676,6 +766,7 @@ app.get('/api/download/:id/file', (req, res) => {
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
   res.setHeader('Content-Length', job.fileSize);
+  res.setHeader('X-Format-Used', job.formatUsed);
 
   const stream = fs.createReadStream(job.filePath);
   stream.pipe(res);
@@ -690,8 +781,18 @@ app.delete('/api/download/:id', (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.', code: 'JOB_NOT_FOUND' });
   job.status = 'cancelled';
+  if (job.activeProcess) {
+    try {
+      job.activeProcess.kill('SIGKILL');
+    } catch {
+      // Ignore cleanup errors.
+    }
+  }
+  const queuedIndex = queue.findIndex((queuedJob) => queuedJob.jobId === job.jobId);
+  if (queuedIndex >= 0) queue.splice(queuedIndex, 1);
   safeDelete(job.filePath);
   jobs.delete(job.jobId);
+  updateQueuedJobMetadata();
   return res.json({ ok: true });
 });
 
