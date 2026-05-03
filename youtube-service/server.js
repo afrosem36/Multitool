@@ -571,10 +571,15 @@ app.use((req, res, next) => {
 // 3. JSON body parser
 app.use(express.json({ limit: '1mb' }));
 
-// 4. Auth guard — skips health/test/auth routes; only active when WORKER_SECRET is set
+// 4. Auth guard — only active when WORKER_SECRET is set in env
+// YouTube API routes are open because they're rate-limited by the Cloudflare Worker
 app.use((req, res, next) => {
   const OPEN_PATHS = ['/', '/api/health', '/health', '/api/test-cors'];
-  if (OPEN_PATHS.includes(req.path) || req.path.startsWith('/api/auth')) return next();
+  if (OPEN_PATHS.includes(req.path)) return next();
+  if (req.path.startsWith('/api/auth')) return next();
+  if (req.path.startsWith('/api/video-info')) return next();
+  if (req.path.startsWith('/api/download')) return next();
+  if (req.path.startsWith('/api/progress')) return next();
   if (!WORKER_SECRET) return next(); // dev mode — no secret configured
   if (req.headers.authorization !== `Bearer ${WORKER_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
