@@ -133,10 +133,17 @@ const YouTubeDownloader = () => {
     addHistory('/tools/youtube-downloader', 'YouTube Downloader', 'utility');
   }, [addHistory]);
 
-  const showNotificationBar = (message, duration = 5000) => {
+  const showNotificationBar = (message, duration = 7000) => {
     setShowNotification(message);
     if (notificationRef.current) clearTimeout(notificationRef.current);
     notificationRef.current = setTimeout(() => setShowNotification(false), duration);
+  };
+
+  const handleNotificationMouseLeave = () => {
+    if (showNotification && notificationRef.current) {
+      clearTimeout(notificationRef.current);
+    }
+    notificationRef.current = setTimeout(() => setShowNotification(false), 7000);
   };
 
   useEffect(() => () => clearInterval(pollRef.current), []);
@@ -286,7 +293,13 @@ const YouTubeDownloader = () => {
   return (
     <div className="tool-container container">
       {showNotification && (
-        <div className="ytd-notification-bar" onMouseEnter={() => notificationRef.current && clearTimeout(notificationRef.current)}>
+        <div
+          className="ytd-notification-bar"
+          onMouseEnter={() => {
+            if (notificationRef.current) clearTimeout(notificationRef.current);
+          }}
+          onMouseLeave={handleNotificationMouseLeave}
+        >
           {showNotification}
         </div>
       )}
