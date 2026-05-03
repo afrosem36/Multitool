@@ -135,7 +135,7 @@ function getCacheKey(url, quality) {
 }
 
 async function checkCacheExists(key) {
-  if (!r2Client) return false;
+  if (!r2Client || !R2_CDN_URL) return false;
   try {
     await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
     console.log('⚡ CDN HIT — skipping download');
@@ -146,7 +146,7 @@ async function checkCacheExists(key) {
 }
 
 async function uploadToR2(filePath, key) {
-  if (!r2Client || !fs.existsSync(filePath)) return null;
+  if (!r2Client || !R2_CDN_URL || !fs.existsSync(filePath)) return null;
   try {
     const fileSize = fs.statSync(filePath).size;
     const fileStream = fs.createReadStream(filePath);
