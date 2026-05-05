@@ -1,0 +1,1208 @@
+[
+  {
+    "file": "src/pages/admin/AdminPage.jsx",
+    "directory": "admin",
+    "fixes": [
+      {
+        "incorrectPath": "../context/AuthContext",
+        "correctPath": "../../context/AuthContext",
+        "oldString": "import { useAuth } from '../context/AuthContext';",
+        "newString": "import { useAuth } from '../../context/AuthContext';"
+      },
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { GOOGLE_CLIENT_ID, API_BASE_URL } from '../config';",
+        "newString": "import { GOOGLE_CLIENT_ID, API_BASE_URL } from '../../config';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/admin/DeployDashboard.jsx",
+    "directory": "admin",
+    "fixes": [
+      {
+        "incorrectPath": "../context/AuthContext",
+        "correctPath": "../../context/AuthContext",
+        "oldString": "import { useAuth } from '../context/AuthContext';",
+        "newString": "import { useAuth } from '../../context/AuthContext';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/admin/AnalyticsDashboard.jsx",
+    "directory": "admin",
+    "fixes": [
+      {
+        "incorrectPath": "../components/seo/SEOHead",
+        "correctPath": "../../components/seo/SEOHead",
+        "oldString": "import SeoHead from '../components/seo/SEOHead';",
+        "newString": "import SeoHead from '../../components/seo/SEOHead';"
+      },
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/auth/ForgotPassword.jsx",
+    "directory": "auth",
+    "fixes": [
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/auth/ResetPassword.jsx",
+    "directory": "auth",
+    "fixes": [
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/PngToJpg.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../utils/imageTools';",
+        "newString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../../utils/imageTools';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/JpgToPng.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../utils/imageTools';",
+        "newString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../../utils/imageTools';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/ImageEnhance.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../components/shared/BeforeAfterSlider",
+        "correctPath": "../../components/shared/BeforeAfterSlider",
+        "oldString": "import BeforeAfterSlider from '../components/shared/BeforeAfterSlider';",
+        "newString": "import BeforeAfterSlider from '../../components/shared/BeforeAfterSlider';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension } from '../utils/imageTools';",
+        "newString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension } from '../../utils/imageTools';"
+      },
+      {
+        "incorrectPath": "../utils/imageEnhancement",
+        "correctPath": "../../utils/imageEnhancement",
+        "oldString": "import { analyzeImage, processEnhancement } from '../utils/imageEnhancement';",
+        "newString": "import { analyzeImage, processEnhancement } from '../../utils/imageEnhancement';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/ImageCompress.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../utils/imageTools';",
+        "newString": "import { canvasToBlob, downloadBlob, loadImageFromFile, renameWithExtension, renderFilteredCanvas } from '../../utils/imageTools';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/ImageCollage.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { loadImageFromFile, downloadBlob } from '../utils/imageTools';",
+        "newString": "import { loadImageFromFile, downloadBlob } from '../../utils/imageTools';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/image-tools/HtmlToImage.jsx",
+    "directory": "image-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../utils/imageTools",
+        "correctPath": "../../utils/imageTools",
+        "oldString": "import { canvasToBlob, downloadBlob } from '../utils/imageTools';",
+        "newString": "import { canvasToBlob, downloadBlob } from '../../utils/imageTools';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfEdit.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfFromImage.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfWatermark.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfProtect.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfToWord.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfSplitter.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfToJpg.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfOrganize.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/pdf-tools/PdfMerger.jsx",
+    "directory": "pdf-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/RelatedTools",
+        "correctPath": "../../components/shared/RelatedTools",
+        "oldString": "import RelatedTools from '../components/shared/RelatedTools';",
+        "newString": "import RelatedTools from '../../components/shared/RelatedTools';"
+      },
+      {
+        "incorrectPath": "../components/shared/AffiliatePlaceholder",
+        "correctPath": "../../components/shared/AffiliatePlaceholder",
+        "oldString": "import AffiliatePlaceholder from '../components/shared/AffiliatePlaceholder';",
+        "newString": "import AffiliatePlaceholder from '../../components/shared/AffiliatePlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/DaysCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/BmiCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/CurrencyConverter.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../utils/formatters",
+        "correctPath": "../../utils/formatters",
+        "oldString": "import { formatNumberIN } from '../utils/formatters';",
+        "newString": "import { formatNumberIN } from '../../utils/formatters';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/AgeCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/ZodiacCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/ToolHeader",
+        "correctPath": "../../components/shared/ToolHeader",
+        "oldString": "import ToolHeader from '../components/shared/ToolHeader';",
+        "newString": "import ToolHeader from '../../components/shared/ToolHeader';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/WorkingDayCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/HomeLoanCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../utils/formatters",
+        "correctPath": "../../utils/formatters",
+        "oldString": "import { formatAmountINR } from '../utils/formatters';",
+        "newString": "import { formatAmountINR } from '../../utils/formatters';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/VehicleMileageCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/FinanceCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../utils/formatters",
+        "correctPath": "../../utils/formatters",
+        "oldString": "import { formatAmountINR } from '../utils/formatters';",
+        "newString": "import { formatAmountINR } from '../../utils/formatters';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/UnitConverter.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/ToolHeader",
+        "correctPath": "../../components/shared/ToolHeader",
+        "oldString": "import ToolHeader from '../components/shared/ToolHeader';",
+        "newString": "import ToolHeader from '../../components/shared/ToolHeader';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/DurationCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/SalesTaxCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../utils/formatters",
+        "correctPath": "../../utils/formatters",
+        "oldString": "import { formatAmountINR } from '../utils/formatters';",
+        "newString": "import { formatAmountINR } from '../../utils/formatters';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/calculators/PersonalFinanceCalculator.jsx",
+    "directory": "calculators",
+    "fixes": [
+      {
+        "incorrectPath": "../components/finance/PersonalFinanceContext",
+        "correctPath": "../../components/finance/PersonalFinanceContext",
+        "oldString": "import { FinanceProvider } from '../components/finance/PersonalFinanceContext';",
+        "newString": "import { FinanceProvider } from '../../components/finance/PersonalFinanceContext';"
+      },
+      {
+        "incorrectPath": "../components/finance/PersonalFinanceApp",
+        "correctPath": "../../components/finance/PersonalFinanceApp",
+        "oldString": "import PersonalFinanceApp from '../components/finance/PersonalFinanceApp';",
+        "newString": "import PersonalFinanceApp from '../../components/finance/PersonalFinanceApp';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/excel-tools/ExcelConverter.jsx",
+    "directory": "excel-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/ToolHeader",
+        "correctPath": "../../components/shared/ToolHeader",
+        "oldString": "import ToolHeader from '../components/shared/ToolHeader';",
+        "newString": "import ToolHeader from '../../components/shared/ToolHeader';"
+      },
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/excel-tools/ExcelMerger.jsx",
+    "directory": "excel-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/ToolHeader",
+        "correctPath": "../../components/shared/ToolHeader",
+        "oldString": "import ToolHeader from '../components/shared/ToolHeader';",
+        "newString": "import ToolHeader from '../../components/shared/ToolHeader';"
+      },
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/other-tools/SeoAnalyzer.jsx",
+    "directory": "other-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/other-tools/UrlShortener.jsx",
+    "directory": "other-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      },
+      {
+        "incorrectPath": "../components/seo/SEOHead",
+        "correctPath": "../../components/seo/SEOHead",
+        "oldString": "import SeoHead from '../components/seo/SEOHead';",
+        "newString": "import SeoHead from '../../components/seo/SEOHead';"
+      },
+      {
+        "incorrectPath": "../components/FormBuilder",
+        "correctPath": "../../components/FormBuilder",
+        "oldString": "import FormBuilder from '../components/FormBuilder';",
+        "newString": "import FormBuilder from '../../components/FormBuilder';"
+      },
+      {
+        "incorrectPath": "../context/AuthContext",
+        "correctPath": "../../context/AuthContext",
+        "oldString": "import { useAuth } from '../context/AuthContext';",
+        "newString": "import { useAuth } from '../../context/AuthContext';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/other-tools/WordToPdf.jsx",
+    "directory": "other-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../components/shared/FileUpload",
+        "correctPath": "../../components/shared/FileUpload",
+        "oldString": "import FileUpload from '../components/shared/FileUpload';",
+        "newString": "import FileUpload from '../../components/shared/FileUpload';"
+      },
+      {
+        "incorrectPath": "../components/shared/FilePreviewList",
+        "correctPath": "../../components/shared/FilePreviewList",
+        "oldString": "import FilePreviewList from '../components/shared/FilePreviewList';",
+        "newString": "import FilePreviewList from '../../components/shared/FilePreviewList';"
+      },
+      {
+        "incorrectPath": "../components/shared/ProcessingState",
+        "correctPath": "../../components/shared/ProcessingState",
+        "oldString": "import ProcessingState from '../components/shared/ProcessingState';",
+        "newString": "import ProcessingState from '../../components/shared/ProcessingState';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      },
+      {
+        "incorrectPath": "../hooks/useFileValidation",
+        "correctPath": "../../hooks/useFileValidation",
+        "oldString": "import { useFileValidation } from '../hooks/useFileValidation';",
+        "newString": "import { useFileValidation } from '../../hooks/useFileValidation';"
+      },
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/other-tools/QrGenerator.jsx",
+    "directory": "other-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/other-tools/QrDecoder.jsx",
+    "directory": "other-tools",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      },
+      {
+        "incorrectPath": "../components/shared/AdPlaceholder",
+        "correctPath": "../../components/shared/AdPlaceholder",
+        "oldString": "import AdPlaceholder from '../components/shared/AdPlaceholder';",
+        "newString": "import AdPlaceholder from '../../components/shared/AdPlaceholder';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/misc/AllToolsPage.jsx",
+    "directory": "misc",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useToolHistory",
+        "correctPath": "../../hooks/useToolHistory",
+        "oldString": "import { useToolHistory } from '../hooks/useToolHistory';",
+        "newString": "import { useToolHistory } from '../../hooks/useToolHistory';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/misc/ExpiredLink.jsx",
+    "directory": "misc",
+    "fixes": [
+      {
+        "incorrectPath": "../components/seo/SEOHead",
+        "correctPath": "../../components/seo/SEOHead",
+        "oldString": "import SeoHead from '../components/seo/SEOHead';",
+        "newString": "import SeoHead from '../../components/seo/SEOHead';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/misc/FavoritesPage.jsx",
+    "directory": "misc",
+    "fixes": [
+      {
+        "incorrectPath": "../hooks/useFavorites",
+        "correctPath": "../../hooks/useFavorites",
+        "oldString": "import { useFavorites } from '../hooks/useFavorites';",
+        "newString": "import { useFavorites } from '../../hooks/useFavorites';"
+      },
+      {
+        "incorrectPath": "../components/shared/ToolHeader",
+        "correctPath": "../../components/shared/ToolHeader",
+        "oldString": "import ToolHeader from '../components/shared/ToolHeader';",
+        "newString": "import ToolHeader from '../../components/shared/ToolHeader';"
+      },
+      {
+        "incorrectPath": "../components/ui/TiltCard",
+        "correctPath": "../../components/ui/TiltCard",
+        "oldString": "import { TiltCard } from '../components/ui/TiltCard';",
+        "newString": "import { TiltCard } from '../../components/ui/TiltCard';"
+      }
+    ]
+  },
+  {
+    "file": "src/pages/misc/FileShare.jsx",
+    "directory": "misc",
+    "fixes": [
+      {
+        "incorrectPath": "../config",
+        "correctPath": "../../config",
+        "oldString": "import { API_BASE_URL } from '../config';",
+        "newString": "import { API_BASE_URL } from '../../config';"
+      },
+      {
+        "incorrectPath": "../components/FormBuilder",
+        "correctPath": "../../components/FormBuilder",
+        "oldString": "import FormBuilder from '../components/FormBuilder';",
+        "newString": "import FormBuilder from '../../components/FormBuilder';"
+      },
+      {
+        "incorrectPath": "../context/AuthContext",
+        "correctPath": "../../context/AuthContext",
+        "oldString": "import { useAuth } from '../context/AuthContext';",
+        "newString": "import { useAuth } from '../../context/AuthContext';"
+      }
+    ]
+  }
+]

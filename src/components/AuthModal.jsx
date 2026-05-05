@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GOOGLE_CLIENT_ID } from '../config';
-import '../pages/AuthStyles.css';
+import '../pages/styles/AuthStyles.css';
 
 const GoogleLoginButton = ({ onSuccess, isLoading }) => {
   const googleButtonRef = React.useRef(null);
