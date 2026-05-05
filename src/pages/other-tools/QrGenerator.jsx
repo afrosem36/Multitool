@@ -3,6 +3,7 @@ import { QrCode, ArrowLeft, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToolHistory } from '../../hooks/useToolHistory';
 import AdPlaceholder from '../../components/shared/AdPlaceholder';
+import { triggerAd } from '../../utils/adTrigger';
 import '../styles/ToolStyles.css';
 
 const QrGenerator = () => {
@@ -15,6 +16,7 @@ const QrGenerator = () => {
   }, [addHistory]);
 
   const generateQR = () => {
+    triggerAd();
     if (!text.trim()) {
       setQrUrl('');
       return;
