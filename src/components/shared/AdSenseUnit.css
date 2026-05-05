@@ -1,4 +1,7 @@
 .adsbygoogle {
   display: block;
-  margin: 20px auto;
+}
+/* Override AdSense's occasional inline style that collapses the element */
+.adsbygoogle[data-ad-status="unfilled"] {
+  display: none !important;
 }

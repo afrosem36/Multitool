@@ -7,7 +7,6 @@ import MobileTopBar from './MobileTopBar';
 import BackButton from './BackButton';
 import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
-import AdSenseUnit from './shared/AdSenseUnit';
 import { Boxes } from './ui/background-boxes';
 import { footerPages } from '../data/contentPages';
 import {
@@ -155,22 +154,10 @@ const Layout = () => {
       <div className="layout-shell">
         <div className={`sidebar-wrapper ${isSidebarOpen ? '' : 'hidden'}`}>
           <Sidebar onClose={toggleSidebar} />
-          <AdSenseUnit slot="1234567890" format="rectangle" responsive="false" />
         </div>
         <main className="main-content">
           <BackButton />
           <Outlet />
-
-          {isToolPage && (
-            <div className="layout-tool-ad-strip">
-              <AdSenseUnit
-                slot="9876543210"
-                format="auto"
-                responsive="true"
-                style={{ display: "block", minHeight: 140 }}
-              />
-            </div>
-          )}
 
           <footer className="footer glass-panel">
             <div className="footer-inner">

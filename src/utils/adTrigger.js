@@ -1,7 +1,8 @@
-// Ad trigger utility — fires at most once per COOLDOWN_MS window.
-// Controlled by sessionStorage so it resets when the tab closes.
+// Redirect / popup ad trigger — strict UX controls.
+// At most one trigger per COOLDOWN_MS window, tracked in sessionStorage.
+// No auto-load. No background triggers. No repeated fires on rapid clicks.
 
-const COOLDOWN_MS = 60_000; // 60 s between allowed triggers
+const COOLDOWN_MS = 120_000; // 2 minutes between allowed redirects
 const STORAGE_KEY = 'mt_ad_last_ts';
 const SCRIPT_ID   = 'quge5-ad-tag';
 
@@ -9,13 +10,13 @@ export function triggerAd() {
   const now  = Date.now();
   const last = parseInt(sessionStorage.getItem(STORAGE_KEY) || '0', 10);
 
-  // Still within cooldown — skip silently
+  // Cooldown not elapsed — abort silently
   if (now - last < COOLDOWN_MS) return;
 
-  // Record this trigger timestamp before doing anything else
+  // Record timestamp before injecting so rapid double-clicks are safe
   sessionStorage.setItem(STORAGE_KEY, String(now));
 
-  // Remove any previous script instance so the network script re-executes
+  // Remove any previous instance — prevents script accumulation in <head>
   document.getElementById(SCRIPT_ID)?.remove();
 
   const s = document.createElement('script');

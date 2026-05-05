@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { triggerAd } from '../../utils/adTrigger';
+import PostResultBanner from '../../components/shared/PostResultBanner';
 import styled from 'styled-components';
 import {
   Search,
@@ -634,6 +635,8 @@ export default function SeoAnalyzer() {
           </Form>
         </Panel>
       )}
+
+      <PostResultBanner show={!!report} slot="YOUR_ADSENSE_SLOT_ID" />
 
       {report && (
         <>
