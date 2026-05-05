@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AdSenseUnit from '../../components/shared/AdSenseUnit';
+import { triggerAd } from '../../utils/adTrigger';
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../../config';
 import { useAuth } from '../../context/AuthContext';
@@ -226,6 +227,7 @@ export default function TextToSql() {
     if (!question.trim()) return toast.error('Enter a question first');
     if (!tableName.trim()) return toast.error('Enter a table name');
     if (columns.some(c => !c.trim())) return toast.error('All columns need names');
+    if (attempt === 0) triggerAd(); // only on first attempt, not retries
 
     setStatus(attempt === 0 ? 'generating' : 'retrying');
     setError(null);

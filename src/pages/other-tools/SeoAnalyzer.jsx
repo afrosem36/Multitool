@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { triggerAd } from '../../utils/adTrigger';
 import styled from 'styled-components';
 import {
   Search,
@@ -482,6 +483,7 @@ export default function SeoAnalyzer() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    triggerAd();
     setLoading(true);
     setError('');
     setReport(null);

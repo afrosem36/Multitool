@@ -4,6 +4,7 @@ import ProcessingState from '../../components/shared/ProcessingState';
 import AdPlaceholder from '../../components/shared/AdPlaceholder';
 import { useToolHistory } from '../../hooks/useToolHistory';
 import { canvasToBlob, downloadBlob } from '../../utils/imageTools';
+import { triggerAd } from '../../utils/adTrigger';
 import '../styles/ToolStyles.css';
 
 const starterHtml = `<div style="font-family: Georgia, serif; background: linear-gradient(135deg, #fde68a, #f97316); color: #111827; padding: 32px; border-radius: 24px;">
@@ -33,6 +34,7 @@ const HtmlToImage = () => {
   }, [previewUrl]);
 
   const generateImage = async () => {
+    triggerAd();
     setStatus('processing');
     setErrorMessage('');
 
