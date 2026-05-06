@@ -6,16 +6,24 @@ import { toast } from 'react-hot-toast';
 import {
   Send, Bot, User, Copy, RefreshCw, Trash2, Download,
   Plus, Search, ChevronLeft, Sparkles, MessageSquare,
-  Code, Zap, Brain, Check, Menu, X, StopCircle,
+  Code, Zap, Brain, Check, Menu, X, StopCircle, Mic, Paperclip, Image as ImageIcon,
+  AlertCircle, Loader,
 } from 'lucide-react';
+import { getCredits, saveCredits, spendCredits, canAfford, getResetCountdown, CREDIT_COSTS } from './aiCredits';
+import { classifyIntent, buildContextForIntent } from './aiCapabilities';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const DAILY_LIMIT       = 20;
-const STORAGE_USAGE_KEY = 'ai_chat_usage';
 const STORAGE_SESS_KEY  = 'ai_chat_sessions';
 const STORAGE_CUR_KEY   = 'ai_chat_current';
 const AI_NAME           = 'MultiTool AI';
-const SYSTEM_PROMPT     = `You are ${AI_NAME}, a smart, helpful, and friendly AI assistant built into MultiTool Hub — a powerful all-in-one productivity platform. You help users with coding, writing, analysis, math, and general questions. Be concise, accurate, and use markdown formatting (bold, code blocks, lists) where appropriate.`;
+const SYSTEM_PROMPT = `You are ${AI_NAME}, a smart, helpful, and friendly AI assistant built into MultiTool Hub. You help with coding, writing, analysis, math, creative tasks, and general questions. You are direct, modern, and conversational.
+
+IMPORTANT CAPABILITY AWARENESS:
+- When asked about live weather, elections, stock prices, current news, sports scores, or real-time data: Honestly note that you don't currently have live internet access. Never pretend to know current information. Example: "I don't have access to live weather data right now, but I can explain how weather works..."
+- You support text generation, image creation, code writing, math solving, and general knowledge.
+- Always be natural and helpful, even when explaining limitations.
+
+Be concise, use markdown formatting (bold, code blocks, lists) where appropriate. Show personality.`;
 
 const SUGGESTED_PROMPTS = [
   { icon: Code,        label: 'Write code',       text: 'Write a Python function to reverse a linked list' },
@@ -23,23 +31,11 @@ const SUGGESTED_PROMPTS = [
   { icon: Zap,         label: 'Quick task',       text: 'Give me 5 productivity tips for developers' },
   { icon: MessageSquare, label: 'Draft message',  text: 'Write a professional email to reschedule a meeting' },
   { icon: Sparkles,    label: 'Creative',         text: 'Write a short story about an AI that discovers music' },
-  { icon: Bot,         label: 'Debug help',       text: 'Why does JavaScript have NaN !== NaN? Explain the logic' },
+  { icon: ImageIcon,   label: 'Image',            text: 'Draw a cozy cyberpunk cafe at night with warm neon lights' },
 ];
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 function getTodayKey() { return new Date().toISOString().split('T')[0]; }
-
-function getUsage() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_USAGE_KEY) || '{}');
-    if (raw.date !== getTodayKey()) return { date: getTodayKey(), count: 0 };
-    return raw;
-  } catch { return { date: getTodayKey(), count: 0 }; }
-}
-function saveUsage(u) { localStorage.setItem(STORAGE_USAGE_KEY, JSON.stringify(u)); }
-function incrementUsage() {
-  const u = getUsage(); u.count += 1; saveUsage(u); return u.count;
-}
 
 function loadSessions() {
   try { return JSON.parse(localStorage.getItem(STORAGE_SESS_KEY) || '[]'); }
@@ -58,13 +54,17 @@ function sessionTitle(messages) {
   return first.content.slice(0, 48) + (first.content.length > 48 ? '…' : '');
 }
 
-// ─── Markdown renderer ────────────────────────────────────────────────────────
+// ─── Enhanced Markdown renderer with code copy buttons ───────────────────────
 function renderMarkdown(text) {
   if (!text) return '';
-  // Code blocks (``` ... ```)
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre class="ai-code-block" data-lang="${lang || 'code'}"><code>${escHtml(code.trim())}</code></pre>`
-  );
+
+  // Code blocks (``` ... ```) — add copy button
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const codeTrimmed = code.trim();
+    const copyBtn = `<button class="ai-code-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(codeTrimmed)}); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy', 1800);" title="Copy code">Copy</button>`;
+    return `<pre class="ai-code-block" data-lang="${lang || 'code'}"><code>${escHtml(codeTrimmed)}</code>${copyBtn}</pre>`;
+  });
+
   // Inline code
   text = text.replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>');
   // Bold
@@ -99,58 +99,22 @@ function escHtml(s) {
 // ─── Response parsing helpers (provider-agnostic) ──────────────────────────────
 function extractResponseContent(response) {
   if (!response) return '';
-
-  // Already a string
   if (typeof response === 'string') return response;
-
-  // Puter.js format: { message?: { content?: string }, text?: string, content?: string }
   if (response.message?.content) return String(response.message.content).trim();
   if (response.text) return String(response.text).trim();
-  if (response.content) return String(response.content).trim();
-
-  // OpenAI format: { choices: [{ message: { content: string } }] }
+  if (response.content && typeof response.content === 'string') return String(response.content).trim();
   if (Array.isArray(response.choices) && response.choices[0]?.message?.content) {
     return String(response.choices[0].message.content).trim();
   }
-
-  // Gemini format: { candidates: [{ content: { parts: [{ text: string }] } }] }
   if (Array.isArray(response.candidates) && response.candidates[0]?.content?.parts?.[0]?.text) {
     return String(response.candidates[0].content.parts[0].text).trim();
   }
-
-  // Claude/Anthropic format: { content: [{ type: 'text', text: string }] }
   if (Array.isArray(response.content) && response.content[0]?.text) {
     return String(response.content[0].text).trim();
   }
-
-  // Groq format: { choices: [{ message: { content: string } }] }
-  if (response.choices?.[0]?.message?.content) {
-    return String(response.choices[0].message.content).trim();
-  }
-
-  // Last resort: try JSON.stringify but only if it's not a plain object
   const str = String(response);
   if (str && str !== '[object Object]') return str.trim();
-
   return '';
-}
-
-// Detect intent for live data (weather, elections, sports, news)
-function detectLiveDataIntent(text) {
-  const lowerText = text.toLowerCase();
-  const patterns = {
-    weather: /weather|temperature|rain|sunny|forecast|climate|wind speed/i,
-    elections: /election|vote|polling|political|candidate|campaign/i,
-    sports: /score|game|match|team|league|championship|final|basketball|football|soccer|cricket/i,
-    news: /latest news|breaking news|headline|current event|recent|today's news/i,
-    stocks: /stock price|market|crypto|bitcoin|ethereum|trading|nasdaq|dow jones/i,
-    time: /current time|what time|timezone/i,
-  };
-
-  for (const [type, pattern] of Object.entries(patterns)) {
-    if (pattern.test(lowerText)) return type;
-  }
-  return null;
 }
 
 // ─── Thinking dots ────────────────────────────────────────────────────────────
@@ -181,10 +145,11 @@ const CopyButton = memo(({ text }) => {
   );
 });
 
-// ─── MessageBubble ────────────────────────────────────────────────────────────
+// ─── MessageBubble (improved with model badge) ──────────────────────────────
 const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
   const isUser = msg.role === 'user';
   const time = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isImage = msg.type === 'image';
 
   return (
     <motion.div
@@ -194,38 +159,37 @@ const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
       style={{ display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row',
         gap: '0.7rem', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
 
-      {/* Avatar */}
       <div style={{ ...S.avatar, background: isUser ? 'var(--gradient-primary)' : 'rgba(99,102,241,0.18)',
         border: isUser ? 'none' : '1px solid rgba(99,102,241,0.3)', flexShrink: 0 }}>
         {isUser ? <User size={15} color="#fff" /> : <Bot size={15} color="var(--accent-primary)" />}
       </div>
 
-      {/* Bubble */}
       <div style={{ maxWidth: '78%', minWidth: 0 }}>
         <div style={{ ...S.bubble,
           background: isUser ? 'var(--gradient-primary)' : 'var(--glass-bg)',
           border: isUser ? 'none' : '1px solid var(--glass-border)',
           borderRadius: isUser ? '18px 4px 18px 18px' : '4px 18px 18px 18px',
-          boxShadow: isUser
-            ? '0 4px 20px rgba(99,102,241,0.35)'
-            : 'var(--glass-glow)',
+          boxShadow: isUser ? '0 4px 20px rgba(99,102,241,0.35)' : 'var(--glass-glow)',
         }}>
           {msg.thinking && !msg.content ? (
             <ThinkingDots />
+          ) : isImage ? (
+            <div style={{ textAlign: 'center' }}>
+              <img src={msg.content} alt="Generated" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '0.5rem' }} />
+              <a href={msg.content} download style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textDecoration: 'none' }}>⬇ Download</a>
+            </div>
           ) : isUser ? (
-            <p style={{ margin: 0, color: '#fff', lineHeight: 1.6, fontSize: '0.93rem',
-              whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+            <p style={{ margin: 0, color: '#fff', lineHeight: 1.6, fontSize: '0.93rem', whiteSpace: 'pre-wrap' }}>{msg.content}</p>
           ) : (
             <div className="ai-markdown" style={{ color: 'var(--text-primary)', fontSize: '0.93rem' }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
           )}
         </div>
 
-        {/* Timestamp + actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem',
           marginTop: '0.3rem', flexDirection: isUser ? 'row-reverse' : 'row' }}>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6 }}>{time}</span>
-          {!isUser && msg.content && (
+          {!isUser && msg.content && !isImage && (
             <>
               <CopyButton text={msg.content} />
               {isLast && !isStreaming && (
@@ -235,6 +199,9 @@ const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
               )}
             </>
           )}
+          {!isUser && (
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', opacity: 0.5, marginLeft: '0.3rem' }}>Puter AI</span>
+          )}
           {isUser && <CopyButton text={msg.content} />}
         </div>
       </div>
@@ -242,314 +209,211 @@ const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
   );
 });
 
-// ─── ChatSidebar ─────────────────────────────────────────────────────────────
+// ─── Credits Bar (animated progress with countdown) ─────────────────────────
+const CreditsBar = memo(({ credits, maxCredits, resetCountdown }) => {
+  const percent = Math.floor((credits / maxCredits) * 100);
+  const isLow = credits <= 10;
+  const isEmpty = credits === 0;
+
+  const barColor = isEmpty ? '#ef4444' : isLow ? '#f59e0b' : 'var(--gradient-primary)';
+
+  return (
+    <motion.div style={{ padding: '0.75rem 1rem', background: 'rgba(0,0,0,0.2)',
+      borderRadius: '12px', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <span style={{ fontSize: '0.8rem', fontWeight: '500', color: 'var(--text-primary)' }}>
+          Credits: <strong>{credits}/{maxCredits}</strong>
+        </span>
+        {isLow && (
+          <span style={{ fontSize: '0.7rem', color: '#f59e0b' }}>Resets in {resetCountdown}</span>
+        )}
+      </div>
+      <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${percent}%` }}
+          transition={{ duration: 0.4 }}
+          style={{ height: '100%', background: barColor, borderRadius: '3px' }} />
+      </div>
+    </motion.div>
+  );
+});
+
+// ─── Chat Sidebar ─────────────────────────────────────────────────────────────
 const ChatSidebar = memo(({
   sessions, currentId, onSelect, onNew, onDelete, searchQ, setSearchQ, open, onClose,
 }) => {
   const filtered = useMemo(() =>
-    sessions.filter(s => s.title.toLowerCase().includes(searchQ.toLowerCase()))
-      .sort((a, b) => b.updatedAt - a.updatedAt),
+    sessions.filter(s => s.title.toLowerCase().includes(searchQ.toLowerCase())),
     [sessions, searchQ]
   );
 
   return (
-    <>
-      {/* Overlay on mobile */}
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 39,
-              display: 'none' }}
-            className="sidebar-overlay" />
-        )}
-      </AnimatePresence>
-
-      <motion.aside
-        initial={false}
-        animate={{ x: open ? 0 : '-100%' }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        style={{ ...S.sidebar, zIndex: 40 }}
-        className="ai-sidebar">
-
-        {/* Header */}
-        <div style={S.sidebarHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Bot size={18} color="var(--accent-primary)" />
-            <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{AI_NAME}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <button onClick={onNew} title="New chat" style={{ ...S.iconBtn, background: 'var(--gradient-primary)' }}>
-              <Plus size={15} color="#fff" />
-            </button>
-            <button onClick={onClose} style={S.iconBtn} className="sidebar-close-btn">
-              <ChevronLeft size={15} />
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div style={{ padding: '0 0.75rem 0.75rem', position: 'relative' }}>
-          <Search size={13} style={{ position: 'absolute', left: '1.25rem', top: '50%',
-            transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-          <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
-            placeholder="Search chats…"
-            style={{ ...S.searchInput, paddingLeft: '2rem' }} />
-        </div>
-
-        {/* Sessions */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 0.5rem' }}>
-          <AnimatePresence>
-            {filtered.length === 0 && (
-              <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.82rem',
-                marginTop: '2rem', opacity: 0.6 }}>
-                {searchQ ? 'No chats found' : 'No conversations yet'}
-              </p>
-            )}
-            {filtered.map(s => (
-              <motion.div key={s.id} layout
-                initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                onClick={() => { onSelect(s.id); onClose(); }}
-                style={{ ...S.sessionItem,
-                  background: s.id === currentId
-                    ? 'rgba(99,102,241,0.18)'
-                    : 'transparent',
-                  borderColor: s.id === currentId
-                    ? 'rgba(99,102,241,0.4)'
-                    : 'transparent',
-                }}>
-                <MessageSquare size={13} style={{ flexShrink: 0, marginTop: '2px',
-                  color: s.id === currentId ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 500,
-                    color: s.id === currentId ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.title}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.5 }}>
-                    {s.messages.length} msg{s.messages.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <button onClick={e => { e.stopPropagation(); onDelete(s.id); }}
-                  title="Delete" style={{ ...S.iconBtn, opacity: 0, flexShrink: 0 }}
-                  className="delete-session-btn">
-                  <Trash2 size={12} color="var(--danger)" />
-                </button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding: '0.75rem', borderTop: '1px solid var(--glass-border)',
-          fontSize: '0.72rem', color: 'var(--text-secondary)', textAlign: 'center', opacity: 0.5 }}>
-          Powered by Puter.js • Free AI
-        </div>
-      </motion.aside>
-    </>
-  );
-});
-
-// ─── UsageBanner ─────────────────────────────────────────────────────────────
-const UsageBanner = memo(({ used, limit }) => {
-  const pct       = Math.min(100, (used / limit) * 100);
-  const remaining = Math.max(0, limit - used);
-  const isNear    = remaining <= 5;
-  const isDone    = remaining === 0;
-
-  return (
-    <div style={{ ...S.usageBanner,
-      borderColor: isDone ? 'rgba(239,68,68,0.4)' : isNear ? 'rgba(245,158,11,0.3)' : 'var(--glass-border)',
-      background: isDone ? 'rgba(239,68,68,0.06)' : isNear ? 'rgba(245,158,11,0.05)' : 'var(--glass-bg)',
-    }}>
+    <motion.div
+      initial={{ x: -260 }}
+      animate={{ x: open ? 0 : -260 }}
+      transition={{ duration: 0.2 }}
+      style={{ ...S.sidebar, left: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.25rem' }}>
-        <span style={{ fontSize: '0.78rem', color: isDone ? '#f87171' : isNear ? '#fcd34d' : 'var(--text-secondary)' }}>
-          {isDone ? '⚠️ Daily limit reached — resets at midnight'
-            : isNear ? `⚡ ${remaining} messages left today`
-            : `${used} / ${limit} messages used today`}
-        </span>
-        {isDone && (
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', opacity: 0.7 }}>
-            Come back tomorrow or upgrade ✨
-          </span>
+        padding: '1rem', borderBottom: '1px solid var(--glass-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Bot size={18} color="var(--accent-primary)" />
+          <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>Chats</span>
+        </div>
+        <button onClick={onClose} style={{ ...S.iconBtn, display: 'none' }} className="show-mobile">
+          <X size={18} />
+        </button>
+      </div>
+
+      <button onClick={onNew} style={{ ...S.newChatBtn, margin: '1rem' }}>
+        <Plus size={16} /> New Chat
+      </button>
+
+      <div style={{ padding: '0 1rem 1rem' }}>
+        <input
+          type="text"
+          placeholder="Search chats..."
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          style={{ ...S.searchInput }}
+        />
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 0.5rem' }}>
+        {filtered.length === 0 ? (
+          <p style={{ padding: '1rem', color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>
+            No chats found
+          </p>
+        ) : (
+          filtered.map(s => (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              onClick={() => onSelect(s.id)}
+              style={{ ...S.sessionItem, background: currentId === s.id ? 'rgba(99,102,241,0.15)' : 'transparent',
+                borderLeft: currentId === s.id ? '2px solid var(--accent-primary)' : 'none' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</p>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {s.messages.length} messages
+                </p>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
+                style={{ ...S.iconBtn, opacity: 0.6 }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
+                <Trash2 size={14} />
+              </button>
+            </motion.div>
+          ))
         )}
       </div>
-      <div style={{ height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-        <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }}
-          style={{ height: '100%', borderRadius: '999px',
-            background: isDone
-              ? 'linear-gradient(90deg,#ef4444,#f87171)'
-              : isNear
-                ? 'linear-gradient(90deg,#f59e0b,#fbbf24)'
-                : 'linear-gradient(90deg,#6366f1,#8b5cf6,#d946ef)' }} />
+
+      <div style={{ padding: '1rem', borderTop: '1px solid var(--glass-border)',
+        fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+        Powered by Puter.js & MultiTool
       </div>
-    </div>
+    </motion.div>
   );
 });
 
-// ─── LimitPopup ───────────────────────────────────────────────────────────────
-const LimitPopup = memo(({ onClose }) => (
-  <AnimatePresence>
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 100, padding: '1rem' }}>
-      <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.85, opacity: 0 }} onClick={e => e.stopPropagation()}
-        className="glass-panel"
-        style={{ maxWidth: '400px', width: '100%', padding: '2rem', textAlign: 'center' }}>
-        <div style={{ width: 56, height: 56, borderRadius: '50%',
-          background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 1rem' }}>
-          <Zap size={24} color="var(--accent-primary)" />
-        </div>
-        <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.2rem' }}>Daily Limit Reached</h3>
-        <p style={{ margin: '0 0 1.5rem', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-          You've used all <strong style={{ color: 'var(--text-primary)' }}>{DAILY_LIMIT} free messages</strong> for today.
-          Your limit resets at midnight.
-        </p>
-        <div style={{ display: 'grid', gap: '0.6rem' }}>
-          <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}
-            onClick={onClose}>
-            <Sparkles size={15} /> Got it
-          </button>
-        </div>
-      </motion.div>
+// ─── Premium Upgrade Modal (replaces old LimitPopup) ────────────────────────
+const PremiumUpgradeModal = memo(({ onClose }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+      backdropFilter: 'blur(4px)' }}
+    onClick={onClose}>
+    <motion.div
+      initial={{ scale: 0.9, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.9, opacity: 0 }}
+      onClick={(e) => e.stopPropagation()}
+      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+        borderRadius: '20px', padding: '2rem', maxWidth: '400px', textAlign: 'center' }}>
+      <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 1rem' }} />
+      <h2 style={{ margin: '0 0 0.75rem', color: 'var(--text-primary)', fontSize: '1.4rem' }}>
+        Credits Exhausted
+      </h2>
+      <p style={{ margin: '0 0 1.5rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+        You've used all your daily credits. They'll reset at midnight, or upgrade to premium for unlimited access.
+      </p>
+      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+        <button
+          onClick={onClose}
+          style={{ ...S.btn, background: 'rgba(99,102,241,0.1)', color: 'var(--accent-primary)',
+            border: '1px solid var(--accent-primary)' }}>
+          Got it
+        </button>
+        <button
+          style={{ ...S.btn, background: 'var(--gradient-primary)', color: '#fff' }}>
+          Upgrade
+        </button>
+      </div>
     </motion.div>
-  </AnimatePresence>
+  </motion.div>
 ));
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const S = {
-  page: {
-    display: 'flex', height: '100dvh', overflow: 'hidden',
-    position: 'relative', background: 'var(--bg-dark)',
-  },
-  sidebar: {
-    width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column',
-    background: 'var(--glass-bg)', backdropFilter: 'blur(16px)',
-    borderRight: '1px solid var(--glass-border)',
-    position: 'fixed', top: 0, left: 0, bottom: 0,
-  },
-  sidebarHeader: {
-    padding: '1rem 0.75rem', borderBottom: '1px solid var(--glass-border)',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  },
-  main: {
-    flex: 1, display: 'flex', flexDirection: 'column',
-    minWidth: 0, transition: 'padding-left 0.3s ease',
-  },
-  topBar: {
-    padding: '0.75rem 1rem', borderBottom: '1px solid var(--glass-border)',
-    display: 'flex', alignItems: 'center', gap: '0.75rem',
-    background: 'var(--glass-bg)', backdropFilter: 'blur(16px)',
-    flexShrink: 0,
-  },
-  messagesArea: {
-    flex: 1, overflowY: 'auto', padding: '1.5rem 1rem',
-    scrollBehavior: 'smooth',
-  },
-  inputArea: {
-    padding: '0.75rem 1rem 1rem',
-    borderTop: '1px solid var(--glass-border)',
-    background: 'var(--glass-bg)', backdropFilter: 'blur(16px)',
-    flexShrink: 0,
-  },
-  inputRow: {
-    display: 'flex', gap: '0.6rem', alignItems: 'flex-end',
-    background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)',
-    borderRadius: '14px', padding: '0.5rem 0.5rem 0.5rem 1rem',
-    transition: 'border-color 0.2s',
-  },
-  textarea: {
-    flex: 1, background: 'transparent', border: 'none', outline: 'none',
-    color: 'var(--text-primary)', fontSize: '0.93rem', resize: 'none',
-    fontFamily: 'inherit', lineHeight: 1.6, maxHeight: '160px',
-    overflowY: 'auto', paddingTop: '0.25rem',
-  },
-  sendBtn: {
-    width: 38, height: 38, borderRadius: '10px', flexShrink: 0,
-    background: 'var(--gradient-primary)', border: 'none', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    transition: 'all 0.2s', boxShadow: '0 2px 12px rgba(99,102,241,0.4)',
-  },
-  avatar: {
-    width: 30, height: 30, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  bubble: {
-    padding: '0.75rem 1rem', backdropFilter: 'blur(8px)',
-  },
-  actionBtn: {
-    background: 'transparent', border: 'none', cursor: 'pointer',
-    color: 'var(--text-secondary)', padding: '2px', lineHeight: 0,
-    borderRadius: '4px', transition: 'color 0.15s',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  iconBtn: {
-    width: 28, height: 28, borderRadius: '8px', border: '1px solid var(--glass-border)',
-    background: 'rgba(255,255,255,0.05)', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: 'var(--text-secondary)', transition: 'all 0.15s',
-  },
-  sessionItem: {
-    display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-    padding: '0.6rem 0.5rem', borderRadius: '10px', cursor: 'pointer',
-    border: '1px solid transparent', transition: 'all 0.15s',
-    marginBottom: '2px',
-  },
-  searchInput: {
-    width: '100%', background: 'rgba(255,255,255,0.05)',
-    border: '1px solid var(--glass-border)', borderRadius: '8px',
-    padding: '0.4rem 0.75rem', color: 'var(--text-primary)',
-    fontSize: '0.82rem', outline: 'none', fontFamily: 'inherit',
-  },
-  usageBanner: {
-    padding: '0.6rem 0.85rem', borderRadius: '10px',
-    border: '1px solid', marginBottom: '0.75rem',
-    backdropFilter: 'blur(8px)',
-  },
-  emptyState: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', height: '100%', gap: '0.75rem',
-    padding: '2rem', textAlign: 'center',
-  },
-};
-
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function AiChat() {
-  const [sessions,    setSessions]    = useState(loadSessions);
-  const [currentId,   setCurrentId]   = useState(loadCurrentId);
-  const [input,       setInput]       = useState('');
-  const [streaming,   setStreaming]   = useState(false);
+  // State
+  const [sessions, setSessions] = useState(loadSessions);
+  const [currentId, setCurrentId] = useState(loadCurrentId);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [searchQ,     setSearchQ]     = useState('');
-  const [usage,       setUsage]       = useState(getUsage);
-  const [showLimit,   setShowLimit]   = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [credits, setCredits] = useState(() => getCredits().credits);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [voiceMode, setVoiceMode] = useState('idle'); // idle | recording | transcribing
+  const [pendingImageGen, setPendingImageGen] = useState(false);
+  const [resetCountdown, setResetCountdown] = useState(() => getResetCountdown().display);
 
+  // Refs
   const messagesEndRef = useRef(null);
-  const textareaRef    = useRef(null);
-  const abortRef       = useRef(false);
+  const textareaRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioFileInputRef = useRef(null);
+  const abortRef = useRef(false);
 
-  // Current session
-  const currentSession = useMemo(
-    () => sessions.find(s => s.id === currentId) || null,
+  // Derived state
+  const currentSession = useMemo(() =>
+    sessions.find(s => s.id === currentId),
     [sessions, currentId]
   );
   const messages = currentSession?.messages || [];
+  const maxCredits = 50;
 
-  // Persist sessions
-  useEffect(() => { saveSessions(sessions); }, [sessions]);
-  useEffect(() => { if (currentId) saveCurrentId(currentId); }, [currentId]);
+  // Sync localStorage on changes
+  useEffect(() => {
+    saveSessions(sessions);
+  }, [sessions]);
 
-  // Auto-scroll
+  useEffect(() => {
+    if (currentId) saveCurrentId(currentId);
+  }, [currentId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Update credits from localStorage periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const state = getCredits();
+      setCredits(state.credits);
+      setResetCountdown(getResetCountdown().display);
+    }, 10000); // every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -567,7 +431,7 @@ export default function AiChat() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // ── Session helpers ──
+  // Session helpers
   const createSession = useCallback(() => {
     const id  = newSessionId();
     const now = Date.now();
@@ -596,20 +460,117 @@ export default function AiChat() {
     toast.success('Chat deleted');
   }, [currentId, sessions]);
 
-  // ── Send message ──
+  // Voice recording handlers
+  const handleMicStart = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        setVoiceMode('transcribing');
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await transcribeAudio(blob);
+        stream.getTracks().forEach(track => track.stop());
+        setVoiceMode('idle');
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setVoiceMode('recording');
+    } catch (err) {
+      toast.error('Microphone access denied');
+    }
+  }, []);
+
+  const handleMicStop = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+  }, []);
+
+  const handleAudioUpload = useCallback((file) => {
+    if (!file) return;
+    setVoiceMode('transcribing');
+    transcribeAudio(file);
+  }, []);
+
+  const transcribeAudio = useCallback(async (blob) => {
+    try {
+      const formData = new FormData();
+      formData.append('audio', blob, 'audio.webm');
+
+      if (!canAfford(CREDIT_COSTS.AUDIO_TRANSCRIPTION)) {
+        toast.error('Insufficient credits for transcription');
+        setVoiceMode('idle');
+        return;
+      }
+
+      const resp = await fetch('/api/transcribe', { method: 'POST', body: formData });
+      if (!resp.ok) throw new Error('Transcription failed');
+
+      const data = await resp.json();
+      const text = data.text || data.transcription || '';
+
+      setInput(prev => prev + (prev ? ' ' : '') + text);
+      textareaRef.current?.focus();
+
+      spendCredits(CREDIT_COSTS.AUDIO_TRANSCRIPTION);
+      setCredits(prev => prev - CREDIT_COSTS.AUDIO_TRANSCRIPTION);
+      toast.success('Transcription added');
+    } catch (err) {
+      toast.error('Transcription failed: ' + err.message);
+    } finally {
+      setVoiceMode('idle');
+    }
+  }, []);
+
+  // Send message with all new features
   const sendMessage = useCallback(async (text) => {
     const trimmed = text.trim();
     if (!trimmed || streaming) return;
 
-    // Limit check
-    const u = getUsage();
-    if (u.count >= DAILY_LIMIT) { setShowLimit(true); return; }
+    // Classify intent
+    const intent = classifyIntent(trimmed);
+    const cost = intent.cost;
 
+    // Credit check
+    if (!canAfford(cost)) {
+      setShowUpgrade(true);
+      return;
+    }
+
+    // Image generation branch
+    if (intent.type && intent.type.includes('image_generation')) {
+      try {
+        setPendingImageGen(true);
+        const { puter } = await import('@heyputer/puter.js');
+        const imageUrl = await puter.ai.txt2img(trimmed);
+
+        const sid = ensureSession();
+        const userMsg = { id: newMsgId(), role: 'user', content: trimmed, ts: Date.now() };
+        const imgMsg = { id: newMsgId(), role: 'assistant', type: 'image', content: imageUrl, ts: Date.now() };
+
+        updateSession(sid, s => ({
+          messages: [...s.messages, userMsg, imgMsg],
+          title: s.messages.length === 0 ? sessionTitle([userMsg]) : s.title,
+        }));
+
+        spendCredits(cost);
+        setCredits(prev => prev - cost);
+        setInput('');
+      } catch (err) {
+        toast.error('Image generation failed: ' + err.message);
+      } finally {
+        setPendingImageGen(false);
+      }
+      return;
+    }
+
+    // Normal text/AI branch
     const sid = ensureSession();
     const userMsg = { id: newMsgId(), role: 'user', content: trimmed, ts: Date.now() };
-    const aiMsg   = { id: newMsgId(), role: 'assistant', content: '', thinking: true, ts: Date.now() };
+    const aiMsg = { id: newMsgId(), role: 'assistant', content: '', thinking: true, ts: Date.now() };
 
-    // Append user + placeholder AI message
     updateSession(sid, s => ({
       messages: [...s.messages, userMsg, aiMsg],
       title: s.messages.length === 0 ? sessionTitle([userMsg]) : s.title,
@@ -618,38 +579,28 @@ export default function AiChat() {
     setStreaming(true);
     abortRef.current = false;
 
-    // Increment usage
-    const newCount = incrementUsage();
-    setUsage({ date: getTodayKey(), count: newCount });
-
     try {
-      // Check for live data intent and warn user if detected
-      const liveDataType = detectLiveDataIntent(trimmed);
-      if (liveDataType) {
-        toast('ℹ️ Live data queries may have limited accuracy. Ask the AI to note if this is real-time data.', {
-          duration: 4000,
-        });
+      // Build system prompt with capability context
+      let systemPrompt = SYSTEM_PROMPT;
+      if (intent.contextHint) {
+        systemPrompt += buildContextForIntent(intent);
       }
 
-      // Build conversation history for puter (last 20 messages for context window)
       const history = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...(sessions.find(s => s.id === sid)?.messages.slice(-18) || []).map(m => ({
           role: m.role, content: m.content,
         })),
         { role: 'user', content: trimmed },
       ];
 
-      // Dynamic import to keep initial bundle small
       const { puter } = await import('@heyputer/puter.js');
-
       let accumulated = '';
-      const response  = await puter.ai.chat(history, { stream: true });
+      const response = await puter.ai.chat(history, { stream: true });
 
       for await (const part of response) {
         if (abortRef.current) break;
 
-        // Use provider-agnostic parser to extract content safely
         let chunk = '';
         if (typeof part === 'string') {
           chunk = part;
@@ -657,10 +608,8 @@ export default function AiChat() {
           chunk = extractResponseContent(part);
         }
 
-        // Only append valid strings, never [object Object]
         if (typeof chunk === 'string' && chunk.length > 0) {
           accumulated += chunk;
-          // Update AI message content live
           updateSession(sid, s => ({
             messages: s.messages.map(m =>
               m.id === aiMsg.id ? { ...m, content: accumulated, thinking: false } : m
@@ -669,24 +618,20 @@ export default function AiChat() {
         }
       }
 
-      // Finalize with fallback if no content was extracted
       const finalContent = accumulated.trim() || 'Unable to generate response. Please try again.';
-      if (finalContent.includes('[object Object]')) {
-        console.warn('[AiChat] Detected [object Object] in response, clearing invalid content');
-      }
-
       updateSession(sid, s => ({
         messages: s.messages.map(m =>
           m.id === aiMsg.id ? { ...m, content: finalContent, thinking: false } : m
         ),
       }));
+
+      spendCredits(cost);
+      setCredits(prev => prev - cost);
     } catch (err) {
-      console.error('[AiChat] Error:', err);
-      const errText = err?.message?.includes('quota') || err?.message?.includes('limit')
-        ? 'Daily message limit reached. Come back tomorrow!'
-        : err?.message?.includes('API key')
-        ? 'API configuration issue. Please contact support.'
-        : `Error: ${err.message || 'Failed to connect to AI service'}`;
+      console.error('[AiChat]', err);
+      const errText = err?.message?.includes('quota') ? 'Rate limit hit — please wait a moment and try again.' :
+        err?.message?.includes('API key') ? 'API configuration issue.' :
+        `Error: ${err.message || 'Failed to get response'}`;
 
       updateSession(sid, s => ({
         messages: s.messages.map(m =>
@@ -706,7 +651,6 @@ export default function AiChat() {
     if (!currentSession) return;
     const lastUser = [...currentSession.messages].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
-    // Remove last AI message then re-send
     updateSession(currentId, s => ({
       messages: s.messages.slice(0, -1),
     }));
@@ -731,252 +675,394 @@ export default function AiChat() {
     const a    = document.createElement('a');
     a.href = url; a.download = 'chat-export.txt'; a.click();
     URL.revokeObjectURL(url);
-    toast.success('Chat exported');
   }, [messages]);
 
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
-
-  const isLimited = usage.count >= DAILY_LIMIT;
-  const mainPaddingLeft = sidebarOpen ? '260px' : '0';
-
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
-      {/* Floating background orbs */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', width: 400, height: 400, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
-          top: '-10%', left: '20%', filter: 'blur(40px)' }} />
-        <div style={{ position: 'absolute', width: 300, height: 300, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)',
-          bottom: '5%', right: '10%', filter: 'blur(40px)' }} />
-      </div>
-
-      {/* Sidebar */}
       <ChatSidebar
-        sessions={sessions} currentId={currentId}
-        onSelect={setCurrentId} onNew={createSession}
-        onDelete={deleteSession} searchQ={searchQ}
-        setSearchQ={setSearchQ} open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)} />
+        sessions={sessions}
+        currentId={currentId}
+        onSelect={setCurrentId}
+        onNew={createSession}
+        onDelete={deleteSession}
+        searchQ={searchQ}
+        setSearchQ={setSearchQ}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-      {/* Main area */}
-      <div style={{ ...S.main, paddingLeft: mainPaddingLeft, position: 'relative', zIndex: 1 }}
-        className="ai-main">
-
+      <main style={{ ...S.main, paddingLeft: sidebarOpen && window.innerWidth >= 768 ? '260px' : '0' }}>
         {/* Top bar */}
         <div style={S.topBar}>
-          <button onClick={() => setSidebarOpen(v => !v)} style={S.iconBtn} title="Toggle sidebar">
-            {sidebarOpen ? <X size={15} /> : <Menu size={15} />}
-          </button>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
-            <Bot size={16} color="var(--accent-primary)" />
-            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-              {currentSession?.title || AI_NAME}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={S.iconBtn}
+              className="hide-desktop">
+              {sidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
+            </button>
+            <Bot size={20} color="var(--accent-primary)" />
+            <h1 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>
+              {currentSession?.title || 'MultiTool AI Chat'}
+            </h1>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            {messages.length > 0 && (
-              <>
-                <button onClick={handleExport} style={S.iconBtn} title="Export chat">
-                  <Download size={14} />
-                </button>
-                <button onClick={handleClear} style={S.iconBtn} title="Clear chat">
-                  <Trash2 size={14} color="var(--danger)" />
-                </button>
-              </>
-            )}
-            <button onClick={createSession} style={{ ...S.iconBtn,
-              background: 'var(--gradient-primary)', borderColor: 'transparent' }} title="New chat">
-              <Plus size={14} color="#fff" />
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handleExport} title="Export chat" style={S.iconBtn}>
+              <Download size={18} />
+            </button>
+            <button onClick={handleClear} title="Clear chat" style={S.iconBtn}>
+              <Trash2 size={18} />
+            </button>
+            <button onClick={createSession} title="New chat" style={S.iconBtn}>
+              <Plus size={18} />
             </button>
           </div>
         </div>
 
-        {/* Messages */}
-        <div style={S.messagesArea} id="messages-area">
+        {/* Messages area */}
+        <div style={S.messagesArea}>
           {messages.length === 0 ? (
-            <div style={S.emptyState}>
-              {/* Logo */}
-              <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.4 }}
-                style={{ width: 72, height: 72, borderRadius: '50%',
-                  background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 0 40px rgba(99,102,241,0.15)' }}>
-                <Bot size={32} color="var(--accent-primary)" />
+            <motion.div style={S.emptyState}>
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 3, repeat: Infinity }}
+                style={S.emptyAvatar}>
+                <Bot size={40} color="var(--accent-primary)" />
               </motion.div>
-
-              <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}>
-                <h2 style={{ margin: '0 0 0.35rem', fontSize: '1.4rem' }}>
-                  Hello! I'm {AI_NAME}
-                </h2>
-                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Ask me anything — coding, writing, analysis, or just chat.
-                </p>
-              </motion.div>
-
-              {/* Suggested prompts */}
-              <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: '0.6rem', maxWidth: '640px', width: '100%', marginTop: '0.5rem' }}>
-                {SUGGESTED_PROMPTS.map(({ icon: Icon, label, text }) => (
-                  <motion.button key={label} whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => sendMessage(text)} disabled={isLimited}
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
-                      borderRadius: '12px', padding: '0.75rem 0.85rem', cursor: 'pointer',
-                      textAlign: 'left', transition: 'all 0.2s',
-                      backdropFilter: 'blur(12px)', opacity: isLimited ? 0.4 : 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                      <Icon size={13} color="var(--accent-primary)" />
-                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
-                        {label}
-                      </span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)',
-                      lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {text}
+              <h2 style={{ margin: '1rem 0 0.5rem', color: 'var(--text-primary)' }}>
+                Hello! I'm {AI_NAME}
+              </h2>
+              <p style={{ margin: '0 0 2rem', color: 'var(--text-secondary)', maxWidth: '400px', textAlign: 'center' }}>
+                I can help with coding, writing, image creation, transcription, and much more. What would you like to do?
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: '1rem', width: '100%', maxWidth: '500px' }}>
+                {SUGGESTED_PROMPTS.map((p, i) => (
+                  <motion.button
+                    key={i}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => sendMessage(p.text)}
+                    style={{ ...S.suggestedBtn, padding: '1rem' }}>
+                    <p.icon size={20} style={{ margin: '0 auto 0.5rem' }} />
+                    <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: '500' }}>{p.label}</p>
+                    <p style={{ margin: '0.3rem 0 0', fontSize: '0.7rem', opacity: 0.6 }}>
+                      {p.text.slice(0, 20)}...
                     </p>
                   </motion.button>
                 ))}
-              </motion.div>
-            </div>
+              </div>
+            </motion.div>
           ) : (
-            <div style={{ maxWidth: '820px', margin: '0 auto', width: '100%' }}>
-              {messages.map((msg, i) => (
-                <MessageBubble key={msg.id} msg={msg}
-                  isLast={i === messages.length - 1}
-                  onRegenerate={handleRegenerate}
-                  isStreaming={streaming} />
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
+            messages.map((msg, i) => (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                isLast={i === messages.length - 1}
+                onRegenerate={handleRegenerate}
+                isStreaming={streaming && i === messages.length - 1}
+              />
+            ))
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input area */}
         <div style={S.inputArea}>
-          <div style={{ maxWidth: '820px', margin: '0 auto' }}>
-            <UsageBanner used={usage.count} limit={DAILY_LIMIT} />
+          <CreditsBar credits={credits} maxCredits={maxCredits} resetCountdown={resetCountdown} />
 
-            <div style={{ ...S.inputRow, borderColor: isLimited ? 'rgba(239,68,68,0.3)' : undefined }}
-              onFocus={e => e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'}
-              onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={isLimited
-                  ? 'Daily limit reached — come back tomorrow'
-                  : 'Ask anything… (Enter to send, Shift+Enter for new line)'}
-                disabled={isLimited}
-                rows={1}
-                style={{ ...S.textarea, opacity: isLimited ? 0.5 : 1,
-                  cursor: isLimited ? 'not-allowed' : 'text' }} />
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
+            <button
+              onClick={voiceMode === 'recording' ? handleMicStop : handleMicStart}
+              disabled={streaming || voiceMode === 'transcribing'}
+              title={voiceMode === 'recording' ? 'Stop recording' : 'Record audio'}
+              style={{ ...S.smallBtn, background: voiceMode === 'recording' ? '#ef4444' : 'rgba(99,102,241,0.1)',
+                color: voiceMode === 'recording' ? '#fff' : 'var(--accent-primary)' }}>
+              <Mic size={16} />
+              {voiceMode === 'recording' && ' Recording...'}
+              {voiceMode === 'transcribing' && ' Transcribing...'}
+            </button>
 
-              {streaming ? (
-                <motion.button whileTap={{ scale: 0.92 }}
-                  onClick={handleStop}
-                  style={{ ...S.sendBtn, background: 'rgba(239,68,68,0.8)' }}
-                  title="Stop generating">
-                  <StopCircle size={17} color="#fff" />
-                </motion.button>
-              ) : (
-                <motion.button
-                  whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }}
-                  onClick={handleSend}
-                  disabled={!input.trim() || isLimited}
-                  style={{ ...S.sendBtn,
-                    opacity: !input.trim() || isLimited ? 0.45 : 1,
-                    cursor: !input.trim() || isLimited ? 'not-allowed' : 'pointer' }}
-                  title="Send (Enter)">
-                  <Send size={16} color="#fff" />
-                </motion.button>
-              )}
-            </div>
+            <button
+              onClick={() => audioFileInputRef.current?.click()}
+              disabled={streaming || voiceMode !== 'idle'}
+              title="Upload audio file"
+              style={{ ...S.smallBtn }}>
+              <Paperclip size={16} />
+            </button>
 
-            <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)',
-              opacity: 0.45, marginTop: '0.4rem' }}>
-              {AI_NAME} can make mistakes. Verify important information.
-            </p>
+            {credits - CREDIT_COSTS.IMAGE_GENERATION < 0 ? (
+              <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>No credits for image</span>
+            ) : (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Image: {CREDIT_COSTS.IMAGE_GENERATION}cr
+              </span>
+            )}
+
+            <input
+              ref={audioFileInputRef}
+              type="file"
+              accept="audio/*,.mp3,.wav,.m4a"
+              hidden
+              onChange={(e) => handleAudioUpload(e.target.files?.[0])}
+            />
           </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Ask me anything... (Shift + Enter for new line)"
+              disabled={streaming || voiceMode !== 'idle'}
+              style={{ ...S.textarea, opacity: streaming || voiceMode !== 'idle' ? 0.6 : 1 }}
+            />
+
+            <button
+              onClick={streaming ? handleStop : handleSend}
+              disabled={!input.trim() && !streaming || pendingImageGen}
+              title={streaming ? 'Stop' : 'Send'}
+              style={{ ...S.sendBtn, background: streaming ? '#ef4444' : 'var(--gradient-primary)' }}>
+              {streaming ? <StopCircle size={18} /> : pendingImageGen ? <Loader size={18} /> : <Send size={18} />}
+            </button>
+          </div>
+
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+            Free tier: {maxCredits} credits/day. Text = 1cr, Image = 3cr, Transcription = 2cr
+          </p>
         </div>
-      </div>
+      </main>
 
-      {/* Limit popup */}
-      {showLimit && <LimitPopup onClose={() => setShowLimit(false)} />}
+      {/* Premium upgrade modal */}
+      <AnimatePresence>
+        {showUpgrade && <PremiumUpgradeModal onClose={() => setShowUpgrade(false)} />}
+      </AnimatePresence>
 
-      {/* Scoped styles */}
+      {/* Styles */}
       <style>{`
-        .ai-sidebar { transition: transform 0.3s cubic-bezier(.4,0,.2,1); }
-        .ai-main { transition: padding-left 0.3s cubic-bezier(.4,0,.2,1); }
-
-        @media (max-width: 767px) {
-          .ai-main { padding-left: 0 !important; }
-          .sidebar-close-btn { display: flex !important; }
-          .sidebar-overlay { display: block !important; }
+        .ai-markdown { line-height: 1.7; }
+        .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 { margin: 1.2rem 0 0.5rem; }
+        .ai-markdown h2 { font-size: 1.3rem; }
+        .ai-markdown h3 { font-size: 1.1rem; }
+        .ai-markdown h4 { font-size: 1rem; }
+        .ai-markdown code { background: rgba(99,102,241,0.15); padding: 0.2em 0.4em; border-radius: 4px; }
+        .ai-code-block { background: rgba(0,0,0,0.3); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px;
+          padding: 1rem; overflow-x: auto; position: relative; margin: 1rem 0; }
+        .ai-code-block code { background: none; padding: 0; }
+        .ai-code-block::before { content: attr(data-lang); position: absolute; top: 0.5rem; right: 0.5rem;
+          font-size: 0.7rem; color: var(--text-secondary); }
+        .ai-code-copy { position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.3rem 0.6rem;
+          background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); border-radius: 4px;
+          color: var(--accent-primary); font-size: 0.7rem; cursor: pointer; }
+        .ai-code-copy:hover { background: rgba(99,102,241,0.3); }
+        .ai-list, .ai-olist { margin: 0.5rem 0; padding-left: 1.5rem; }
+        .ai-p { margin: 0.5rem 0; }
+        @media (max-width: 768px) {
+          .hide-desktop { display: none !important; }
+          .show-mobile { display: block !important; }
         }
         @media (min-width: 768px) {
-          .sidebar-close-btn { display: none !important; }
+          .hide-desktop { display: none !important; }
+          .show-mobile { display: none !important; }
         }
-
-        .ai-session-item:hover .delete-session-btn { opacity: 1 !important; }
-        .delete-session-btn:hover { background: rgba(239,68,68,0.1) !important; border-color: rgba(239,68,68,0.3) !important; }
-
-        /* Markdown styles */
-        .ai-markdown { line-height: 1.7; }
-        .ai-markdown .ai-p { margin: 0 0 0.6em; color: var(--text-primary); }
-        .ai-markdown .ai-p:last-child { margin-bottom: 0; }
-        .ai-markdown .ai-h2 { font-size: 1.15rem; font-weight: 700; margin: 0.8em 0 0.4em; color: var(--text-primary); }
-        .ai-markdown .ai-h3 { font-size: 1.05rem; font-weight: 600; margin: 0.7em 0 0.35em; color: var(--text-primary); }
-        .ai-markdown .ai-h4 { font-size: 0.95rem; font-weight: 600; margin: 0.6em 0 0.3em; color: var(--text-primary); }
-        .ai-markdown .ai-list,
-        .ai-markdown .ai-olist { margin: 0.4em 0 0.6em 1.2em; padding: 0; }
-        .ai-markdown .ai-list li,
-        .ai-markdown .ai-olist li { margin-bottom: 0.25em; color: var(--text-primary); font-size: 0.91rem; }
-        .ai-markdown strong { font-weight: 700; color: var(--text-primary); }
-        .ai-markdown em { font-style: italic; }
-
-        .ai-inline-code {
-          background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.25);
-          padding: 1px 5px; border-radius: 4px; font-family: 'Fira Code', 'Cascadia Code', monospace;
-          font-size: 0.85em; color: #a78bfa;
-        }
-        .ai-code-block {
-          background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 10px; padding: 1rem; margin: 0.6em 0;
-          overflow-x: auto; position: relative;
-        }
-        .ai-code-block::before {
-          content: attr(data-lang);
-          position: absolute; top: 6px; right: 10px;
-          font-size: 0.68rem; color: rgba(255,255,255,0.3);
-          text-transform: uppercase; letter-spacing: 0.08em;
-        }
-        .ai-code-block code {
-          font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-          font-size: 0.83rem; color: #e2e8f0; white-space: pre;
-        }
-
-        /* Scrollbar */
-        #messages-area::-webkit-scrollbar { width: 4px; }
-        #messages-area::-webkit-scrollbar-track { background: transparent; }
-        #messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
-
-        /* Session item hover */
-        div[data-sess]:hover .delete-session-btn { opacity: 1 !important; }
       `}</style>
     </div>
   );
 }
+
+// ─── Styles ────────────────────────────────────────────────────────────────────
+const S = {
+  page: {
+    height: '100dvh',
+    background: 'var(--bg-dark)',
+    display: 'flex',
+    position: 'relative',
+    color: 'var(--text-primary)',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+  },
+  sidebar: {
+    position: 'fixed',
+    top: 0,
+    width: '260px',
+    height: '100dvh',
+    background: 'var(--glass-bg)',
+    border: '1px solid var(--glass-border)',
+    display: 'flex',
+    flexDirection: 'column',
+    zIndex: 40,
+  },
+  main: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    transition: 'padding-left 0.2s',
+  },
+  topBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1rem',
+    borderBottom: '1px solid var(--glass-border)',
+    background: 'rgba(0,0,0,0.1)',
+  },
+  messagesArea: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '1.5rem',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  emptyState: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '2rem',
+  },
+  emptyAvatar: {
+    width: '80px',
+    height: '80px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid rgba(99,102,241,0.3)',
+  },
+  inputArea: {
+    padding: '1.5rem',
+    borderTop: '1px solid var(--glass-border)',
+    background: 'rgba(0,0,0,0.2)',
+  },
+  textarea: {
+    flex: 1,
+    background: 'var(--glass-bg)',
+    border: '1px solid var(--glass-border)',
+    borderRadius: '12px',
+    padding: '0.75rem',
+    color: 'var(--text-primary)',
+    fontSize: '0.9rem',
+    resize: 'none',
+    fontFamily: 'inherit',
+    maxHeight: '160px',
+  },
+  sendBtn: {
+    width: '44px',
+    height: '44px',
+    borderRadius: '12px',
+    border: 'none',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  smallBtn: {
+    padding: '0.5rem 0.75rem',
+    background: 'rgba(99,102,241,0.1)',
+    border: '1px solid rgba(99,102,241,0.2)',
+    borderRadius: '8px',
+    color: 'var(--accent-primary)',
+    fontSize: '0.85rem',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+  },
+  bubble: {
+    padding: '0.75rem 1rem',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  },
+  avatar: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  btn: {
+    padding: '0.75rem 1.5rem',
+    borderRadius: '8px',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    fontWeight: '500',
+  },
+  iconBtn: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    border: 'none',
+    background: 'rgba(99,102,241,0.1)',
+    color: 'var(--text-primary)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  newChatBtn: {
+    width: '100%',
+    padding: '0.75rem',
+    background: 'var(--gradient-primary)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    cursor: 'pointer',
+    fontWeight: '500',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+  },
+  sessionItem: {
+    padding: '0.75rem',
+    margin: '0.25rem 0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    transition: 'background 0.2s',
+  },
+  suggestedBtn: {
+    background: 'var(--glass-bg)',
+    border: '1px solid var(--glass-border)',
+    borderRadius: '12px',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    transition: 'all 0.2s',
+  },
+};
