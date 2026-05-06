@@ -153,49 +153,67 @@ const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: 'easeOut' }}
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
       style={{ display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row',
-        gap: '0.7rem', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+        gap: '0.8rem', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
 
-      <div style={{ ...S.avatar, background: isUser ? 'var(--gradient-primary)' : 'rgba(99,102,241,0.18)',
-        border: isUser ? 'none' : '1px solid rgba(99,102,241,0.3)', flexShrink: 0 }}>
-        {isUser ? <User size={15} color="#fff" /> : <Bot size={15} color="var(--accent-primary)" />}
-      </div>
+      <motion.div
+        whileHover={{ scale: 1.1 }}
+        style={{ ...S.avatar, background: isUser ? 'var(--gradient-primary)' : 'rgba(99,102,241,0.18)',
+          border: isUser ? 'none' : '1px solid rgba(99,102,241,0.3)', flexShrink: 0 }}>
+        {isUser ? <User size={16} color="#fff" /> : <Bot size={16} color="var(--accent-primary)" />}
+      </motion.div>
 
       <div style={{ maxWidth: '78%', minWidth: 0 }}>
-        <div style={{ ...S.bubble,
-          background: isUser ? 'var(--gradient-primary)' : 'var(--glass-bg)',
-          border: isUser ? 'none' : '1px solid var(--glass-border)',
-          borderRadius: isUser ? '18px 4px 18px 18px' : '4px 18px 18px 18px',
-          boxShadow: isUser ? '0 4px 20px rgba(99,102,241,0.35)' : 'var(--glass-glow)',
-        }}>
+        <motion.div
+          whileHover={{ y: -2 }}
+          style={{ ...S.bubble,
+            background: isUser ? 'var(--gradient-primary)' : 'var(--glass-bg)',
+            border: isUser ? 'none' : '1px solid var(--glass-border)',
+            borderRadius: isUser ? '18px 4px 18px 18px' : '4px 18px 18px 18px',
+            boxShadow: isUser ? '0 8px 24px rgba(99,102,241,0.25)' : 'var(--glass-glow)',
+            transition: 'all 0.3s ease',
+          }}>
           {msg.thinking && !msg.content ? (
             <ThinkingDots />
           ) : isImage ? (
-            <div style={{ textAlign: 'center' }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              style={{ textAlign: 'center' }}>
               <img src={msg.content} alt="Generated" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '0.5rem' }} />
               <a href={msg.content} download style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textDecoration: 'none' }}>⬇ Download</a>
-            </div>
+            </motion.div>
           ) : isUser ? (
-            <p style={{ margin: 0, color: '#fff', lineHeight: 1.6, fontSize: '0.93rem', whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+            <p style={{ margin: 0, color: '#fff', lineHeight: 1.6, fontSize: '0.93rem', whiteSpace: 'pre-wrap', fontWeight: '500' }}>{msg.content}</p>
           ) : (
-            <div className="ai-markdown" style={{ color: 'var(--text-primary)', fontSize: '0.93rem' }}
+            <div className="ai-markdown" style={{ color: 'var(--text-primary)', fontSize: '0.93rem', lineHeight: 1.65 }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
           )}
-        </div>
+        </motion.div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem',
-          marginTop: '0.3rem', flexDirection: isUser ? 'row-reverse' : 'row' }}>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1, duration: 0.2 }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem',
+            marginTop: '0.5rem', flexDirection: isUser ? 'row-reverse' : 'row' }}>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6 }}>{time}</span>
           {!isUser && msg.content && !isImage && (
             <>
               <CopyButton text={msg.content} />
               {isLast && !isStreaming && (
-                <button onClick={onRegenerate} title="Regenerate" style={S.actionBtn}>
-                  <RefreshCw size={13} />
-                </button>
+                <motion.button
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onRegenerate}
+                  title="Regenerate"
+                  style={{ ...S.actionBtn, transition: 'all 0.2s ease' }}>
+                  <RefreshCw size={14} />
+                </motion.button>
               )}
             </>
           )}
@@ -203,7 +221,7 @@ const MessageBubble = memo(({ msg, isLast, onRegenerate, isStreaming }) => {
             <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', opacity: 0.5, marginLeft: '0.3rem' }}>Puter AI</span>
           )}
           {isUser && <CopyButton text={msg.content} />}
-        </div>
+        </motion.div>
       </div>
     </motion.div>
   );
@@ -524,6 +542,52 @@ export default function AiChat() {
     }
   }, []);
 
+  // Helper: Call AI with timeout and fallback to Groq
+  const callAIWithFallback = useCallback(async (history) => {
+    const timeoutMs = 12000; // 12 second timeout
+    let usedFallback = false;
+
+    // Try Puter first with timeout
+    try {
+      const { puter } = await import('@heyputer/puter.js');
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Puter timeout')), timeoutMs)
+      );
+      const response = await Promise.race([
+        puter.ai.chat(history, { stream: true }),
+        timeoutPromise,
+      ]);
+      return { response, usedFallback: false };
+    } catch (err) {
+      console.warn('[AiChat] Puter failed, using Groq fallback:', err.message);
+      usedFallback = true;
+    }
+
+    // Fallback to Groq
+    try {
+      const res = await fetch('/api/groq/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: history,
+          temperature: 0.7,
+          max_tokens: 2048,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+
+      // Convert Groq response to async iterable format
+      const content = data.choices?.[0]?.message?.content || '';
+      const asyncGen = (async function* () { yield content; })();
+      return { response: asyncGen, usedFallback: true };
+    } catch (err) {
+      throw new Error(`All AI providers failed: ${err.message}`);
+    }
+  }, []);
+
   // Send message with all new features
   const sendMessage = useCallback(async (text) => {
     const trimmed = text.trim();
@@ -544,7 +608,14 @@ export default function AiChat() {
       try {
         setPendingImageGen(true);
         const { puter } = await import('@heyputer/puter.js');
-        const imageUrl = await puter.ai.txt2img(trimmed);
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Image generation timeout')), 15000)
+        );
+        const imageUrl = await Promise.race([
+          puter.ai.txt2img(trimmed),
+          timeoutPromise,
+        ]);
 
         const sid = ensureSession();
         const userMsg = { id: newMsgId(), role: 'user', content: trimmed, ts: Date.now() };
@@ -594,10 +665,9 @@ export default function AiChat() {
         { role: 'user', content: trimmed },
       ];
 
-      const { puter } = await import('@heyputer/puter.js');
-      let accumulated = '';
-      const response = await puter.ai.chat(history, { stream: true });
+      const { response, usedFallback } = await callAIWithFallback(history);
 
+      let accumulated = '';
       for await (const part of response) {
         if (abortRef.current) break;
 
@@ -625,12 +695,17 @@ export default function AiChat() {
         ),
       }));
 
+      if (usedFallback) {
+        toast.success('Using backup AI (Groq)');
+      }
+
       spendCredits(cost);
       setCredits(prev => prev - cost);
     } catch (err) {
       console.error('[AiChat]', err);
       const errText = err?.message?.includes('quota') ? 'Rate limit hit — please wait a moment and try again.' :
         err?.message?.includes('API key') ? 'API configuration issue.' :
+        err?.message?.includes('All AI providers failed') ? 'AI service unavailable. Please try again later.' :
         `Error: ${err.message || 'Failed to get response'}`;
 
       updateSession(sid, s => ({
@@ -643,7 +718,7 @@ export default function AiChat() {
       setStreaming(false);
       abortRef.current = false;
     }
-  }, [streaming, ensureSession, updateSession, sessions]);
+  }, [streaming, ensureSession, updateSession, sessions, callAIWithFallback]);
 
   const handleSend = useCallback(() => sendMessage(input), [sendMessage, input]);
 
@@ -809,7 +884,7 @@ export default function AiChat() {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <motion.div style={{ display: 'flex', gap: '0.75rem' }}>
             <textarea
               ref={textareaRef}
               value={input}
@@ -822,17 +897,40 @@ export default function AiChat() {
               }}
               placeholder="Ask me anything... (Shift + Enter for new line)"
               disabled={streaming || voiceMode !== 'idle'}
-              style={{ ...S.textarea, opacity: streaming || voiceMode !== 'idle' ? 0.6 : 1 }}
+              style={{
+                ...S.textarea,
+                opacity: streaming || voiceMode !== 'idle' ? 0.6 : 1,
+                borderColor: input.trim() ? 'rgba(99,102,241,0.5)' : 'var(--glass-border)',
+                boxShadow: input.trim() ? '0 0 0 3px rgba(99,102,241,0.1)' : 'none',
+              }}
             />
 
-            <button
+            <motion.button
               onClick={streaming ? handleStop : handleSend}
               disabled={!input.trim() && !streaming || pendingImageGen}
               title={streaming ? 'Stop' : 'Send'}
-              style={{ ...S.sendBtn, background: streaming ? '#ef4444' : 'var(--gradient-primary)' }}>
-              {streaming ? <StopCircle size={18} /> : pendingImageGen ? <Loader size={18} /> : <Send size={18} />}
-            </button>
-          </div>
+              whileHover={(!input.trim() && !streaming) || pendingImageGen ? {} : { scale: 1.05 }}
+              whileTap={(!input.trim() && !streaming) || pendingImageGen ? {} : { scale: 0.95 }}
+              style={{
+                ...S.sendBtn,
+                background: streaming ? '#ef4444' : 'var(--gradient-primary)',
+                opacity: (!input.trim() && !streaming) || pendingImageGen ? 0.5 : 1,
+              }}>
+              {streaming ? (
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                  <StopCircle size={18} />
+                </motion.div>
+              ) : pendingImageGen ? (
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                  <Loader size={18} />
+                </motion.div>
+              ) : (
+                <motion.div animate={input.trim() ? { x: 2 } : { x: 0 }} transition={{ duration: 0.2 }}>
+                  <Send size={18} />
+                </motion.div>
+              )}
+            </motion.button>
+          </motion.div>
 
           <p style={{ margin: '0.5rem 0 0', fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
             Free tier: {maxCredits} credits/day. Text = 1cr, Image = 3cr, Transcription = 2cr
@@ -946,14 +1044,16 @@ const S = {
   textarea: {
     flex: 1,
     background: 'var(--glass-bg)',
-    border: '1px solid var(--glass-border)',
+    border: '1.5px solid var(--glass-border)',
     borderRadius: '12px',
-    padding: '0.75rem',
+    padding: '0.9rem 1rem',
     color: 'var(--text-primary)',
     fontSize: '0.9rem',
     resize: 'none',
     fontFamily: 'inherit',
     maxHeight: '160px',
+    transition: 'all 0.2s ease',
+    outline: 'none',
   },
   sendBtn: {
     width: '44px',
@@ -966,6 +1066,8 @@ const S = {
     justifyContent: 'center',
     cursor: 'pointer',
     flexShrink: 0,
+    transition: 'all 0.2s ease',
+    fontWeight: '600',
   },
   smallBtn: {
     padding: '0.5rem 0.75rem',
@@ -1056,13 +1158,14 @@ const S = {
   },
   suggestedBtn: {
     background: 'var(--glass-bg)',
-    border: '1px solid var(--glass-border)',
+    border: '1.5px solid rgba(99,102,241,0.2)',
     borderRadius: '12px',
     color: 'var(--text-primary)',
     cursor: 'pointer',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    transition: 'all 0.2s',
+    transition: 'all 0.25s ease',
+    backdropFilter: 'blur(10px)',
   },
 };
