@@ -2177,10 +2177,6 @@ app.post('/api/seo-audit', async (c) => {
   }
 });
 
-app.all('/api/*', (c) => {
-  return c.json({ error: 'API route not found' }, 404);
-});
-
 // ==========================================
 // TRANSCRIPTION ROUTES
 // ==========================================
@@ -2328,6 +2324,10 @@ app.get('/api/debug', (c) => {
     hasJwt: !!c.env.JWT_SECRET,
     hasYoutubeServiceUrl: !!getYtServiceUrl(c),
   });
+});
+
+app.all('/api/*', (c) => {
+  return c.json({ error: 'API route not found' }, 404);
 });
 
 // Export a raw Cloudflare Worker fetch handler instead of `export default app`.
