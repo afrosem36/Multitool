@@ -126,6 +126,7 @@ function AppRoutes() {
         <Route path="/image-tools" element={<ToolHubPage sectionId="image" />} />
         <Route path="/text-tools" element={<ToolHubPage sectionId="text" />} />
         <Route path="/calculators" element={<ToolHubPage sectionId="calculators" />} />
+        <Route path="/ai-tools" element={<ToolHubPage sectionId="ai" />} />
         <Route path="/utilities" element={<ToolHubPage sectionId="utilities" />} />
         <Route path="/excel" element={<ToolHubPage sectionId="excel" />} />
         <Route path="/whatsapp-link-creator" element={<WhatsAppLinkCreator />} />

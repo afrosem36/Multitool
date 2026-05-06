@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   AlertTriangle,
   AudioLines,
+  Brain,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
@@ -32,6 +34,16 @@ import {
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import { useAuth } from '../../context/AuthContext';
+import {
+  callAI,
+  buildImproveTextPrompt,
+  buildTranslationPolishPrompt,
+  buildQaAnalysisPrompt,
+  buildSummarizePrompt,
+  buildExtractKeyPointsPrompt,
+  parseQaReport,
+  parseKeyPoints,
+} from './audioAiHelpers';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DAILY_LIMIT    = 10;
@@ -697,6 +709,9 @@ export default function AudioTranscription() {
   const [aiProvider, setAiProvider]         = useState(null); // 'puter' | 'groq'
   const [aiReport, setAiReport]             = useState(null);
   const [aiActionType, setAiActionType]     = useState(null);
+  const [enhancedText, setEnhancedText]     = useState('');
+  const [callSummary, setCallSummary]       = useState('');
+  const [keyPoints, setKeyPoints]           = useState('');
 
   // ── Credits ──
   const [credits, setCredits]                   = useState({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT });
@@ -1026,40 +1041,63 @@ export default function AudioTranscription() {
   // ── AI Action Handlers ──
   const handleAIAction = async (type) => {
     if (!transcript) { toast.error('No transcript to process'); return; }
-    
+
     setIsProcessingAI(true);
     setAiActionType(type);
     setAiProvider(null);
     setAiReport(null);
+    setEnhancedText('');
+    setCallSummary('');
+    setKeyPoints('');
 
-    let prompt = '';
     const textToProcess = qaMode ? editableText : transcript;
+    let messages = [];
 
+    // Build messages based on action type
     if (type === 'improve') {
-      prompt = `Improve the following transcript. Fix grammar, punctuation, and readability. Keep the original meaning and preserve speaker labels (e.g., [Speaker 1]:). Do NOT over-formalize; keep it natural. If Hinglish/Hindi is present, keep it natural.\n\nTranscript:\n${textToProcess}`;
+      messages = buildImproveTextPrompt(textToProcess);
     } else if (type === 'polish') {
-      prompt = `Polish the translation of this transcript. Ensure natural wording, better sentence flow, and conversational formatting while preserving the business/call-center tone. Keep speaker formatting.\n\nTranscript:\n${textToProcess}`;
+      messages = buildTranslationPolishPrompt(textToProcess, outputLanguage, 'natural language');
     } else if (type === 'summarize') {
-      prompt = `Provide a concise summary of the following call transcript.\n\nTranscript:\n${textToProcess}`;
+      messages = buildSummarizePrompt(textToProcess);
     } else if (type === 'extract') {
-      prompt = `Extract the key points and action items from the following call transcript.\n\nTranscript:\n${textToProcess}`;
+      messages = buildExtractKeyPointsPrompt(textToProcess);
     } else if (type === 'qa') {
       const totalMarks = qaParams.reduce((s, p) => s + (Number(p.marks) || 0), 0);
-      const paramsList = qaParams.map(p => `- ${p.name}: ${p.marks} marks`).join('\n');
-      prompt = `You are a professional call quality analyst. Evaluate the following transcript based on these parameters:\n${paramsList}\nTotal Marks: ${totalMarks}\n\nTranscript:\n${textToProcess}\n\nGenerate a structured report with:\n1. Parameter-wise scoring and feedback\n2. Final Score\n3. Overall Performance\n4. Strengths\n5. Areas to Improve\n6. Customer handling review\n7. Empathy analysis\n8. Communication quality\n9. Professionalism score\n10. Actionable Suggestions\n\nFormat the report cleanly.`;
+      messages = buildQaAnalysisPrompt(textToProcess, qaParams, totalMarks);
     }
 
     try {
-      const result = await runAIAction(prompt, apiFetch, (p) => setAiProvider(p));
-      if (type === 'qa') {
-        setAiReport(result.content);
-      } else {
-        if (qaMode) setEditableText(result.content);
-        else setTranscript(result.content);
+      const content = await callAI(messages, {
+        apiFetch,
+        onProvider: (provider) => setAiProvider(provider),
+      });
+
+      if (type === 'improve') {
+        setEnhancedText(content);
+      } else if (type === 'polish') {
+        setEnhancedText(content);
+      } else if (type === 'summarize') {
+        setCallSummary(content);
+      } else if (type === 'extract') {
+        const points = parseKeyPoints(content);
+        setKeyPoints(points.join('\n'));
+      } else if (type === 'qa') {
+        try {
+          const report = parseQaReport(content);
+          setAiReport(report);
+        } catch (parseErr) {
+          toast.error('Failed to parse QA report: ' + parseErr.message);
+          setAiReport(null);
+        }
+      }
+
+      if (type !== 'qa') {
         toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} complete`);
       }
     } catch (err) {
-      toast.error('AI Processing failed');
+      console.error('[AI Action]', err);
+      toast.error('AI Processing failed: ' + err.message);
     } finally {
       setIsProcessingAI(false);
     }
@@ -1600,8 +1638,189 @@ export default function AudioTranscription() {
               </p>
             )}
 
+            {/* ── AI QA Report (from Puter/Groq) ── */}
+            {aiReport && qaMode && (
+              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
+                border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.06)' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+                  <p style={{ margin:0, fontWeight:700, fontSize:'0.95rem', display:'flex', alignItems:'center', gap:'0.5rem', color:'#c4b5fd' }}>
+                    <Brain size={16} color="#a78bfa" /> AI QA Analysis Report
+                  </p>
+                  {aiProvider && (
+                    <span style={{ fontSize:'0.72rem', padding:'3px 8px', borderRadius:'6px',
+                      background: aiProvider === 'puter' ? 'rgba(56,189,248,0.15)' : 'rgba(245,158,11,0.15)',
+                      color: aiProvider === 'puter' ? '#38bdf8' : '#fbbf24' }}>
+                      {aiProvider === 'puter' ? '⚡ Puter AI' : '🔄 Groq'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Final Score Header */}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem',
+                  background:'rgba(255,255,255,0.04)', borderRadius:'8px', marginBottom:'1rem', borderLeft:'3px solid #a78bfa' }}>
+                  <div>
+                    <p style={{ margin:0, fontSize:'0.8rem', color:'var(--text-secondary)' }}>Final Score</p>
+                    <p style={{ margin:'0.2rem 0 0', fontWeight:700, fontSize:'1.3rem', color:'#c4b5fd' }}>
+                      {aiReport.finalScore}/{aiReport.totalMarks}
+                    </p>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <p style={{ margin:0, fontSize:'0.9rem', fontWeight:600, color: aiReport.performance === 'Excellent' ? '#4ade80' : aiReport.performance === 'Good' ? '#facc15' : aiReport.performance === 'Average' ? '#f97316' : '#ef4444' }}>
+                      {aiReport.performance}
+                    </p>
+                    <p style={{ margin:'0.2rem 0 0', fontSize:'0.75rem', color:'var(--text-secondary)' }}>Overall Performance</p>
+                  </div>
+                </div>
+
+                {/* Parameter-wise Scores */}
+                <div style={{ marginBottom:'1rem' }}>
+                  <p style={{ margin:'0 0 0.65rem', fontWeight:600, fontSize:'0.88rem', color:'#e0e7ff' }}>Parameter-wise Breakdown</p>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
+                    {aiReport.parameters && aiReport.parameters.map((param, idx) => {
+                      const percent = (param.score / param.maxScore) * 100;
+                      const barColor = percent >= 80 ? '#4ade80' : percent >= 60 ? '#facc15' : percent >= 40 ? '#f97316' : '#ef4444';
+                      return (
+                        <div key={idx}>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.3rem' }}>
+                            <span style={{ fontSize:'0.85rem', fontWeight:500, color:'var(--text-primary)' }}>{param.name}</span>
+                            <span style={{ fontSize:'0.8rem', fontWeight:600, color:barColor }}>{param.score}/{param.maxScore}</span>
+                          </div>
+                          <div style={{ height:'5px', background:'rgba(255,255,255,0.1)', borderRadius:'3px', overflow:'hidden' }}>
+                            <div style={{ height:'100%', width:`${percent}%`, background:barColor, transition:'width 0.3s' }} />
+                          </div>
+                          {param.feedback && (
+                            <p style={{ margin:'0.25rem 0 0', fontSize:'0.78rem', color:'var(--text-secondary)', fontStyle:'italic' }}>
+                              {param.feedback}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Strengths & Areas */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'1rem' }}>
+                  <div>
+                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#4ade80' }}>✓ Strengths</p>
+                    <ul style={{ margin:0, paddingLeft:'1.2rem', fontSize:'0.82rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
+                      {aiReport.strengths && aiReport.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#f97316' }}>⚠ Areas to Improve</p>
+                    <ul style={{ margin:0, paddingLeft:'1.2rem', fontSize:'0.82rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
+                      {aiReport.areasToImprove && aiReport.areasToImprove.map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Summary */}
+                {aiReport.summary && (
+                  <div>
+                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#a78bfa' }}>📋 Summary</p>
+                    <p style={{ margin:0, fontSize:'0.85rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
+                      {aiReport.summary}
+                    </p>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.85rem', flexWrap:'wrap' }}>
+                  <button onClick={() => {
+                    const text = `QA ANALYSIS REPORT\n\nFinal Score: ${aiReport.finalScore}/${aiReport.totalMarks} (${aiReport.performance})\n\n` +
+                      aiReport.parameters.map(p => `${p.name}: ${p.score}/${p.maxScore}\n${p.feedback}`).join('\n\n') +
+                      `\n\nStrengths:\n${aiReport.strengths.join('\n')}\n\nAreas to Improve:\n${aiReport.areasToImprove.join('\n')}\n\n${aiReport.summary}`;
+                    navigator.clipboard.writeText(text).then(() => toast.success('Report copied!'));
+                  }} className="btn-secondary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
+                    <Copy size={13} /> Copy Report
+                  </button>
+                  <button onClick={() => {
+                    const text = `QA ANALYSIS REPORT\n\nFinal Score: ${aiReport.finalScore}/${aiReport.totalMarks} (${aiReport.performance})\n\n` +
+                      aiReport.parameters.map(p => `${p.name}: ${p.score}/${p.maxScore}\n${p.feedback}`).join('\n\n') +
+                      `\n\nStrengths:\n${aiReport.strengths.join('\n')}\n\nAreas to Improve:\n${aiReport.areasToImprove.join('\n')}\n\n${aiReport.summary}`;
+                    const blob = new Blob([text], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'qa-report.txt';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success('Report downloaded!');
+                  }} className="btn-secondary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
+                    <Download size={13} /> Download
+                  </button>
+                  <button onClick={() => handleAIAction('qa')} className="btn-secondary"
+                    style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
+                    <RefreshCw size={13} /> Retry
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Enhanced Text Panel ── */}
+            {enhancedText && (
+              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
+                border:'1px solid rgba(99,102,241,0.3)', background:'rgba(99,102,241,0.06)' }}>
+                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
+                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#6366f1' }}>
+                  <Sparkles size={15} color="#6366f1" /> ✨ Improved Text
+                </p>
+                <div style={{ background:'rgba(99,102,241,0.08)', borderRadius:'8px', padding:'1rem',
+                  maxHeight:'200px', overflowY:'auto', marginBottom:'0.75rem' }}>
+                  <p style={{ margin:0, fontSize:'0.9rem', color:'var(--text-primary)', whiteSpace:'pre-wrap', lineHeight:1.7 }}>
+                    {enhancedText}
+                  </p>
+                </div>
+                <div style={{ display:'flex', gap:'0.5rem' }}>
+                  <button onClick={() => {
+                    if (qaMode) setEditableText(enhancedText);
+                    else setTranscript(enhancedText);
+                    setEnhancedText('');
+                    toast.success('Changes applied!');
+                  }} className="btn-primary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
+                    <Check size={13} /> Apply Changes
+                  </button>
+                  <button onClick={() => navigator.clipboard.writeText(enhancedText)} className="btn-secondary"
+                    style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
+                    <Copy size={13} /> Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Call Summary Panel ── */}
+            {callSummary && (
+              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
+                border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.06)' }}>
+                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
+                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#a78bfa' }}>
+                  <FileText size={15} color="#a78bfa" /> 📝 Call Summary
+                </p>
+                <p style={{ margin:0, fontSize:'0.9rem', color:'var(--text-primary)', lineHeight:1.7 }}>
+                  {callSummary}
+                </p>
+              </div>
+            )}
+
+            {/* ── Key Points Panel ── */}
+            {keyPoints && (
+              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
+                border:'1px solid rgba(52,211,153,0.3)', background:'rgba(52,211,153,0.06)' }}>
+                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
+                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#34d399' }}>
+                  <Hash size={15} color="#34d399" /> 📌 Key Points
+                </p>
+                <ul style={{ margin:0, paddingLeft:'1.5rem', fontSize:'0.9rem', color:'var(--text-primary)', lineHeight:1.8 }}>
+                  {keyPoints.split('\n').filter(p => p.trim()).map((point, i) => (
+                    <li key={i} style={{ marginBottom:'0.4rem' }}>{point.replace(/^[-*]\s*/, '')}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* ── ChatGPT QA Button — shown inline when ready ── */}
-            {qaMode && chatGptUrl && (
+            {qaMode && chatGptUrl && !aiReport && (
               <div style={{ marginTop:'1rem', padding:'1rem', borderRadius:'14px',
                 border:'1px solid rgba(167,139,250,0.4)', background:'rgba(167,139,250,0.08)' }}>
                 <p style={{ margin:'0 0 0.35rem', fontWeight:700, fontSize:'0.92rem',
@@ -1628,7 +1847,7 @@ export default function AudioTranscription() {
             {qaMode && !transcript && (
               <p style={{ margin:'0.75rem 0 0', fontSize:'0.82rem', color:'#a78bfa',
                 display:'flex', alignItems:'center', gap:'0.35rem' }}>
-                <ClipboardCheck size={13} /> QA mode active — transcribe your audio to generate the ChatGPT analysis prompt.
+                <ClipboardCheck size={13} /> QA mode active — transcribe your audio to generate AI or ChatGPT analysis.
               </p>
             )}
           </div>

@@ -1,5 +1,6 @@
 import {
   AlignJustify,
+  Bot,
   Droplet,
   Edit3,
   Eraser,
@@ -631,6 +632,18 @@ export const videoTools = [
   }
 ];
 
+// AI Tools
+export const aiTools = [
+  {
+    id: 'ai-chat',
+    name: 'MultiTool AI Chat',
+    description: 'ChatGPT-style AI assistant with image generation, voice transcription, and smart responses.',
+    path: '/ai-chat',
+    icon: Bot,
+    color: 'rgba(99, 102, 241, 0.15)',
+  },
+];
+
 export const toolSections = [
   {
     id: 'pdf',
@@ -679,6 +692,14 @@ export const toolSections = [
     description: 'A collection of useful calculators and miscellaneous tools.',
     icon: Calculator,
     tools: calculatorTools
+  },
+  {
+    id: 'ai',
+    label: 'AI Tools',
+    path: '/ai-tools',
+    description: 'Intelligent AI-powered tools for chat, analysis, and more.',
+    icon: Bot,
+    tools: aiTools
   },
   {
     id: 'games',
