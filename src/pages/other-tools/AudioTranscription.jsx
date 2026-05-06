@@ -251,7 +251,7 @@ async function apiFetchWithRetry(apiFetch, url, options = {}, attempts = RETRY_A
       await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
       continue;
     }
-    const noRetry = [400, 401, 403].includes(res.status);
+    const noRetry = [400, 401, 403, 404, 413, 429].includes(res.status);
     try {
       return await parseJsonResponse(res);
     } catch (err) {
@@ -424,9 +424,12 @@ function generateSRT(text) {
 function SpeakerBlocks({ text, searchTerm }) {
   if (!text) {
     return (
-      <span style={{ color: 'var(--text-secondary)' }}>
-        Transcribed text will appear here after processing.
-      </span>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        height:'100%', minHeight:'200px', gap:'0.75rem', color:'var(--text-secondary)', textAlign:'center', padding:'1rem' }}>
+        <FileAudio size={32} style={{ opacity:0.2 }} />
+        <span style={{ fontSize:'0.9rem' }}>Transcription will appear here</span>
+        <span style={{ fontSize:'0.78rem', opacity:0.6 }}>Upload an audio file and press Transcribe Audio</span>
+      </div>
     );
   }
 
@@ -627,6 +630,7 @@ export default function AudioTranscription() {
 
   // ── UI ──
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isDragOver,     setIsDragOver]     = useState(false);
 
   // ── Advanced transcription ──
   const [enableTimestamps, setEnableTimestamps] = useState(false);
@@ -636,14 +640,16 @@ export default function AudioTranscription() {
   const usingOwnKey = false; // keys are server-side
 
   // ── Credits fetch ──
-  useEffect(() => {
+  const loadCredits = useCallback(() => {
     if (!user) { setCredits({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT }); return; }
     setIsLoadingCredits(true);
     apiFetchWithRetry(apiFetch, '/api/transcribe/credits')
-      .then(d => { if (d.data) setCredits(d.data); })
+      .then(d => { if (d?.data) setCredits(d.data); })
       .catch(() => {})
       .finally(() => setIsLoadingCredits(false));
   }, [apiFetch, user]);
+
+  useEffect(() => { loadCredits(); }, [loadCredits]);
 
   // ── Sync editable text with transcript ──
   useEffect(() => { setEditableText(transcript); }, [transcript]);
@@ -702,10 +708,14 @@ export default function AudioTranscription() {
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
+    setIsDragOver(false);
     if (handleBlockedAction()) return;
     const f = e.dataTransfer.files?.[0];
     if (f) handleFileChange({ target: { files: [f] } });
   }, [handleFileChange]);
+
+  const handleDragOver  = useCallback((e) => { e.preventDefault(); setIsDragOver(true);  }, []);
+  const handleDragLeave = useCallback((e) => { e.preventDefault(); setIsDragOver(false); }, []);
 
   // ── Diarization sub-step (can be called independently) ──
   const runDiarization = async (source) => {
@@ -847,6 +857,7 @@ export default function AudioTranscription() {
 
       setIsTranscribing(false);
       setChunkInfo({ current: 0, total: 0 });
+      loadCredits();
 
       if (speakerRecognition && fullTranscript) {
         await runDiarization(fullTranscript);
@@ -940,20 +951,30 @@ export default function AudioTranscription() {
         {user ? (
           <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
             <div>
-              <p style={{ margin:0, fontWeight:700 }}>Daily transcription quota</p>
-              <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.9rem' }}>
-                {isLoadingCredits ? 'Refreshing…' : `${credits.creditsRemaining} of ${credits.creditsTotal} remaining today`}
+              <p style={{ margin:0, fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                Daily Quota
+                {isLoadingCredits && (
+                  <span style={{ fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:400 }}>refreshing…</span>
+                )}
+              </p>
+              <p style={{ margin:'0.25rem 0 0', color: credits.creditsRemaining === 0 ? '#f87171' : 'var(--text-secondary)', fontSize:'0.88rem' }}>
+                {credits.creditsRemaining === 0
+                  ? 'Quota exhausted — resets at midnight UTC'
+                  : `${credits.creditsRemaining} of ${credits.creditsTotal} transcriptions remaining today`}
               </p>
             </div>
-            <div style={{ minWidth:'220px', flex:'1 1 220px' }}>
-              <div style={{ height:'8px', borderRadius:'999px', overflow:'hidden', background:'rgba(255,255,255,0.08)' }}>
-                <div style={{ height:'100%', transition:'width 0.3s ease',
-                  width:`${(credits.creditsUsed / Math.max(credits.creditsTotal,1))*100}%`,
-                  background:'linear-gradient(90deg,#38bdf8,#818cf8)' }} />
+            <div style={{ minWidth:'200px', flex:'1 1 200px' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:'5px' }}>
+                <span>{credits.creditsUsed} used</span>
+                <span>{credits.creditsTotal} total</span>
               </div>
-              <p style={{ margin:'0.4rem 0 0', fontSize:'0.78rem', color:'var(--text-secondary)' }}>
-                {credits.creditsRemaining === 0 ? '⚠️ Quota exhausted — resets at midnight' : `${credits.creditsUsed} used`}
-              </p>
+              <div style={{ height:'6px', borderRadius:'999px', overflow:'hidden', background:'rgba(255,255,255,0.08)' }}>
+                <div style={{ height:'100%', transition:'width 0.4s ease',
+                  width:`${(credits.creditsUsed / Math.max(credits.creditsTotal,1))*100}%`,
+                  background: credits.creditsRemaining === 0
+                    ? 'linear-gradient(90deg,#ef4444,#f87171)'
+                    : 'linear-gradient(90deg,#38bdf8,#818cf8)' }} />
+              </div>
             </div>
           </div>
         ) : (
@@ -1005,23 +1026,28 @@ export default function AudioTranscription() {
             <h3 style={{ marginTop:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <Upload size={16} color="var(--accent-primary)" /> Upload Audio
             </h3>
-            <p style={{ color:'var(--text-secondary)', marginTop:0, fontSize:'0.9rem' }}>
-              MP3, WAV, M4A, AAC, FLAC, OGG, WEBM — max {MAX_FILE_MB} MB
-            </p>
 
             <label htmlFor="audio-upload"
-              onDragOver={e => e.preventDefault()} onDrop={handleDrop}
+              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
               style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'0.75rem',
-                minHeight:'155px', borderRadius:'16px', border:'2px dashed var(--border-color)',
-                background:'rgba(255,255,255,0.02)', cursor: user ? 'pointer' : 'not-allowed',
-                opacity: user ? 1 : 0.7, textAlign:'center', padding:'1.25rem' }}
+                minHeight:'160px', borderRadius:'16px', transition:'all 0.2s',
+                border: isDragOver ? '2px dashed #38bdf8' : file ? '2px dashed rgba(56,189,248,0.4)' : '2px dashed var(--border-color)',
+                background: isDragOver ? 'rgba(56,189,248,0.08)' : file ? 'rgba(56,189,248,0.04)' : 'rgba(255,255,255,0.02)',
+                cursor: user ? 'pointer' : 'not-allowed', opacity: user ? 1 : 0.6,
+                textAlign:'center', padding:'1.25rem', boxShadow: isDragOver ? '0 0 0 4px rgba(56,189,248,0.15)' : 'none' }}
               onClick={e => { if (!user) { e.preventDefault(); setShowLoginModal(true); } }}>
               <input ref={fileInputRef} id="audio-upload" type="file" hidden accept={ACCEPTED_AUDIO} onChange={handleFileChange} />
-              <div style={iconBox('#3b82f6')}><Mic size={20} color="#60a5fa" /></div>
+              <div style={iconBox(isDragOver ? '#38bdf8' : file ? '#22d3ee' : '#3b82f6')}>
+                {isDragOver ? <Download size={20} color="#38bdf8" /> : file ? <FileAudio size={20} color="#22d3ee" /> : <Mic size={20} color="#60a5fa" />}
+              </div>
               <div>
-                <strong>{file ? file.name : 'Drop or choose an audio file'}</strong>
-                <p style={{ margin:'0.4rem 0 0', color:'var(--text-secondary)', fontSize:'0.85rem' }}>
-                  {file ? `${(file.size/1024/1024).toFixed(2)} MB · ${file.type||'audio'}` : 'Drag & drop supported'}
+                <strong style={{ color: file ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize:'0.95rem' }}>
+                  {isDragOver ? 'Release to upload' : file ? file.name : 'Drop audio or click to browse'}
+                </strong>
+                <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.82rem' }}>
+                  {file
+                    ? `${(file.size/1024/1024).toFixed(2)} MB${audioDurMin > 0 ? ` · ${Math.floor(audioDurMin)}m ${Math.round((audioDurMin % 1) * 60)}s` : ''}`
+                    : 'MP3, WAV, M4A, AAC, FLAC, OGG · max 25 MB'}
                 </p>
               </div>
             </label>
@@ -1179,13 +1205,16 @@ export default function AudioTranscription() {
           {/* Transcribe button + progress */}
           <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
             <button onClick={handleTranscribe} disabled={!canTranscribe} className="btn-primary"
-              style={{ flex:'1 1 200px', opacity: canTranscribe ? 1 : 0.55,
+              title={!user ? 'Login to transcribe' : credits.creditsRemaining === 0 ? 'Daily quota reached' : !file ? 'Upload a file first' : ''}
+              style={{ flex:'1 1 200px', opacity: canTranscribe ? 1 : 0.5,
                 cursor: canTranscribe ? 'pointer' : 'not-allowed',
                 display:'inline-flex', alignItems:'center', justifyContent:'center', gap:'0.5rem' }}>
               {isBusy
                 ? <><LoaderCircle size={17} className="spin" />
                     {isDiarizing ? 'Identifying Speakers…' : 'Transcribing…'}</>
-                : <><FileAudio size={17} /> {user ? 'Transcribe Audio' : 'Login Required'}</>}
+                : credits.creditsRemaining === 0 && user
+                  ? <><AlertTriangle size={17} /> Quota Exhausted</>
+                  : <><FileAudio size={17} /> {user ? 'Transcribe Audio' : 'Login to Transcribe'}</>}
             </button>
             <button onClick={clearSession} className="btn-secondary" style={{ flex:'0 0 auto' }}>
               <Trash2 size={16} />

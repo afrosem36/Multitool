@@ -67,13 +67,6 @@ async function userExists(db, userId) {
 }
 
 async function incrementUserQuota(db, userId, toolId) {
-  // Verify user exists before incrementing quota to avoid foreign key constraint errors
-  const exists = await userExists(db, userId);
-  if (!exists) {
-    console.warn(`User ${userId} not found in database, skipping quota increment`);
-    return;
-  }
-  
   const today = getTodayUtcDate();
   try {
     await db.prepare(`
@@ -2185,17 +2178,15 @@ const TRANSCRIBE_TOOL_ID  = 'transcription';
 const TRANSCRIBE_DAILY_MAX = 10;
 
 app.get('/api/transcribe/credits', requireAuth, async (c) => {
-  const db     = getDb(c.env);
-  const user   = c.get('user');
-  const used   = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+  const db        = getDb(c.env);
+  const user      = c.get('user');
+  const used      = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
   const remaining = Math.max(0, TRANSCRIBE_DAILY_MAX - used);
-  return c.json({
-    data: {
-      creditsUsed:      used,
-      creditsRemaining: remaining,
-      creditsTotal:     TRANSCRIBE_DAILY_MAX,
-    }
-  });
+  return c.json(
+    { data: { creditsUsed: used, creditsRemaining: remaining, creditsTotal: TRANSCRIBE_DAILY_MAX } },
+    200,
+    { 'Cache-Control': 'private, max-age=30' },
+  );
 });
 
 const LANGUAGE_CODES = {
@@ -2239,44 +2230,53 @@ app.post('/api/transcribe', requireAuth, async (c) => {
   if (!file || typeof file === 'string') {
     return c.json({ error: 'Audio file required' }, 400);
   }
+  if (file.size > 25 * 1024 * 1024) {
+    return c.json({ error: 'File too large — Groq limit is 25 MB' }, 413);
+  }
 
-  const groqForm = new FormData();
-  groqForm.append('file', file);
-  groqForm.append('model', model);
-  groqForm.append('response_format', wantTimestamps ? 'verbose_json' : 'json');
-  const langCode = LANGUAGE_CODES[outputLanguage];
-  if (langCode) groqForm.append('language', langCode);
-
-  let groqRes;
   try {
-    groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method:  'POST',
-      headers: { Authorization: `Bearer ${groqKey}` },
-      body:    groqForm,
+    const groqForm = new FormData();
+    groqForm.append('file', file);
+    groqForm.append('model', model);
+    groqForm.append('response_format', wantTimestamps ? 'verbose_json' : 'json');
+    const langCode = LANGUAGE_CODES[outputLanguage];
+    if (langCode) groqForm.append('language', langCode);
+
+    let groqRes;
+    try {
+      groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${groqKey}` },
+        body:    groqForm,
+      });
+    } catch (err) {
+      return c.json({ error: 'Failed to reach Groq API', detail: err.message }, 502);
+    }
+
+    const groqData = await groqRes.json();
+    if (!groqRes.ok) {
+      const msg = groqData?.error?.message || 'Groq transcription failed';
+      return c.json({ error: msg }, groqRes.status);
+    }
+
+    if (!usingOwnKey) {
+      await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
+      used += 1;
+    }
+
+    return c.json({
+      data: {
+        transcript: groqData.text || '',
+        ...(wantTimestamps && groqData.segments ? { segments: groqData.segments } : {}),
+      },
+      creditsUsed:  usingOwnKey ? null : used,
+      creditsTotal: usingOwnKey ? null : TRANSCRIBE_DAILY_MAX,
+      usingOwnKey,
     });
   } catch (err) {
-    return c.json({ error: 'Failed to reach Groq API', detail: err.message }, 502);
+    console.error('[transcribe]', err);
+    return c.json({ error: 'Internal server error', detail: err.message }, 500);
   }
-
-  const groqData = await groqRes.json();
-  if (!groqRes.ok) {
-    return c.json({ error: groqData?.error?.message || 'Groq transcription failed' }, groqRes.status);
-  }
-
-  if (!usingOwnKey) {
-    await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
-    used += 1;
-  }
-
-  return c.json({
-    data: {
-      transcript: groqData.text || '',
-      ...(wantTimestamps && groqData.segments ? { segments: groqData.segments } : {}),
-    },
-    creditsUsed:  usingOwnKey ? null : used,
-    creditsTotal: usingOwnKey ? null : TRANSCRIBE_DAILY_MAX,
-    usingOwnKey,
-  });
 });
 
 // ==========================================
