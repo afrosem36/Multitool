@@ -35,6 +35,7 @@ const ExcelConverter = React.lazy(() => import('./pages/excel-tools/ExcelConvert
 const PrivacyPolicy = React.lazy(() => import('./pages/content/PrivacyPolicy'));
 const Terms = React.lazy(() => import('./pages/content/Terms'));
 const Contact = React.lazy(() => import('./pages/content/Contact'));
+const AboutUs = React.lazy(() => import('./pages/content/AboutUs'));
 const QrGenerator = React.lazy(() => import('./pages/other-tools/QrGenerator'));
 const QrDecoder = React.lazy(() => import('./pages/other-tools/QrDecoder'));
 const UnitConverter = React.lazy(() => import('./pages/calculators/UnitConverter'));
@@ -210,6 +211,7 @@ function AppRoutes() {
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/contact-us" element={<Contact />} />
+        <Route path="/about-us" element={<AboutUs />} />
         <Route path="/admin" element={<AdminPage />} />
         {guideArticles.map((article) => (
           <Route key={article.path} path={article.path} element={<ArticlePage />} />

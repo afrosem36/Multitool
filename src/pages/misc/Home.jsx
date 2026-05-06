@@ -510,6 +510,88 @@ const Home = () => {
         </div>
       </section>
 
+      {/* Trust & Security Section */}
+      <section className="feature-section trust-section">
+        <div className="section-heading">
+          <h2>Why Users Trust MultiTool</h2>
+          <p>Built with privacy, security, and user experience as core principles.</p>
+        </div>
+
+        <div className="trust-grid">
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">🔒</div>
+            <h3>100% Private</h3>
+            <p>All files are processed locally in your browser. Nothing is uploaded to our servers.</p>
+          </article>
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">⚡</div>
+            <h3>Lightning Fast</h3>
+            <p>Instant processing without waiting for uploads or server responses. Get results immediately.</p>
+          </article>
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">💰</div>
+            <h3>100% Free</h3>
+            <p>No subscriptions, no hidden fees, no premium tiers. Everything is completely free forever.</p>
+          </article>
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">🌐</div>
+            <h3>Works Everywhere</h3>
+            <p>Runs on any modern browser, any device. Windows, Mac, Linux, iOS, Android - no installation needed.</p>
+          </article>
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">👥</div>
+            <h3>Trusted by 100K+ Users</h3>
+            <p>Used daily by students, professionals, and businesses worldwide for reliable document processing.</p>
+          </article>
+          <article className="trust-card glass-panel">
+            <div className="trust-icon">🛠️</div>
+            <h3>Constantly Improving</h3>
+            <p>Regular updates with new tools and features based on user feedback and needs.</p>
+          </article>
+        </div>
+      </section>
+
+      {/* Statistics Section */}
+      <section className="feature-section stats-section">
+        <div className="section-heading">
+          <h2>By The Numbers</h2>
+          <p>MultiTool impact and reach across our user base.</p>
+        </div>
+
+        <div className="stats-grid">
+          <article className="stat-card glass-panel">
+            <h3 className="stat-number">50+</h3>
+            <p>Professional Tools</p>
+          </article>
+          <article className="stat-card glass-panel">
+            <h3 className="stat-number">100K+</h3>
+            <p>Active Monthly Users</p>
+          </article>
+          <article className="stat-card glass-panel">
+            <h3 className="stat-number">99.9%</h3>
+            <p>Uptime Guarantee</p>
+          </article>
+          <article className="stat-card glass-panel">
+            <h3 className="stat-number">24/7</h3>
+            <p>Service Availability</p>
+          </article>
+        </div>
+      </section>
+
+      {/* About Us CTA */}
+      <section className="feature-section about-cta-section">
+        <article className="about-cta glass-panel gradient-border">
+          <h2>About MultiTool</h2>
+          <p>
+            Learn more about our mission to provide free, fast, and reliable tools for everyone.
+            Discover our values, team, and commitment to quality.
+          </p>
+          <Link to="/about-us" className="btn-primary">
+            Learn More About Us
+          </Link>
+        </article>
+      </section>
+
       <section className="feature-section">
         <div className="section-heading">
           <h2>FAQ</h2>
