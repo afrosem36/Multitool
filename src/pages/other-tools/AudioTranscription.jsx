@@ -852,7 +852,7 @@ export default function AudioTranscription() {
       <ToolHeader
         title="AI Transcription"
         description="Professional audio transcription with AI pipeline — speaker recognition, translation, and QA analysis"
-        icon={<AudioLines size={22} />}
+        icon={AudioLines}
       />
 
       <div style={{ maxWidth:1100, margin:'0 auto', padding:'2rem 1rem', display:'flex', flexDirection:'column', gap:'1.5rem' }}>
