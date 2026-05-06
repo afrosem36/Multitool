@@ -1,126 +1,155 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  AlertTriangle,
-  AudioLines,
-  Brain,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronUp,
-  ClipboardCheck,
-  Copy,
-  Download,
-  FileAudio,
-  FileText,
-  Filter,
-  Hash,
-  Info,
-  LoaderCircle,
-  Lock,
-  MessageSquare,
-  Mic,
-  RefreshCw,
-  Search,
-  Settings2,
-  Sparkles,
-  Trash2,
-  Upload,
-  UserCircle2,
-  Users,
-  X,
-  Zap,
+  AlertTriangle, AudioLines, Brain, Check, ChevronDown, ChevronUp,
+  ClipboardCheck, Copy, Download, FileAudio, FileText, Hash,
+  Info, Loader, Lock, MessageSquare, Mic, Plus, RefreshCw,
+  Settings2, Sparkles, Trash2, Upload, UserCircle2, X, Zap,
+  CheckCircle2, Circle, ArrowRight, Globe, Shield, BarChart3,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import { useAuth } from '../../context/AuthContext';
-import {
-  callAI,
-  buildImproveTextPrompt,
-  buildTranslationPolishPrompt,
-  buildQaAnalysisPrompt,
-  buildSummarizePrompt,
-  buildExtractKeyPointsPrompt,
-  parseQaReport,
-  parseKeyPoints,
-} from './audioAiHelpers';
+import { callAI, buildImproveTextPrompt, buildQaAnalysisPrompt, parseQaReport } from './audioAiHelpers';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const DAILY_LIMIT    = 10;
-const MAX_FILE_MB    = 500;                           // chunking handles large files
-const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
-const ACCEPTED_AUDIO = 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm';
-const RETRY_ATTEMPTS = 3;
-const RETRY_DELAYS   = [1000, 2500, 5000];
-// Groq Whisper hard limit is 25 MB per file.  Each WAV chunk at 16 kHz mono
-// uses ~3.84 MB/min, so 4-minute chunks = ~15.4 MB — safely under the limit.
-const CHUNK_DURATION_SEC = 240;   // 4 minutes per chunk
-const CHUNK_TRIGGER_SEC  = 290;   // start chunking when audio > ~4m 50s
-
-// Fast cheap Groq LLM used for the diarization pass
+const MAX_FILE_MB        = 500;
+const MAX_FILE_BYTES     = MAX_FILE_MB * 1024 * 1024;
+const ACCEPTED_AUDIO     = 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm';
+const RETRY_ATTEMPTS     = 3;
+const RETRY_DELAYS       = [1000, 2500, 5000];
+const CHUNK_DURATION_SEC = 240;
+const CHUNK_TRIGGER_SEC  = 290;
 const GROQ_DIARIZE_MODEL = 'llama-3.1-8b-instant';
+const FILLER_WORDS       = /\b(um+|uh+|hmm+|like|you know|i mean|sort of|kind of|basically|literally|actually|honestly|right\??|okay\??|so+|well+|anyway)\b/gi;
 
-const FILLER_WORDS = /\b(um+|uh+|hmm+|like|you know|i mean|sort of|kind of|basically|literally|actually|honestly|right\??|okay\??|so+|well+|anyway)\b/gi;
-
-// One color scheme per speaker slot (cycles if >5 speakers)
 const SPEAKER_COLORS = [
-  { bg: 'rgba(56,189,248,0.10)',  border: 'rgba(56,189,248,0.30)',  badge: '#38bdf8', text: '#7dd3fc' },
-  { bg: 'rgba(167,139,250,0.10)', border: 'rgba(167,139,250,0.30)', badge: '#a78bfa', text: '#c4b5fd' },
-  { bg: 'rgba(52,211,153,0.10)',  border: 'rgba(52,211,153,0.30)',  badge: '#34d399', text: '#6ee7b7' },
-  { bg: 'rgba(251,191,36,0.10)',  border: 'rgba(251,191,36,0.30)',  badge: '#fbbf24', text: '#fcd34d' },
-  { bg: 'rgba(248,113,113,0.10)', border: 'rgba(248,113,113,0.30)', badge: '#f87171', text: '#fca5a5' },
+  { bg:'rgba(56,189,248,0.08)',  border:'rgba(56,189,248,0.25)',  badge:'#38bdf8' },
+  { bg:'rgba(167,139,250,0.08)', border:'rgba(167,139,250,0.25)', badge:'#a78bfa' },
+  { bg:'rgba(52,211,153,0.08)',  border:'rgba(52,211,153,0.25)',  badge:'#34d399' },
+  { bg:'rgba(251,191,36,0.08)',  border:'rgba(251,191,36,0.25)',  badge:'#fbbf24' },
+  { bg:'rgba(248,113,113,0.08)', border:'rgba(248,113,113,0.25)', badge:'#f87171' },
 ];
 
 const TRANSCRIPTION_MODES = [
-  { value: 'cheetah', label: 'Cheetah', emoji: '🐆', badge: 'Fastest',       desc: 'Quick draft — best for short clear audio',    model: 'whisper-large-v3-turbo'     },
-  { value: 'dolphin', label: 'Dolphin', emoji: '🐬', badge: 'Balanced',      desc: 'Smart balance of speed and accuracy',          model: 'whisper-large-v3'           },
-  { value: 'whale',   label: 'Whale',   emoji: '🐳', badge: 'Most Accurate', desc: 'Full power — best for complex / noisy audio',  model: 'whisper-large-v3' },
+  { value:'cheetah', label:'Cheetah', emoji:'🐆', badge:'Fast',     model:'whisper-large-v3-turbo' },
+  { value:'dolphin', label:'Dolphin', emoji:'🐬', badge:'Balanced', model:'whisper-large-v3' },
+  { value:'whale',   label:'Whale',   emoji:'🐳', badge:'Accurate', model:'whisper-large-v3' },
 ];
 
 const OUTPUT_LANGUAGES = [
-  { value: 'original',   label: '🌐 Original (auto-detect)' },
-  { value: 'english',    label: '🇬🇧 English'    },
-  { value: 'hinglish',   label: '🇮🇳 Hinglish'   },
-  { value: 'hindi',      label: '🇮🇳 Hindi'       },
-  { value: 'spanish',    label: '🇪🇸 Spanish'     },
-  { value: 'french',     label: '🇫🇷 French'      },
-  { value: 'german',     label: '🇩🇪 German'      },
-  { value: 'arabic',     label: '🇸🇦 Arabic'      },
-  { value: 'portuguese', label: '🇧🇷 Portuguese'  },
-  { value: 'russian',    label: '🇷🇺 Russian'      },
-  { value: 'japanese',   label: '🇯🇵 Japanese'    },
-  { value: 'korean',     label: '🇰🇷 Korean'      },
-  { value: 'chinese',    label: '🇨🇳 Chinese'     },
-  { value: 'turkish',    label: '🇹🇷 Turkish'     },
-  { value: 'italian',    label: '🇮🇹 Italian'     },
-  { value: 'dutch',      label: '🇳🇱 Dutch'       },
+  { value:'original',   label:'🌐 Original (auto)' },
+  { value:'english',    label:'🇬🇧 English' },
+  { value:'hinglish',   label:'🇮🇳 Hinglish' },
+  { value:'hindi',      label:'🇮🇳 Hindi' },
+  { value:'spanish',    label:'🇪🇸 Spanish' },
+  { value:'french',     label:'🇫🇷 French' },
+  { value:'german',     label:'🇩🇪 German' },
+  { value:'arabic',     label:'🇸🇦 Arabic' },
+  { value:'portuguese', label:'🇧🇷 Portuguese' },
+  { value:'russian',    label:'🇷🇺 Russian' },
+  { value:'japanese',   label:'🇯🇵 Japanese' },
+  { value:'korean',     label:'🇰🇷 Korean' },
+  { value:'chinese',    label:'🇨🇳 Chinese' },
+  { value:'turkish',    label:'🇹🇷 Turkish' },
+  { value:'italian',    label:'🇮🇹 Italian' },
+  { value:'dutch',      label:'🇳🇱 Dutch' },
 ];
-
-
-const EXPORT_FORMATS = [
-  { value: 'txt',  label: 'Plain Text (.txt)', icon: FileText      },
-  { value: 'srt',  label: 'Subtitles (.srt)',   icon: MessageSquare },
-  { value: 'json', label: 'JSON + metadata',   icon: Hash          },
-];
-
-// ─── QA Mode ──────────────────────────────────────────────────────────────────
-const LIMIT_SHORT_MAX      = 5;   // ≤10 min calls per day
-const LIMIT_LONG_MAX       = 3;   // >10 min calls per day
-const DURATION_THRESHOLD_M = 10;  // minutes boundary
 
 const DEFAULT_QA_PARAMS = [
-  { name: 'Greeting',           marks: 10 },
-  { name: 'Call Opening',       marks: 10 },
-  { name: 'Situation Handling', marks: 20 },
-  { name: 'Closing',            marks: 10 },
+  { name:'Greeting',           marks:10 },
+  { name:'Call Opening',       marks:10 },
+  { name:'Situation Handling', marks:20 },
+  { name:'Closing',            marks:10 },
 ];
 
-function getTodayKey()            { return new Date().toISOString().split('T')[0]; }
-function usageKey(uid, t)         { return `qa_usage_${uid}_${t}_${getTodayKey()}`; }
-function getUsageCount(uid, t)    { return parseInt(localStorage.getItem(usageKey(uid, t)) || '0', 10); }
-function incrementUsage(uid, t)   { localStorage.setItem(usageKey(uid, t), (getUsageCount(uid, t) + 1).toString()); }
-function loadQATemplates()        { try { return JSON.parse(localStorage.getItem('qa_templates') || '[]'); } catch { return []; } }
-function saveQATemplate(n, params){ const ts = loadQATemplates().filter(t => t.name !== n); ts.push({ name: n, params }); localStorage.setItem('qa_templates', JSON.stringify(ts)); }
+// Pipeline stage definitions
+const PIPELINE_STAGES = [
+  { id:'uploading',    label:'Uploading',     icon:Upload },
+  { id:'transcribing', label:'Transcribing',  icon:Mic },
+  { id:'translating',  label:'Translating',   icon:Globe },
+  { id:'analyzing',    label:'QA Analysis',   icon:BarChart3 },
+  { id:'improving',    label:'Improving',     icon:Sparkles },
+];
+
+// ─── Audio utilities ──────────────────────────────────────────────────────────
+function audioBufferToWavBlob(buffer) {
+  const samples  = buffer.getChannelData(0);
+  const dataSize = samples.length * 2;
+  const ab       = new ArrayBuffer(44 + dataSize);
+  const view     = new DataView(ab);
+  const wr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+  wr(0,'RIFF'); view.setUint32(4,36+dataSize,true);
+  wr(8,'WAVE'); wr(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,1,true);  view.setUint32(24,buffer.sampleRate,true);
+  view.setUint32(28,buffer.sampleRate*2,true); view.setUint16(32,2,true);
+  view.setUint16(34,16,true); wr(36,'data'); view.setUint32(40,dataSize,true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([ab], { type:'audio/wav' });
+}
+
+async function splitAudioIntoChunks(file, onProgress) {
+  const TARGET_SR   = 16000;
+  const OVERLAP_SEC = 2;
+  const audioCtx    = new AudioContext();
+  const decoded     = await audioCtx.decodeAudioData(await file.arrayBuffer());
+  await audioCtx.close();
+  const srcSR        = decoded.sampleRate;
+  const chunkSamples = Math.floor(srcSR * CHUNK_DURATION_SEC);
+  const overlapSamp  = Math.floor(srcSR * OVERLAP_SEC);
+  const stepSamples  = chunkSamples - overlapSamp;
+  const totalSrc     = decoded.length;
+  const numChunks    = Math.ceil((totalSrc - overlapSamp) / stepSamples);
+  const blobs        = [];
+  for (let i = 0; i < numChunks; i++) {
+    const start  = i * stepSamples;
+    const end    = Math.min(start + chunkSamples, totalSrc);
+    const srcLen = end - start;
+    const dstLen = Math.ceil(srcLen * TARGET_SR / srcSR);
+    const off    = new OfflineAudioContext(1, dstLen, TARGET_SR);
+    const mono   = off.createGain();
+    mono.gain.value = 1 / decoded.numberOfChannels;
+    mono.connect(off.destination);
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const tmp = new AudioBuffer({ length:srcLen, numberOfChannels:1, sampleRate:srcSR });
+      tmp.getChannelData(0).set(decoded.getChannelData(ch).subarray(start, end));
+      const src = off.createBufferSource();
+      src.buffer = tmp; src.connect(mono); src.start(0);
+    }
+    blobs.push(audioBufferToWavBlob(await off.startRendering()));
+    onProgress?.(i + 1, numChunks);
+  }
+  return { blobs, overlapSec:OVERLAP_SEC, stepSec:CHUNK_DURATION_SEC - OVERLAP_SEC };
+}
+
+function stitchChunks(transcripts) {
+  if (transcripts.length === 0) return '';
+  if (transcripts.length === 1) return transcripts[0];
+  let result = transcripts[0];
+  for (let i = 1; i < transcripts.length; i++) {
+    const prev  = result.trimEnd();
+    const next  = transcripts[i].trimStart();
+    const pWords = prev.split(/\s+/);
+    const nWords = next.split(/\s+/);
+    let overlap  = 0;
+    const maxCheck = Math.min(12, pWords.length, nWords.length);
+    for (let len = maxCheck; len >= 1; len--) {
+      if (pWords.slice(-len).join(' ').toLowerCase() === nWords.slice(0,len).join(' ').toLowerCase()) {
+        overlap = len; break;
+      }
+    }
+    const trimmedNext = overlap > 0 ? nWords.slice(overlap).join(' ') : next;
+    result = prev + (trimmedNext ? ' ' + trimmedNext : '');
+  }
+  return result.trim();
+}
 
 async function getAudioDurationMin(file) {
   return new Promise(resolve => {
@@ -129,159 +158,6 @@ async function getAudioDurationMin(file) {
     audio.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(audio.duration / 60); };
     audio.onerror          = () => { URL.revokeObjectURL(url); resolve(0); };
   });
-}
-
-function buildChatGPTUrl(transcriptText, params) {
-  const total       = params.reduce((s, p) => s + (Number(p.marks) || 0), 0);
-  const paramsList  = params.map(p => `- ${p.name}: ${p.marks} marks`).join('\n');
-  const outputLines = params.map(p => `- Parameter: ${p.name} → Score: X / ${p.marks} → Feedback: ...`).join('\n');
-
-  const prompt = `You are a professional call quality analyst. Below is a real customer call transcript. Your task is to evaluate the quality of the call based on defined QA parameters.
-
-----------------------------------------
-📞 CALL TRANSCRIPT:
-${transcriptText}
-----------------------------------------
-
-📊 QA PARAMETERS (with max marks):
-${paramsList}
-
-Total Marks: ${total}
-----------------------------------------
-
-📝 INSTRUCTIONS:
-1. Evaluate the call for EACH parameter individually.
-2. Assign a score for each parameter (out of the given marks).
-3. Provide a brief explanation for each score.
-4. Calculate the TOTAL score.
-5. Highlight key strengths of the call.
-6. Identify mistakes or missed opportunities.
-7. Suggest clear improvements.
-
-----------------------------------------
-📌 OUTPUT FORMAT:
-Return your response in this structured format:
-
-${outputLines}
-
-----------------------------------------
-🏁 FINAL SUMMARY:
-- Total Score: X / ${total}
-- Overall Performance: (Excellent / Good / Needs Improvement)
-- Key Strengths:
-- Areas to Improve:
-- Actionable Suggestions:
-
-----------------------------------------
-Important:
-- Be objective and fair
-- Do not skip any parameter
-- Keep feedback concise but meaningful`;
-
-  return `https://chat.openai.com/?q=${encodeURIComponent(prompt)}`;
-}
-
-// ─── WAV Encoder ──────────────────────────────────────────────────────────────
-function audioBufferToWavBlob(buffer) {
-  const samples  = buffer.getChannelData(0); // always mono after OfflineAudioContext
-  const dataSize = samples.length * 2;
-  const ab       = new ArrayBuffer(44 + dataSize);
-  const view     = new DataView(ab);
-  const wr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
-  wr(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
-  wr(8, 'WAVE'); wr(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true); view.setUint32(24, buffer.sampleRate, true);
-  view.setUint32(28, buffer.sampleRate * 2, true); view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true); wr(36, 'data'); view.setUint32(40, dataSize, true);
-  let off = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    off += 2;
-  }
-  return new Blob([ab], { type: 'audio/wav' });
-}
-
-async function splitAudioIntoChunks(file, onProgress) {
-  const TARGET_SR    = 16000;
-  const OVERLAP_SEC  = 2; // 2-second overlap to avoid cutting words at boundaries
-
-  const audioCtx = new AudioContext();
-  const decoded  = await audioCtx.decodeAudioData(await file.arrayBuffer());
-  await audioCtx.close();
-
-  const srcSR        = decoded.sampleRate;
-  const chunkSamples = Math.floor(srcSR * CHUNK_DURATION_SEC);
-  const overlapSamp  = Math.floor(srcSR * OVERLAP_SEC);
-  const stepSamples  = chunkSamples - overlapSamp; // advance by this much each chunk
-  const totalSrc     = decoded.length;
-  const numChunks    = Math.ceil((totalSrc - overlapSamp) / stepSamples);
-  const blobs        = [];
-
-  for (let i = 0; i < numChunks; i++) {
-    const start  = i * stepSamples;
-    const end    = Math.min(start + chunkSamples, totalSrc);
-    const srcLen = end - start;
-    const dstLen = Math.ceil(srcLen * TARGET_SR / srcSR);
-
-    const off = new OfflineAudioContext(1, dstLen, TARGET_SR);
-    // Mix all channels down to mono for smaller WAV output
-    const mono = off.createGain();
-    mono.gain.value = 1 / decoded.numberOfChannels;
-    mono.connect(off.destination);
-
-    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-      const tmp = new AudioBuffer({ length: srcLen, numberOfChannels: 1, sampleRate: srcSR });
-      tmp.getChannelData(0).set(decoded.getChannelData(ch).subarray(start, end));
-      const src = off.createBufferSource();
-      src.buffer = tmp;
-      src.connect(mono);
-      src.start(0);
-    }
-
-    blobs.push(audioBufferToWavBlob(await off.startRendering()));
-    onProgress?.(i + 1, numChunks);
-  }
-  return { blobs, overlapSec: OVERLAP_SEC, stepSec: CHUNK_DURATION_SEC - OVERLAP_SEC };
-}
-
-// ─── Chunk transcript stitcher ────────────────────────────────────────────────
-// Removes the duplicated overlap region between adjacent chunks by finding the
-// longest common suffix/prefix word sequence (up to 12 words).
-function stitchChunks(transcripts) {
-  if (transcripts.length === 0) return '';
-  if (transcripts.length === 1) return transcripts[0];
-
-  let result = transcripts[0];
-  for (let i = 1; i < transcripts.length; i++) {
-    const prev  = result.trimEnd();
-    const next  = transcripts[i].trimStart();
-    const pWords = prev.split(/\s+/);
-    const nWords = next.split(/\s+/);
-
-    // Find longest matching suffix/prefix (up to 12 words)
-    let overlap = 0;
-    const maxCheck = Math.min(12, pWords.length, nWords.length);
-    for (let len = maxCheck; len >= 1; len--) {
-      const suffix = pWords.slice(-len).join(' ').toLowerCase();
-      const prefix = nWords.slice(0, len).join(' ').toLowerCase();
-      if (suffix === prefix) { overlap = len; break; }
-    }
-
-    const trimmedNext = overlap > 0 ? nWords.slice(overlap).join(' ') : next;
-    result = prev + (trimmedNext ? ' ' + trimmedNext : '');
-  }
-  return result.trim();
-}
-
-// ─── Utility helpers ──────────────────────────────────────────────────────────
-async function hashFile(file) {
-  const buf    = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 async function parseJsonResponse(res) {
@@ -296,152 +172,83 @@ async function parseJsonResponse(res) {
 async function apiFetchWithRetry(apiFetch, url, options = {}, attempts = RETRY_ATTEMPTS) {
   for (let i = 0; i < attempts; i++) {
     let res;
-    try {
-      res = await apiFetch(url, options);
-    } catch (netErr) {
+    try { res = await apiFetch(url, options); }
+    catch (netErr) {
       if (i === attempts - 1) throw netErr;
       await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
       continue;
     }
-    const noRetry = [400, 401, 403, 404, 413, 429].includes(res.status);
-    try {
-      return await parseJsonResponse(res);
-    } catch (err) {
+    const noRetry = [400,401,403,404,413,429].includes(res.status);
+    try { return await parseJsonResponse(res); }
+    catch (err) {
       if (i === attempts - 1 || noRetry) throw err;
       await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
     }
   }
 }
 
-// ─── Speaker Diarization Engine ───────────────────────────────────────────────
-// Whisper returns a flat string.  We post it to Groq's LLM which performs
-// conversational analysis and splits it into attributed speaker turns.
-// Response is parsed into an array of { speaker, text } blocks.
-
 async function runDiarizationEngine(rawTranscript, apiFetch) {
   const escaped = rawTranscript.replace(/"/g, "'");
-
-  const prompt = `You are an expert speaker diarization engine.
-Split the transcript below into speaker turns.
-
-STRICT RULES:
-1. Label speakers only as "Speaker 1", "Speaker 2", etc.
-2. Do NOT rename, invent names, or change any wording — copy text exactly.
-3. Detect speaker changes from: questions ↔ answers, pronoun shifts (I/you), tone, topic hand-offs, direct address.
-4. Merge short back-channel replies ("yes", "okay", "right") into the preceding speaker's block.
-5. Return ONLY a valid JSON array — no markdown, no explanation, no preamble.
-6. Format strictly: [{"speaker":"Speaker 1","text":"..."},{"speaker":"Speaker 2","text":"..."}]
-7. If only one speaker is detectable: [{"speaker":"Speaker 1","text":"${escaped}"}]
-
-TRANSCRIPT TO DIARIZE:
-${rawTranscript}`;
-
+  const prompt = `You are an expert speaker diarization engine. Split the transcript into speaker turns.
+RULES: Label speakers as "Speaker 1", "Speaker 2", etc. Do NOT change any wording.
+Return ONLY valid JSON: [{"speaker":"Speaker 1","text":"..."},{"speaker":"Speaker 2","text":"..."}]
+If one speaker: [{"speaker":"Speaker 1","text":"${escaped}"}]
+TRANSCRIPT: ${rawTranscript}`;
   try {
-    // POST to your backend which proxies to Groq chat completions
     const res  = await apiFetch('/api/groq/chat', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model:       GROQ_DIARIZE_MODEL,
-        messages:    [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens:  4096,
-      }),
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:GROQ_DIARIZE_MODEL, messages:[{role:'user',content:prompt}], temperature:0.1, max_tokens:4096 }),
     });
-
     const data = await parseJsonResponse(res);
-
-    // Normalise Groq chat response shape
-    const rawContent =
-      data?.choices?.[0]?.message?.content ||   // standard OpenAI-compat shape
-      data?.data?.content                   ||   // custom wrapper
-      data?.content                         || '';
-
-    // Strip any accidental markdown fences
-    const clean  = rawContent.replace(/```json|```/gi, '').trim();
+    const raw  = data?.choices?.[0]?.message?.content || data?.data?.content || data?.content || '';
+    const clean = raw.replace(/```json|```/gi,'').trim();
     const parsed = JSON.parse(clean);
-
-    if (!Array.isArray(parsed) || parsed.length === 0)
-      throw new Error('Empty diarization response');
-
-    // Validate & filter malformed entries
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Empty');
     return parsed.filter(b => typeof b.speaker === 'string' && typeof b.text === 'string' && b.text.trim());
-  } catch (err) {
-    console.error('[Diarization Engine] failed:', err.message);
-    // Graceful fallback — return whole text as single speaker
-    return [{ speaker: 'Speaker 1', text: rawTranscript }];
+  } catch {
+    return [{ speaker:'Speaker 1', text:rawTranscript }];
   }
 }
 
-// Convert diarized block array → plain text with [Speaker N]: markers
 function blocksToPlainText(blocks) {
   return blocks.map(b => `[${b.speaker}]: ${b.text}`).join('\n\n');
 }
 
-// ─── Text Engine ─────────────────────────────────────────────────────────────
-// When the text contains [Speaker N]: markers we process each block separately
-// so whitespace collapse never destroys speaker boundaries.
-
 function cleanBlock(text, opts = {}) {
   if (!text) return '';
-  let t = text.trim();
-
-  t = t.replace(/\s+/g, ' ');
-  t = t.replace(/\s([.,!?;:])/g, '$1');
-  t = t.replace(/([.,!?;:])(?=[^\s])/g, '$1 ');
-  t = t.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_, pre, ch) => pre + ch.toUpperCase());
-  t = t.replace(/\[BLANK_AUDIO\]/gi, '').trim();
-  t = t.replace(/(\.\s*){3,}/g, '...');
-
-  if (opts.normalizeNumbers) {
-    const W = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,
-      ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
-      eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
-    t = t.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[\s-](one|two|three|four|five|six|seven|eight|nine)\b/gi,
-      (_, a, b) => (W[a.toLowerCase()] + W[b.toLowerCase()]).toString());
-    t = t.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/gi,
-      m => W[m.toLowerCase()]?.toString() ?? m);
-  }
-
-  if (opts.smartParagraphs) {
-    t = t.replace(/([.!?])\s{2,}([A-Z])/g, '$1\n\n$2');
-    t = t.replace(/([.!?])\s(?=(however|but|so|therefore|meanwhile|suddenly|later|then|next|finally|first|second|third)\b)/gi, '$1\n\n');
-  }
-
-  if (opts.stripFillers) {
-    t = t.replace(FILLER_WORDS, '').replace(/\s{2,}/g, ' ').trim();
-  }
-
+  let t = text.trim()
+    .replace(/\s+/g,' ')
+    .replace(/\s([.,!?;:])/g,'$1')
+    .replace(/([.,!?;:])(?=[^\s])/g,'$1 ')
+    .replace(/(^\s*|[.!?]\s+)([a-z])/g,(_,pre,ch)=>pre+ch.toUpperCase())
+    .replace(/\[BLANK_AUDIO\]/gi,'').trim()
+    .replace(/(\.\s*){3,}/g,'...');
+  if (opts.stripFillers) t = t.replace(FILLER_WORDS,'').replace(/\s{2,}/g,' ').trim();
+  if (opts.smartParagraphs) t = t.replace(/([.!?])\s{2,}([A-Z])/g,'$1\n\n$2');
   return (t.charAt(0).toUpperCase() + t.slice(1)).trim();
 }
 
 function runTextEngine(raw, opts = {}) {
   if (!raw) return '';
   const hasSpeakerMarkers = /^\[Speaker \d+\]:/m.test(raw);
-
   if (hasSpeakerMarkers) {
-    return raw
-      .split(/\n{2,}/)
-      .map(block => {
-        const m = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
-        if (!m) return block;
-        return `[${m[1]}]: ${cleanBlock(m[2], opts)}`;
-      })
-      .join('\n\n');
+    return raw.split(/\n{2,}/).map(block => {
+      const m = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
+      if (!m) return block;
+      return `[${m[1]}]: ${cleanBlock(m[2], opts)}`;
+    }).join('\n\n');
   }
-
   return cleanBlock(raw, opts);
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
 function computeStats(text) {
   if (!text) return null;
-  const plain  = text.replace(/^\[Speaker \d+\]:\s*/gm, '');
-  const words  = plain.trim().split(/\s+/).filter(Boolean);
-  const sents  = plain.split(/[.!?]+/).filter(s => s.trim().length > 2);
-  const avgWL  = words.reduce((s, w) => s + w.replace(/[^a-z]/gi, '').length, 0) / Math.max(words.length, 1);
-  const avgSL  = words.length / Math.max(sents.length, 1);
-  const fk     = Math.max(0, Math.min(100, 206.835 - 1.015 * avgSL - 84.6 * (avgWL / 4.5)));
+  const plain = text.replace(/^\[Speaker \d+\]:\s*/gm,'');
+  const words = plain.trim().split(/\s+/).filter(Boolean);
+  const sents = plain.split(/[.!?]+/).filter(s => s.trim().length > 2);
+  const avgWL = words.reduce((s,w) => s + w.replace(/[^a-z]/gi,'').length, 0) / Math.max(words.length, 1);
+  const avgSL = words.length / Math.max(sents.length, 1);
+  const fk    = Math.max(0, Math.min(100, 206.835 - 1.015 * avgSL - 84.6 * (avgWL / 4.5)));
   return {
     wordCount:        words.length,
     sentenceCount:    sents.length,
@@ -450,1434 +257,1094 @@ function computeStats(text) {
   };
 }
 
-// ─── SRT Generator ───────────────────────────────────────────────────────────
 function generateSRT(text) {
-  const plain = text.replace(/^\[Speaker \d+\]:\s*/gm, '');
+  const plain = text.replace(/^\[Speaker \d+\]:\s*/gm,'');
   const sents = plain.split(/(?<=[.!?])\s+/).filter(Boolean);
   let srt = '', t = 0;
   sents.forEach((s, i) => {
     const dur = Math.max(2, Math.ceil(s.split(' ').length * 0.4));
-    const fmt = sec => {
-      const hh = String(Math.floor(sec / 3600)).padStart(2, '0');
-      const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
-      const ss = String(sec % 60).padStart(2, '0');
-      return `${hh}:${mm}:${ss},000`;
-    };
-    srt += `${i + 1}\n${fmt(t)} --> ${fmt(t + dur)}\n${s}\n\n`;
+    const fmt = sec => `${String(Math.floor(sec/3600)).padStart(2,'0')}:${String(Math.floor((sec%3600)/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')},000`;
+    srt += `${i+1}\n${fmt(t)} --> ${fmt(t+dur)}\n${s}\n\n`;
     t += dur;
   });
   return srt;
 }
 
-// ─── Speaker Block Renderer ───────────────────────────────────────────────────
-// Parses [Speaker N]: markers and renders each turn as a coloured card.
-// Falls back to plain text when no markers are present.
+function downloadFile(content, filename, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type:mime }));
+  a.download = filename;
+  a.click();
+}
 
-function SpeakerBlocks({ text, searchTerm }) {
+// ─── Build AI translation prompt ──────────────────────────────────────────────
+function buildTranslationPrompt(transcript, targetLanguage) {
+  return [
+    { role:'system', content:`You are a professional translator. Translate the following transcript to ${targetLanguage}.
+RULES:
+- Preserve ALL speaker labels ([Speaker N]:) exactly
+- Preserve timestamps if present
+- Keep names and proper nouns unchanged
+- Make the translation sound natural and professional
+- Return ONLY the translated transcript, nothing else.` },
+    { role:'user', content:`Translate to ${targetLanguage}:\n\n${transcript}` },
+  ];
+}
+
+// ─── SpeakerBlocks renderer ───────────────────────────────────────────────────
+const SpeakerBlocks = memo(({ text }) => {
   if (!text) {
     return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-        height:'100%', minHeight:'200px', gap:'0.75rem', color:'var(--text-secondary)', textAlign:'center', padding:'1rem' }}>
-        <FileAudio size={32} style={{ opacity:0.2 }} />
-        <span style={{ fontSize:'0.9rem' }}>Transcription will appear here</span>
-        <span style={{ fontSize:'0.78rem', opacity:0.6 }}>Upload an audio file and press Transcribe Audio</span>
+      <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+        minHeight:200, gap:'0.75rem', color:'var(--text-secondary)', textAlign:'center', padding:'2rem' }}>
+        <FileAudio size={36} style={{ opacity:0.2 }} />
+        <span style={{ fontSize:'0.9rem', opacity:0.6 }}>Transcript will appear here after processing</span>
       </div>
     );
   }
 
   const hasTags = /^\[Speaker \d+\]:/m.test(text);
   if (!hasTags) {
-    return <span style={{ whiteSpace: 'pre-wrap', lineHeight: 1.75 }}>{text}</span>;
+    return <pre style={{ whiteSpace:'pre-wrap', lineHeight:1.8, margin:0, fontSize:'0.92rem', color:'var(--text-primary)' }}>{text}</pre>;
   }
 
-  // Build a stable speaker → colour index map (first-seen order)
   const colorMap = {};
-  let nextSlot   = 0;
+  let nextSlot = 0;
 
-  const blocks = text
-    .split(/\n{2,}/)
-    .filter(b => b.trim())
-    .map((block, idx) => {
-      const match = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
-      if (!match) {
-        return <p key={idx} style={{ margin: '0 0 0.5rem', whiteSpace: 'pre-wrap' }}>{block}</p>;
-      }
-
-      const speaker = match[1];
-      const content = match[2].trim();
-
-      if (colorMap[speaker] === undefined) {
-        colorMap[speaker] = nextSlot % SPEAKER_COLORS.length;
-        nextSlot++;
-      }
-      const c = SPEAKER_COLORS[colorMap[speaker]];
-
-      // Inline search highlight
-      let displayContent;
-      if (searchTerm) {
-        const re    = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        const parts = content.split(re);
-        displayContent = parts.map((p, pi) =>
-          p.toLowerCase() === searchTerm.toLowerCase()
-            ? <mark key={pi} style={{ background: 'rgba(251,191,36,0.38)', borderRadius: '3px', color: 'inherit' }}>{p}</mark>
-            : p
-        );
-      } else {
-        displayContent = content;
-      }
-
-      return (
-        <div key={idx} style={{
-          background:   c.bg,
-          border:       `1px solid ${c.border}`,
-          borderRadius: '12px',
-          padding:      '0.85rem 1rem',
-          marginBottom: '0.75rem',
-        }}>
-          {/* Speaker label */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
-            <UserCircle2 size={14} color={c.badge} />
-            <span style={{
-              fontSize:      '0.72rem',
-              fontWeight:    700,
-              color:         c.badge,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}>
-              {speaker}
-            </span>
-          </div>
-          {/* Text */}
-          <p style={{ margin: 0, lineHeight: 1.8, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
-            {displayContent}
-          </p>
-        </div>
-      );
-    });
-
-  return <>{blocks}</>;
-}
-
-// ─── Shared style helpers ─────────────────────────────────────────────────────
-const overlay  = { position:'fixed', inset:0, background:'rgba(2,6,23,0.78)', display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem', zIndex:2000 };
-const modalBox = { width:'100%', maxWidth:'440px', padding:'1.5rem', border:'1px solid rgba(255,255,255,0.12)' };
-const iconBox  = c => ({ width:40, height:40, borderRadius:12, background:`${c}22`, display:'flex', alignItems:'center', justifyContent:'center' });
-const ghostBtn = { background:'transparent', border:'none', color:'var(--text-secondary)', cursor:'pointer', padding:'0.25rem' };
-const fullBtn  = { textDecoration:'none', textAlign:'center', padding:'0.95rem 1rem', display:'block' };
-
-// ─── LoginRequiredModal ───────────────────────────────────────────────────────
-function LoginRequiredModal({ open, onClose, pathname }) {
-  if (!open) return null;
   return (
-    <div onClick={onClose} style={overlay}>
-      <div onClick={e => e.stopPropagation()} className="glass-panel" style={modalBox}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-            <div style={iconBox('#3b82f6')}><Lock size={20} color="#60a5fa" /></div>
-            <div>
-              <h3 style={{ margin:0 }}>Login Required</h3>
-              <p style={{ margin:0, color:'var(--text-secondary)', fontSize:'0.9rem' }}>
-                Audio transcription is available to signed-in users only.
-              </p>
+    <div>
+      {text.split(/\n{2,}/).filter(b=>b.trim()).map((block, idx) => {
+        const match = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
+        if (!match) return <p key={idx} style={{ margin:'0 0 0.5rem', whiteSpace:'pre-wrap' }}>{block}</p>;
+
+        const speaker = match[1];
+        const content = match[2].trim();
+
+        if (colorMap[speaker] === undefined) {
+          colorMap[speaker] = nextSlot % SPEAKER_COLORS.length;
+          nextSlot++;
+        }
+        const c = SPEAKER_COLORS[colorMap[speaker]];
+
+        return (
+          <div key={idx} style={{ background:c.bg, border:`1px solid ${c.border}`,
+            borderRadius:12, padding:'0.85rem 1rem', marginBottom:'0.75rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem' }}>
+              <UserCircle2 size={13} color={c.badge} />
+              <span style={{ fontSize:'0.7rem', fontWeight:700, color:c.badge,
+                letterSpacing:'0.06em', textTransform:'uppercase' }}>{speaker}</span>
             </div>
+            <p style={{ margin:0, lineHeight:1.8, color:'var(--text-primary)', whiteSpace:'pre-wrap', fontSize:'0.92rem' }}>
+              {content}
+            </p>
           </div>
-          <button onClick={onClose} style={ghostBtn}><X size={18} /></button>
+        );
+      })}
+    </div>
+  );
+});
+
+// ─── QA Report renderer ───────────────────────────────────────────────────────
+const QAReportView = memo(({ report, onExport }) => {
+  if (!report) return null;
+  const pct = Math.round((report.finalScore / report.totalMarks) * 100);
+  const perfColor = { Excellent:'#34d399', Good:'#60a5fa', Average:'#fbbf24', 'Below Average':'#f87171' }[report.performance] || '#9ca3af';
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+      {/* Score header */}
+      <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
+        borderRadius:16, padding:'1.5rem', display:'flex', alignItems:'center', justifyContent:'space-between',
+        flexWrap:'wrap', gap:'1rem' }}>
+        <div>
+          <div style={{ fontSize:'0.78rem', color:'var(--text-secondary)', marginBottom:'0.4rem', textTransform:'uppercase', letterSpacing:'0.05em' }}>Final Score</div>
+          <div style={{ fontSize:'2.5rem', fontWeight:700, color:perfColor, lineHeight:1 }}>
+            {report.finalScore}<span style={{ fontSize:'1.1rem', color:'var(--text-secondary)' }}>/{report.totalMarks}</span>
+          </div>
         </div>
-        <div style={{ display:'grid', gap:'0.75rem' }}>
-          <Link to="/login" state={{ from: pathname }} className="btn-primary" style={fullBtn}>Sign In</Link>
-          <Link to="/signup" state={{ from: pathname }} className="btn-secondary" style={fullBtn}>Create Account</Link>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:'1rem', fontWeight:600, color:perfColor, marginBottom:'0.25rem' }}>{report.performance}</div>
+          <div style={{ fontSize:'0.85rem', color:'var(--text-secondary)' }}>{pct}% score</div>
         </div>
       </div>
+
+      {/* Score bar */}
+      <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:6, overflow:'hidden' }}>
+        <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.8, ease:'easeOut' }}
+          style={{ height:'100%', background:perfColor, borderRadius:4 }} />
+      </div>
+
+      {/* Parameters */}
+      <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+        {report.parameters.map((p, i) => (
+          <div key={i} style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)',
+            borderRadius:12, padding:'1rem' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
+              <span style={{ fontSize:'0.88rem', fontWeight:500, color:'var(--text-primary)' }}>{p.name}</span>
+              <span style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--accent-primary)' }}>
+                {p.score}<span style={{ color:'var(--text-secondary)', fontWeight:400 }}>/{p.maxScore}</span>
+              </span>
+            </div>
+            <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:3, height:4, marginBottom:'0.6rem', overflow:'hidden' }}>
+              <motion.div initial={{ width:0 }} animate={{ width:`${(p.score/p.maxScore)*100}%` }}
+                transition={{ duration:0.6, delay:i*0.08 }}
+                style={{ height:'100%', background:'var(--accent-primary)', borderRadius:3 }} />
+            </div>
+            <p style={{ margin:0, fontSize:'0.8rem', color:'var(--text-secondary)', lineHeight:1.5 }}>{p.feedback}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Strengths & Areas */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem' }}>
+        <div style={{ background:'rgba(52,211,153,0.07)', border:'1px solid rgba(52,211,153,0.2)',
+          borderRadius:12, padding:'1rem' }}>
+          <div style={{ fontSize:'0.78rem', fontWeight:700, color:'#34d399', marginBottom:'0.6rem',
+            textTransform:'uppercase', letterSpacing:'0.05em' }}>✓ Strengths</div>
+          <ul style={{ margin:0, paddingLeft:'1rem', display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+            {report.strengths.map((s,i) => <li key={i} style={{ fontSize:'0.82rem', color:'var(--text-primary)', lineHeight:1.5 }}>{s}</li>)}
+          </ul>
+        </div>
+        <div style={{ background:'rgba(248,113,113,0.07)', border:'1px solid rgba(248,113,113,0.2)',
+          borderRadius:12, padding:'1rem' }}>
+          <div style={{ fontSize:'0.78rem', fontWeight:700, color:'#f87171', marginBottom:'0.6rem',
+            textTransform:'uppercase', letterSpacing:'0.05em' }}>↑ Improve</div>
+          <ul style={{ margin:0, paddingLeft:'1rem', display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+            {report.areasToImprove.map((a,i) => <li key={i} style={{ fontSize:'0.82rem', color:'var(--text-primary)', lineHeight:1.5 }}>{a}</li>)}
+          </ul>
+        </div>
+      </div>
+
+      {/* Summary */}
+      {report.summary && (
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)',
+          borderRadius:12, padding:'1rem' }}>
+          <div style={{ fontSize:'0.78rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:'0.5rem',
+            textTransform:'uppercase', letterSpacing:'0.05em' }}>Summary</div>
+          <p style={{ margin:0, fontSize:'0.88rem', color:'var(--text-primary)', lineHeight:1.7 }}>{report.summary}</p>
+        </div>
+      )}
     </div>
   );
-}
+});
 
-// ─── StatBadge ────────────────────────────────────────────────────────────────
-function StatBadge({ label, value, color = 'var(--accent-primary)' }) {
+// ─── Pipeline Stage Tracker ───────────────────────────────────────────────────
+const PipelineTracker = memo(({ stages, currentStage, providerNote, progress, showTranslation, showQA }) => {
+  const activeStages = stages.filter(s => {
+    if (s.id === 'translating' && !showTranslation) return false;
+    if (s.id === 'analyzing'   && !showQA)          return false;
+    return true;
+  });
+
+  const getStatus = (stageId) => {
+    const activeIds  = activeStages.map(s => s.id);
+    const curIdx     = activeIds.indexOf(currentStage);
+    const stageIdx   = activeIds.indexOf(stageId);
+    if (currentStage === 'done') return 'done';
+    if (stageIdx < curIdx)  return 'done';
+    if (stageIdx === curIdx) return 'active';
+    return 'pending';
+  };
+
   return (
-    <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
-      borderRadius:'10px', padding:'0.6rem 0.85rem', textAlign:'center', minWidth:'76px' }}>
-      <div style={{ fontSize:'1.15rem', fontWeight:700, color }}>{value}</div>
-      <div style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginTop:'2px', textTransform:'uppercase', letterSpacing:'0.05em' }}>{label}</div>
+    <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+      borderRadius:16, padding:'1.5rem' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+        marginBottom:'1.25rem' }}>
+        <span style={{ fontWeight:600, fontSize:'0.95rem' }}>Processing Pipeline</span>
+        {providerNote && (
+          <span style={{ fontSize:'0.72rem', padding:'2px 8px', borderRadius:20,
+            background:'rgba(99,102,241,0.15)', color:'#818cf8' }}>{providerNote}</span>
+        )}
+      </div>
+
+      {/* Stage steps */}
+      <div style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexWrap:'wrap', marginBottom:'1.25rem' }}>
+        {activeStages.map((stage, idx) => {
+          const status = getStatus(stage.id);
+          return (
+            <React.Fragment key={stage.id}>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'0.35rem', minWidth:70 }}>
+                <div style={{ width:36, height:36, borderRadius:'50%', display:'flex',
+                  alignItems:'center', justifyContent:'center',
+                  background: status === 'done'   ? 'rgba(52,211,153,0.15)' :
+                              status === 'active' ? 'rgba(99,102,241,0.2)' :
+                              'rgba(255,255,255,0.05)',
+                  border: `1.5px solid ${status === 'done' ? '#34d399' : status === 'active' ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
+                  transition: 'all 0.3s ease' }}>
+                  {status === 'done' ? <CheckCircle2 size={16} color="#34d399" /> :
+                   status === 'active' ? (
+                     <motion.div animate={{ rotate: 360 }} transition={{ repeat:Infinity, duration:1.2 }}>
+                       <Loader size={16} color="#6366f1" />
+                     </motion.div>
+                   ) : <Circle size={14} color="rgba(255,255,255,0.2)" />}
+                </div>
+                <span style={{ fontSize:'0.68rem', textAlign:'center', lineHeight:1.2,
+                  color: status === 'active' ? '#f3f4f6' : 'var(--text-secondary)' }}>
+                  {stage.label}
+                </span>
+              </div>
+              {idx < activeStages.length - 1 && (
+                <ArrowRight size={14} color="rgba(255,255,255,0.15)" style={{ flexShrink:0, marginBottom:14 }} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      {currentStage && currentStage !== 'done' && (
+        <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:4, overflow:'hidden' }}>
+          <motion.div animate={{ width:`${progress}%` }} transition={{ duration:0.4 }}
+            style={{ height:'100%', background:'linear-gradient(90deg,#6366f1,#a78bfa)', borderRadius:4 }} />
+        </div>
+      )}
     </div>
   );
-}
+});
 
-// ─── PreflightWarning ─────────────────────────────────────────────────────────
-function PreflightWarning({ durMin }) {
-  if (!durMin) return null;
-  const durSec     = durMin * 60;
-  const willChunk  = durSec > CHUNK_TRIGGER_SEC;
-  const numChunks  = willChunk ? Math.ceil(durSec / CHUNK_DURATION_SEC) : 0;
-  const mb         = durMin * 60 * 16000 * 2 / (1024 * 1024); // estimated WAV size
-
-  if (!willChunk) return null;
+// ─── Login Modal ──────────────────────────────────────────────────────────────
+const LoginModal = memo(({ open, onClose, pathname }) => {
+  if (!open) return null;
   return (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', padding:'0.7rem 0.9rem',
-      borderRadius:'10px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)',
-      marginTop:'0.75rem', fontSize:'0.83rem' }}>
-      <Info size={15} color="#38bdf8" style={{ marginTop:'1px', flexShrink:0 }} />
-      <span style={{ color:'#7dd3fc', lineHeight:1.5 }}>
-        Long audio ({Math.floor(durMin)}m {Math.round((durMin % 1) * 60)}s) — will be split into{' '}
-        <strong>{numChunks} chunks</strong> of {CHUNK_DURATION_SEC / 60} min each.{' '}
-        Counts as <strong>1 credit</strong>. Chunks are stitched automatically.
-      </span>
+    <div onClick={onClose} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',
+      display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,backdropFilter:'blur(6px)' }}>
+      <motion.div initial={{ scale:0.9 }} animate={{ scale:1 }}
+        onClick={e=>e.stopPropagation()}
+        style={{ background:'#1a1a1a',border:'1px solid #333',borderRadius:20,
+          padding:'2rem',maxWidth:380,width:'100%',textAlign:'center' }}>
+        <Lock size={40} color="#6366f1" style={{ marginBottom:'1rem' }} />
+        <h3 style={{ margin:'0 0 0.5rem' }}>Login Required</h3>
+        <p style={{ color:'var(--text-secondary)', fontSize:'0.9rem', margin:'0 0 1.5rem', lineHeight:1.6 }}>
+          Audio transcription requires a signed-in account.
+        </p>
+        <div style={{ display:'grid', gap:'0.75rem' }}>
+          <Link to="/login" state={{ from:pathname }} className="btn-primary"
+            style={{ textDecoration:'none', textAlign:'center', padding:'0.9rem', display:'block', borderRadius:10 }}>
+            Sign In
+          </Link>
+          <Link to="/signup" state={{ from:pathname }} className="btn-secondary"
+            style={{ textDecoration:'none', textAlign:'center', padding:'0.9rem', display:'block', borderRadius:10 }}>
+            Create Account
+          </Link>
+        </div>
+      </motion.div>
     </div>
   );
-}
+});
 
-// ─── AI Helper Engine ─────────────────────────────────────────────────────────
-async function runAIAction(prompt, apiFetch, onProviderChange) {
-  try {
-    // 1. Try Puter AI first
-    const { puter } = await import('@heyputer/puter.js');
-    onProviderChange?.('puter');
-    const response = await puter.ai.chat(prompt);
-    return { content: response.message.content, provider: 'puter' };
-  } catch (err) {
-    console.warn('[Puter AI] failed, falling back to Groq:', err.message);
-    // 2. If Puter fails -> auto fallback to Groq
-    onProviderChange?.('groq');
-    toast.error('Using backup AI enhancement...');
-    
-    const res = await apiFetch('/api/groq/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-      }),
-    });
-
-    const data = await parseJsonResponse(res);
-    const content = data?.choices?.[0]?.message?.content || data?.content || '';
-    if (!content) throw new Error('AI Fallback failed');
-    return { content, provider: 'groq' };
-  }
-}
+// ─── Stat badge ───────────────────────────────────────────────────────────────
+const StatBadge = ({ label, value, color = 'var(--accent-primary)' }) => (
+  <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:10, padding:'0.55rem 0.85rem', textAlign:'center', minWidth:72 }}>
+    <div style={{ fontSize:'1.05rem', fontWeight:700, color }}>{value}</div>
+    <div style={{ fontSize:'0.65rem', color:'var(--text-secondary)', marginTop:2 }}>{label}</div>
+  </div>
+);
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AudioTranscription() {
   const { user, apiFetch } = useAuth();
   const location           = useLocation();
 
-  // ── File state ──
-  const [file, setFile]         = useState(null);
-  const [fileHash, setFileHash] = useState('');
-  const fileInputRef            = useRef(null);
-  const [sessionCache]          = useState(new Map()); // hash → raw Whisper string
+  // Upload state
+  const [file, setFile]           = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef              = useRef(null);
+  const [audioDurMin, setAudioDurMin] = useState(0);
 
-  // ── Config ──
-  const [mode, setMode]                             = useState('dolphin');
-  const [outputLanguage, setOutputLanguage]         = useState('original');
-  const [speakerRecognition, setSpeakerRecognition] = useState(false);
-  const [transcribeToEnglish, setTranscribeToEnglish] = useState(false);
-  const [restoreAudio, setRestoreAudio]             = useState(false);
-  const [showAdvanced, setShowAdvanced]             = useState(false);
+  // Config state
+  const [mode, setMode]                         = useState('dolphin');
+  const [outputLanguage, setOutputLanguage]     = useState('original');
+  const [speakerRecognition, setSpeakerRecognition] = useState(true);
+  const [qaMode, setQaMode]                     = useState(false);
+  const [showAdvanced, setShowAdvanced]         = useState(false);
 
-  // ── Text engine opts ──
-  const [normalizeNumbers, setNormalizeNumbers] = useState(false);
-  const [smartParagraphs,  setSmartParagraphs]  = useState(true);
-  const [stripFillers,     setStripFillers]      = useState(false);
+  // QA params state
+  const [qaParams, setQaParams]                 = useState(DEFAULT_QA_PARAMS);
+  const [newParamName, setNewParamName]         = useState('');
+  const [newParamMarks, setNewParamMarks]       = useState(10);
 
-  // ── Results ──
-  const [rawTranscript, setRawTranscript]     = useState(''); // raw from Whisper
-  const [diarizedSource, setDiarizedSource]   = useState(''); // [Speaker N]: markers added
-  const [transcript, setTranscript]           = useState(''); // final after text engine
-  const [isTranscribing, setIsTranscribing]   = useState(false);
-  const [isDiarizing, setIsDiarizing]         = useState(false);
-  const [progress, setProgress]               = useState(0);
-  const [progressLabel, setProgressLabel]     = useState('');
+  // Pipeline state
+  const [pipelineStage, setPipelineStage]       = useState(null);
+  const [pipelineProgress, setPipelineProgress] = useState(0);
+  const [providerNote, setProviderNote]         = useState('');
+  const [pipelineError, setPipelineError]       = useState(null);
+  const abortRef                                = useRef(false);
 
-  // ── QA ──
-  const [qaMode, setQaMode]         = useState(false);
-  const [editableText, setEditableText] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [replaceTerm, setReplaceTerm] = useState('');
-  const [showDiff, setShowDiff]     = useState(false);
+  // Results state
+  const [rawTranscript, setRawTranscript]           = useState('');
+  const [transcript, setTranscript]                 = useState('');
+  const [translatedTranscript, setTranslatedTranscript] = useState('');
+  const [improvedTranscript, setImprovedTranscript] = useState('');
+  const [qaReport, setQaReport]                     = useState(null);
 
-  // ── QA Parameters ──
-  const [qaParams, setQaParams]             = useState(DEFAULT_QA_PARAMS);
-  const [qaTemplateName, setQaTemplateName] = useState('');
-  const [savedTemplates, setSavedTemplates] = useState(loadQATemplates);
-  const [audioDurMin, setAudioDurMin]       = useState(0);
-  const [chatGptUrl, setChatGptUrl]         = useState('');
+  // Tab state
+  const [activeTab, setActiveTab] = useState('original');
 
-  // ── AI Enhancement State ──
-  const [isProcessingAI, setIsProcessingAI] = useState(false);
-  const [aiProvider, setAiProvider]         = useState(null); // 'puter' | 'groq'
-  const [aiReport, setAiReport]             = useState(null);
-  const [aiActionType, setAiActionType]     = useState(null);
-  const [enhancedText, setEnhancedText]     = useState('');
-  const [callSummary, setCallSummary]       = useState('');
-  const [keyPoints, setKeyPoints]           = useState('');
+  // Per-tab improving state
+  const [isImprovingOriginal, setIsImprovingOriginal]       = useState(false);
+  const [isImprovingTranslation, setIsImprovingTranslation] = useState(false);
+  const [isRunningQA, setIsRunningQA]                       = useState(false);
 
-  // ── Credits ──
-  const [credits, setCredits]                   = useState({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT });
-  const [isLoadingCredits, setIsLoadingCredits] = useState(false);
-
-  // ── UI ──
+  // UI state
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [isDragOver,     setIsDragOver]     = useState(false);
 
-  // ── Advanced transcription ──
-  const [enableTimestamps, setEnableTimestamps] = useState(false);
-  const [chunkInfo, setChunkInfo]               = useState({ current: 0, total: 0 });
-  const [segments, setSegments]                 = useState([]);
+  const sessionCache = useRef(new Map());
+  const isDone       = pipelineStage === 'done';
 
-  const usingOwnKey = false; // keys are server-side
+  // Stats
+  const transcriptStats = useMemo(() => computeStats(transcript),          [transcript]);
+  const improvedStats   = useMemo(() => computeStats(improvedTranscript),  [improvedTranscript]);
+  const totalQAMarks    = useMemo(() => qaParams.reduce((s,p) => s + (Number(p.marks)||0), 0), [qaParams]);
 
-  // ── Credits fetch ──
-  const loadCredits = useCallback(() => {
-    if (!user) { setCredits({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT }); return; }
-    setIsLoadingCredits(true);
-    apiFetchWithRetry(apiFetch, '/api/transcribe/credits')
-      .then(d => { if (d?.data) setCredits(d.data); })
-      .catch(() => {})
-      .finally(() => setIsLoadingCredits(false));
-  }, [apiFetch, user]);
+  const needsTranslation = outputLanguage !== 'original';
 
-  useEffect(() => { loadCredits(); }, [loadCredits]);
-
-  // ── Sync editable text with transcript ──
-  useEffect(() => { setEditableText(transcript); }, [transcript]);
-
-  // ── Auto-generate ChatGPT URL whenever QA mode, params, or transcript changes ──
-  useEffect(() => {
-    if (qaMode && qaParams.length > 0 && transcript) {
-      setChatGptUrl(buildChatGPTUrl(transcript, qaParams));
-    } else {
-      setChatGptUrl('');
+  // ── File handling ──────────────────────────────────────────────────────────
+  const handleFile = useCallback(async (f) => {
+    if (!f || !f.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|flac|ogg|webm)$/i.test(f.name)) {
+      toast.error('Please upload a valid audio file');
+      return;
     }
-  }, [qaMode, qaParams, transcript]);
-
-  // ── Re-run text engine when source or options change ──
-  useEffect(() => {
-    const source = diarizedSource || rawTranscript;
-    if (!source) return;
-    setTranscript(runTextEngine(source, { normalizeNumbers, smartParagraphs, stripFillers }));
-  }, [diarizedSource, rawTranscript, normalizeNumbers, smartParagraphs, stripFillers]);
-
-  const stats = useMemo(
-    () => computeStats(qaMode ? editableText : transcript),
-    [qaMode, editableText, transcript]
-  );
-
-  const isBusy = isTranscribing || isDiarizing;
-
-  const canTranscribe = useMemo(() =>
-    !!user && !!file && !isBusy && credits.creditsRemaining > 0,
-  [user, file, isBusy, credits.creditsRemaining]);
-
-  const handleBlockedAction = () => {
-    if (!user) { setShowLoginModal(true); return true; }
-    return false;
-  };
-
-  // ── File pick / drag-drop ──
-  const handleFileChange = useCallback(async (e) => {
-    if (handleBlockedAction()) return;
-    const f = e.target.files?.[0];
-    if (!f) return;
     if (f.size > MAX_FILE_BYTES) {
-      toast.error(`File too large — max ${MAX_FILE_MB} MB`);
+      toast.error(`File too large (max ${MAX_FILE_MB} MB)`);
       return;
     }
     setFile(f);
-    setTranscript('');
+    setPipelineStage(null);
+    setPipelineError(null);
     setRawTranscript('');
-    setDiarizedSource('');
-    setSegments([]);
-
-    const durMin = await getAudioDurationMin(f);
-    setAudioDurMin(durMin);
-
-    const willChunk = durMin * 60 > CHUNK_TRIGGER_SEC;
-    const numChunks = willChunk ? Math.ceil((durMin * 60) / CHUNK_DURATION_SEC) : 1;
-    if (willChunk) {
-      toast(`Long audio detected — will split into ${numChunks} chunks`, { icon: '✂️' });
-    } else {
-      toast.success('Audio file ready');
-    }
-
-    const hash = await hashFile(f);
-    setFileHash(hash);
-    if (sessionCache.has(hash)) {
-      setRawTranscript(sessionCache.get(hash));
-      toast('♻️ Loaded from session cache — no credit used', { icon: '💾' });
-    }
-  }, [sessionCache]);
+    setTranscript('');
+    setTranslatedTranscript('');
+    setImprovedTranscript('');
+    setQaReport(null);
+    const dur = await getAudioDurationMin(f);
+    setAudioDurMin(dur);
+  }, []);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (handleBlockedAction()) return;
     const f = e.dataTransfer.files?.[0];
-    if (f) handleFileChange({ target: { files: [f] } });
-  }, [handleFileChange]);
+    if (f) handleFile(f);
+  }, [handleFile]);
 
-  const handleDragOver  = useCallback((e) => { e.preventDefault(); setIsDragOver(true);  }, []);
-  const handleDragLeave = useCallback((e) => { e.preventDefault(); setIsDragOver(false); }, []);
+  // ── Main pipeline ──────────────────────────────────────────────────────────
+  const runPipeline = useCallback(async () => {
+    if (!file) return;
+    if (!user) { setShowLoginModal(true); return; }
 
-  // ── Diarization sub-step (can be called independently) ──
-  const runDiarization = async (source) => {
-    setIsDiarizing(true);
-    setProgress(88);
-    setProgressLabel('AI Speaker Engine — identifying who said what…');
+    abortRef.current = false;
+    setPipelineError(null);
+    setTranslatedTranscript('');
+    setImprovedTranscript('');
+    setQaReport(null);
+    setActiveTab('original');
+
+    const modeConfig = TRANSCRIPTION_MODES.find(m => m.value === mode) || TRANSCRIPTION_MODES[1];
+
     try {
-      const blocks = await runDiarizationEngine(source, apiFetch);
-      const asText = blocksToPlainText(blocks);
-      setDiarizedSource(asText);
-      const uniqueSpeakers = [...new Set(blocks.map(b => b.speaker))].length;
-      setProgress(100);
-      setProgressLabel('Done!');
-      toast.success(
-        uniqueSpeakers === 1
-          ? 'One speaker detected'
-          : `${uniqueSpeakers} speakers identified`
-      );
+      // STEP 1 — Upload / validate
+      setPipelineStage('uploading');
+      setPipelineProgress(10);
+      setProviderNote('Groq Whisper');
+
+      const cacheKey = `${file.name}-${file.size}-${file.lastModified}-${mode}`;
+      let rawText = sessionCache.current.get(cacheKey);
+
+      if (!rawText) {
+        // STEP 2 — Transcribe (with chunking if needed)
+        setPipelineStage('transcribing');
+        setPipelineProgress(20);
+
+        const needsChunking = audioDurMin * 60 > CHUNK_TRIGGER_SEC;
+
+        if (needsChunking) {
+          setProviderNote(`Chunking ${Math.ceil(audioDurMin / (CHUNK_DURATION_SEC / 60))} segments…`);
+          const { blobs } = await splitAudioIntoChunks(file, (cur, tot) => {
+            setPipelineProgress(20 + Math.round((cur / tot) * 20));
+          });
+          const partials = [];
+          for (let i = 0; i < blobs.length; i++) {
+            if (abortRef.current) throw new Error('Cancelled');
+            setProviderNote(`Transcribing chunk ${i+1}/${blobs.length}…`);
+            setPipelineProgress(40 + Math.round((i / blobs.length) * 20));
+            const fd = new FormData();
+            fd.append('audio', blobs[i], 'chunk.wav');
+            fd.append('model', modeConfig.model);
+            const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
+            partials.push(data.text || data.transcription || '');
+          }
+          rawText = stitchChunks(partials);
+        } else {
+          setProviderNote('Groq Whisper');
+          const fd = new FormData();
+          fd.append('audio', file);
+          fd.append('model', modeConfig.model);
+          const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
+          rawText = data.text || data.transcription || '';
+        }
+
+        sessionCache.current.set(cacheKey, rawText);
+      }
+
+      setPipelineProgress(60);
+      setRawTranscript(rawText);
+
+      // Speaker diarization
+      let processedText = rawText;
+      if (speakerRecognition) {
+        setProviderNote('Speaker diarization…');
+        const blocks = await runDiarizationEngine(rawText, apiFetch);
+        processedText = blocksToPlainText(blocks);
+      }
+
+      const cleaned = runTextEngine(processedText, { smartParagraphs:true });
+      setTranscript(cleaned);
+      setPipelineProgress(70);
+
+      // STEP 3 — Translation
+      if (needsTranslation && !abortRef.current) {
+        setPipelineStage('translating');
+        setProviderNote('Translating with Puter AI…');
+        setPipelineProgress(72);
+        try {
+          const translated = await callAI(
+            buildTranslationPrompt(cleaned, outputLanguage),
+            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+          );
+          setTranslatedTranscript(translated);
+        } catch (err) {
+          toast.error('Translation failed — original transcript available');
+          setTranslatedTranscript('');
+        }
+        setPipelineProgress(82);
+      }
+
+      // STEP 4 — QA Analysis
+      if (qaMode && !abortRef.current) {
+        setPipelineStage('analyzing');
+        setProviderNote('QA Analysis with Puter AI…');
+        setPipelineProgress(84);
+        try {
+          const qaText = await callAI(
+            buildQaAnalysisPrompt(cleaned, qaParams, totalQAMarks),
+            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+          );
+          const report = parseQaReport(qaText);
+          setQaReport(report);
+          setActiveTab('qa');
+        } catch (err) {
+          toast.error('QA analysis failed — transcript still available');
+        }
+        setPipelineProgress(92);
+      }
+
+      // STEP 5 — Auto-improve transcript
+      if (!abortRef.current) {
+        setPipelineStage('improving');
+        setProviderNote('Improving transcript…');
+        setPipelineProgress(94);
+        try {
+          const improved = await callAI(
+            buildImproveTextPrompt(cleaned),
+            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+          );
+          setImprovedTranscript(improved);
+        } catch {
+          setImprovedTranscript('');
+        }
+        setPipelineProgress(100);
+      }
+
+      setPipelineStage('done');
+      setProviderNote('');
+      if (!qaMode) setActiveTab(needsTranslation ? 'translation' : 'improved');
+      toast.success('Transcription complete!');
+
     } catch (err) {
-      toast.error('Speaker identification failed — showing plain transcript');
-      setDiarizedSource('');
-    } finally {
-      setIsDiarizing(false);
-      setTimeout(() => { setProgress(0); setProgressLabel(''); }, 800);
-    }
-  };
-
-  // ── Main transcribe pipeline ──
-  const handleTranscribe = async () => {
-    if (handleBlockedAction()) return;
-    if (!file) { toast.error('Upload an audio file first'); return; }
-
-    // Cache hit
-    if (sessionCache.has(fileHash)) {
-      const cached = sessionCache.get(fileHash);
-      setRawTranscript(cached);
-      if (speakerRecognition) await runDiarization(cached);
-      else setDiarizedSource('');
-      toast('♻️ Loaded from cache', { icon: '💾' });
-      return;
-    }
-
-    // Daily call-length limits (shared key only)
-    if (user && !usingOwnKey) {
-      const callType   = audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short';
-      const maxAllowed = callType === 'long' ? LIMIT_LONG_MAX : LIMIT_SHORT_MAX;
-      const usedToday  = getUsageCount(user.id || user.email, callType);
-      if (usedToday >= maxAllowed) {
-        toast.error(callType === 'long'
-          ? `Daily limit: max ${LIMIT_LONG_MAX} long calls (>${DURATION_THRESHOLD_M} min). Resets at midnight.`
-          : `Daily limit: max ${LIMIT_SHORT_MAX} short calls (≤${DURATION_THRESHOLD_M} min). Resets at midnight.`);
+      if (err.message === 'Cancelled') {
+        setPipelineStage(null);
+        setProviderNote('');
         return;
       }
+      console.error('[Pipeline]', err);
+      setPipelineError(err.message || 'Pipeline failed');
+      setPipelineStage(null);
+      setProviderNote('');
+      toast.error('Processing failed: ' + (err.message || 'Unknown error'));
     }
+  }, [file, user, mode, speakerRecognition, outputLanguage, qaMode, qaParams, totalQAMarks, apiFetch, audioDurMin, needsTranslation]);
 
-    setIsTranscribing(true);
-    setProgress(5);
-    setProgressLabel('Pre-flight checks…');
-
-    const selectedMode  = TRANSCRIPTION_MODES.find(m => m.value === mode);
-    // Trigger chunking by DURATION (not file size) — Groq's hard limit is 25 MB
-    // per file, which at 16 kHz mono WAV equals ~108 min. We chunk earlier to
-    // stay well within any duration limits Groq enforces.
-    const needsChunking = audioDurMin * 60 > CHUNK_TRIGGER_SEC;
-
+  // ── On-demand improve ──────────────────────────────────────────────────────
+  const handleImproveOriginal = async () => {
+    if (!transcript || isImprovingOriginal) return;
+    setIsImprovingOriginal(true);
     try {
-      let fullTranscript = '';
-      let allSegments    = [];
-
-      if (needsChunking) {
-        // ── Chunked path ──────────────────────────────────────────────────────
-        setProgressLabel('Decoding audio — this may take a moment for long files…');
-        setProgress(8);
-
-        let blobs, stepSec;
-        try {
-          const result = await splitAudioIntoChunks(file, (cur, total) => {
-            setChunkInfo({ current: cur, total });
-            setProgress(8 + Math.round((cur / total) * 17)); // 8 → 25 %
-            setProgressLabel(`Preparing chunk ${cur} / ${total}…`);
-          });
-          blobs   = result.blobs;
-          stepSec = result.stepSec;
-        } catch (err) {
-          throw new Error('Failed to decode audio: ' + err.message);
-        }
-
-        const chunkTexts = [];
-        let   segOffset  = 0;
-
-        for (let i = 0; i < blobs.length; i++) {
-          setChunkInfo({ current: i + 1, total: blobs.length });
-          const pct = 25 + Math.round(((i + 0.5) / blobs.length) * 58); // 25 → 83 %
-          setProgress(pct);
-          setProgressLabel(
-            `${selectedMode.emoji} Transcribing chunk ${i + 1} of ${blobs.length}` +
-            ` (${Math.round(((i + 1) / blobs.length) * 100)}%)…`
-          );
-
-          const fd = new FormData();
-          fd.append('file', new File([blobs[i]], `chunk_${i}.wav`, { type: 'audio/wav' }));
-          fd.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
-          fd.append('model', selectedMode.model);
-          fd.append('timestamps', enableTimestamps ? 'true' : 'false');
-          // Only the first chunk increments the daily quota — the whole session
-          // counts as one transcription credit regardless of chunk count.
-          fd.append('firstChunk', i === 0 ? 'true' : 'false');
-
-          const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: fd });
-          chunkTexts.push(data?.data?.transcript || '');
-
-          if (enableTimestamps && data?.data?.segments) {
-            allSegments = [
-              ...allSegments,
-              ...data.data.segments.map(seg => ({
-                ...seg,
-                start: seg.start + segOffset,
-                end:   seg.end   + segOffset,
-              })),
-            ];
-          }
-          segOffset += stepSec;
-
-          // Update credit display only after the first chunk (when quota was used)
-          if (i === 0 && !usingOwnKey && typeof data.creditsUsed === 'number') {
-            setCredits({
-              creditsUsed:      data.creditsUsed,
-              creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
-              creditsTotal:     data.creditsTotal || DAILY_LIMIT,
-            });
-          }
-        }
-
-        // Stitch chunks, deduplicating the overlap region at each boundary
-        fullTranscript = stitchChunks(chunkTexts);
-
-      } else {
-        // ── Direct path ──────────────────────────────────────────────────────
-        setProgress(20); setProgressLabel('Uploading audio…');
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
-        formData.append('model', selectedMode.model);
-        formData.append('timestamps', enableTimestamps ? 'true' : 'false');
-        formData.append('firstChunk', 'true');
-
-        setProgress(45);
-        setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
-        const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: formData });
-        fullTranscript = data?.data?.transcript || '';
-        if (enableTimestamps && data?.data?.segments) allSegments = data.data.segments;
-
-        if (!usingOwnKey && typeof data.creditsUsed === 'number') {
-          setCredits({
-            creditsUsed:      data.creditsUsed,
-            creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
-            creditsTotal:     data.creditsTotal || DAILY_LIMIT,
-          });
-        }
-      }
-
-      setProgress(88); setProgressLabel('Running Text Engine…');
-      setRawTranscript(fullTranscript);
-      if (allSegments.length) setSegments(allSegments);
-      sessionCache.set(fileHash, fullTranscript);
-      if (user && !usingOwnKey) incrementUsage(user.id || user.email, audioDurMin > DURATION_THRESHOLD_M ? 'long' : 'short');
-
-      setIsTranscribing(false);
-      setChunkInfo({ current: 0, total: 0 });
-      loadCredits();
-
-      if (speakerRecognition && fullTranscript) {
-        await runDiarization(fullTranscript);
-      } else {
-        setDiarizedSource('');
-        setProgress(100); setProgressLabel('Done!');
-        const chunkMsg = needsChunking ? ` (${Math.ceil(audioDurMin / (CHUNK_DURATION_SEC / 60))} chunks merged)` : '';
-        toast.success(`Transcription complete — ${selectedMode.label} mode${chunkMsg}`);
-        setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1000);
-      }
-    } catch (err) {
-      toast.error(err.message || 'Transcription failed');
-    } finally {
-      setIsTranscribing(false);
-      setChunkInfo({ current: 0, total: 0 });
-    }
+      const result = await callAI(
+        buildImproveTextPrompt(transcript),
+        { apiFetch, onProvider: () => {} }
+      );
+      setImprovedTranscript(result);
+      setActiveTab('improved');
+      toast.success('Transcript improved');
+    } catch { toast.error('Improvement failed'); }
+    finally { setIsImprovingOriginal(false); }
   };
 
-  // ── QA actions ──
-  const handleReplace = () => {
-    if (!searchTerm) return;
-    const re      = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    const updated = editableText.replace(re, replaceTerm);
-    setEditableText(updated);
-    toast.success('Replacement applied');
-  };
-
-  // ── Export ──
-  const handleExport = (fmt) => {
-    const text = qaMode ? editableText : transcript;
-    if (!text) return;
-    let content, mime, ext;
-    if (fmt === 'txt')  { content = text.replace(/^\[Speaker \d+\]:\s*/gm, ''); mime = 'text/plain';       ext = 'txt';  }
-    if (fmt === 'srt')  { content = generateSRT(text);                           mime = 'text/plain';       ext = 'srt';  }
-    if (fmt === 'json') {
-      content = JSON.stringify({
-        transcript: text, stats, file: file?.name, mode, outputLanguage,
-        speakerRecognition, createdAt: new Date().toISOString(),
-      }, null, 2);
-      mime = 'application/json'; ext = 'json';
-    }
-    const blob = new Blob([content], { type: mime });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `transcript.${ext}`; a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Exported as .${ext}`);
-  };
-
-  // ── AI Action Handlers ──
-  const handleAIAction = async (type) => {
-    if (!transcript) { toast.error('No transcript to process'); return; }
-
-    setIsProcessingAI(true);
-    setAiActionType(type);
-    setAiProvider(null);
-    setAiReport(null);
-    setEnhancedText('');
-    setCallSummary('');
-    setKeyPoints('');
-
-    const textToProcess = qaMode ? editableText : transcript;
-    let messages = [];
-
-    // Build messages based on action type
-    if (type === 'improve') {
-      messages = buildImproveTextPrompt(textToProcess);
-    } else if (type === 'polish') {
-      messages = buildTranslationPolishPrompt(textToProcess, outputLanguage, 'natural language');
-    } else if (type === 'summarize') {
-      messages = buildSummarizePrompt(textToProcess);
-    } else if (type === 'extract') {
-      messages = buildExtractKeyPointsPrompt(textToProcess);
-    } else if (type === 'qa') {
-      const totalMarks = qaParams.reduce((s, p) => s + (Number(p.marks) || 0), 0);
-      messages = buildQaAnalysisPrompt(textToProcess, qaParams, totalMarks);
-    }
-
+  const handleImproveTranslation = async () => {
+    if (!translatedTranscript || isImprovingTranslation) return;
+    setIsImprovingTranslation(true);
     try {
-      const content = await callAI(messages, {
-        apiFetch,
-        onProvider: (provider) => setAiProvider(provider),
-      });
-
-      if (type === 'improve') {
-        setEnhancedText(content);
-      } else if (type === 'polish') {
-        setEnhancedText(content);
-      } else if (type === 'summarize') {
-        setCallSummary(content);
-      } else if (type === 'extract') {
-        const points = parseKeyPoints(content);
-        setKeyPoints(points.join('\n'));
-      } else if (type === 'qa') {
-        try {
-          const report = parseQaReport(content);
-          setAiReport(report);
-        } catch (parseErr) {
-          toast.error('Failed to parse QA report: ' + parseErr.message);
-          setAiReport(null);
-        }
-      }
-
-      if (type !== 'qa') {
-        toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} complete`);
-      }
-    } catch (err) {
-      console.error('[AI Action]', err);
-      toast.error('AI Processing failed: ' + err.message);
-    } finally {
-      setIsProcessingAI(false);
-    }
+      const result = await callAI(
+        buildImproveTextPrompt(translatedTranscript),
+        { apiFetch, onProvider: () => {} }
+      );
+      setTranslatedTranscript(result);
+      toast.success('Translation improved');
+    } catch { toast.error('Improvement failed'); }
+    finally { setIsImprovingTranslation(false); }
   };
 
-  const copyText = async () => {
-    const text = qaMode ? editableText : transcript;
+  const handleRunQA = async () => {
+    if (!transcript || isRunningQA) return;
+    setIsRunningQA(true);
+    try {
+      const qaText = await callAI(
+        buildQaAnalysisPrompt(transcript, qaParams, totalQAMarks),
+        { apiFetch, onProvider: () => {} }
+      );
+      const report = parseQaReport(qaText);
+      setQaReport(report);
+      setActiveTab('qa');
+      toast.success('QA analysis complete');
+    } catch { toast.error('QA analysis failed'); }
+    finally { setIsRunningQA(false); }
+  };
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  const handleExport = (text, format, label) => {
     if (!text) return;
-    await navigator.clipboard.writeText(text)
-      .then(() => toast.success('Copied!'))
-      .catch(() => toast.error('Copy failed'));
+    const base = (file?.name || 'transcript').replace(/\.[^.]+$/, '');
+    if (format === 'txt')  downloadFile(text, `${base}-${label}.txt`, 'text/plain');
+    if (format === 'srt')  downloadFile(generateSRT(text), `${base}-${label}.srt`, 'text/plain');
+    if (format === 'json') downloadFile(JSON.stringify({ transcript:text, file:file?.name, date:new Date().toISOString() }, null, 2), `${base}-${label}.json`, 'application/json');
   };
 
-  const clearSession = () => {
-    setFile(null); setTranscript(''); setRawTranscript('');
-    setDiarizedSource(''); setFileHash(''); setChatGptUrl('');
-    setAudioDurMin(0);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text).then(() => toast.success('Copied!'));
   };
 
-  // Derived
-  const hasSpeakers  = /^\[Speaker \d+\]:/m.test(transcript);
-  const speakerCount = hasSpeakers
-    ? [...new Set((transcript.match(/\[Speaker \d+\]/g) || []))].length
-    : 0;
-  const activeText = qaMode ? editableText : transcript;
+  const isPipelineRunning = pipelineStage && pipelineStage !== 'done';
+  const canStart          = file && !isPipelineRunning;
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── Tabs config ────────────────────────────────────────────────────────────
+  const tabs = useMemo(() => [
+    { id:'original',    label:'Original',    show:true,             hasContent:!!transcript },
+    { id:'improved',    label:'Improved',    show:true,             hasContent:!!improvedTranscript },
+    { id:'translation', label:'Translation', show:needsTranslation, hasContent:!!translatedTranscript },
+    { id:'qa',          label:'QA Analysis', show:qaMode,           hasContent:!!qaReport },
+  ].filter(t => t.show), [transcript, improvedTranscript, translatedTranscript, qaReport, needsTranslation, qaMode]);
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="container" style={{ maxWidth: '1140px', margin: '0 auto', padding: '2rem' }}>
-
-      <Link to="/utilities" className="btn-secondary"
-        style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.5rem', textDecoration:'none' }}>
-        <ChevronLeft size={16} /> Back to Utilities
-      </Link>
-
+    <div style={{ minHeight:'100vh', fontFamily:"'Inter', system-ui, sans-serif" }}>
       <ToolHeader
-        title="Audio Transcription"
-        description="Upload audio → Groq Whisper transcribes → AI Speaker Engine labels who said what → Text Engine cleans everything up."
-        icon={AudioLines}
-        toolId="audio-transcription"
+        title="AI Transcription"
+        description="Professional audio transcription with AI pipeline — speaker recognition, translation, and QA analysis"
+        icon={<AudioLines size={22} />}
       />
 
-      {/* ── Quota / Auth banner ── */}
-      <div className="glass-panel" style={{ padding:'1.25rem 1.5rem', marginBottom:'1.5rem',
-        border:     user ? '1px solid rgba(59,130,246,0.22)' : '1px solid rgba(245,158,11,0.26)',
-        background: user ? 'rgba(59,130,246,0.06)'           : 'rgba(245,158,11,0.08)' }}>
-        {user ? (
-          <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
-            <div>
-              <p style={{ margin:0, fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                Daily Quota
-                {isLoadingCredits && (
-                  <span style={{ fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:400 }}>refreshing…</span>
-                )}
-              </p>
-              <p style={{ margin:'0.25rem 0 0', color: credits.creditsRemaining === 0 ? '#f87171' : 'var(--text-secondary)', fontSize:'0.88rem' }}>
-                {credits.creditsRemaining === 0
-                  ? 'Quota exhausted — resets at midnight UTC'
-                  : `${credits.creditsRemaining} of ${credits.creditsTotal} transcriptions remaining today`}
-              </p>
-            </div>
-            <div style={{ minWidth:'200px', flex:'1 1 200px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:'5px' }}>
-                <span>{credits.creditsUsed} used</span>
-                <span>{credits.creditsTotal} total</span>
-              </div>
-              <div style={{ height:'6px', borderRadius:'999px', overflow:'hidden', background:'rgba(255,255,255,0.08)' }}>
-                <div style={{ height:'100%', transition:'width 0.4s ease',
-                  width:`${(credits.creditsUsed / Math.max(credits.creditsTotal,1))*100}%`,
-                  background: credits.creditsRemaining === 0
-                    ? 'linear-gradient(90deg,#ef4444,#f87171)'
-                    : 'linear-gradient(90deg,#38bdf8,#818cf8)' }} />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display:'flex', justifyContent:'space-between', gap:'1rem', flexWrap:'wrap', alignItems:'center' }}>
-            <div>
-              <p style={{ margin:0, fontWeight:700 }}>Authentication required</p>
-              <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.9rem' }}>
-                Sign in to use Groq Whisper and track your daily quota.
-              </p>
-            </div>
-            <button onClick={() => setShowLoginModal(true)} className="btn-primary" style={{ padding:'0.85rem 1rem' }}>
-              Login to Continue
-            </button>
-          </div>
-        )}
-      </div>
+      <div style={{ maxWidth:1100, margin:'0 auto', padding:'2rem 1rem', display:'flex', flexDirection:'column', gap:'1.5rem' }}>
 
-      {/* ── Main 2-column grid ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(100%,320px),1fr))', gap:'1.5rem' }}>
+        {/* ── Upload + Config Row ── */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:'1.5rem', alignItems:'start' }}>
 
-        {/* ── LEFT: Settings ── */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+          {/* Left: Upload card */}
+          <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+            {/* Dropzone */}
+            <div
+              onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => !isPipelineRunning && fileInputRef.current?.click()}
+              style={{ border:`2px dashed ${isDragOver ? '#6366f1' : file ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                borderRadius:16, padding:'2rem 1.5rem', textAlign:'center',
+                background: isDragOver ? 'rgba(99,102,241,0.06)' : file ? 'rgba(99,102,241,0.04)' : 'rgba(255,255,255,0.02)',
+                cursor: isPipelineRunning ? 'default' : 'pointer', transition:'all 0.2s' }}>
+              <input ref={fileInputRef} type="file" accept={ACCEPTED_AUDIO} hidden
+                onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
 
-          {/* Mode picker */}
-          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
-            <p style={{ margin:'0 0 0.9rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-              <Zap size={16} color="var(--accent-primary)" /> Transcription Mode
-            </p>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'0.6rem' }}>
-              {TRANSCRIPTION_MODES.map(m => (
-                <button key={m.value} onClick={() => setMode(m.value)} title={m.desc}
-                  style={{ background: mode===m.value ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
-                    border: mode===m.value ? '1.5px solid rgba(56,189,248,0.55)' : '1px solid var(--border-color)',
-                    borderRadius:'12px', padding:'0.7rem 0.4rem', cursor:'pointer', transition:'all 0.2s',
-                    display:'flex', flexDirection:'column', alignItems:'center', gap:'0.3rem' }}>
-                  <span style={{ fontSize:'1.5rem' }}>{m.emoji}</span>
-                  <span style={{ fontWeight:700, fontSize:'0.88rem', color: mode===m.value ? '#38bdf8' : 'var(--text-primary)' }}>{m.label}</span>
-                  <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)' }}>{m.badge}</span>
-                </button>
-              ))}
-            </div>
-            <p style={{ margin:'0.7rem 0 0', fontSize:'0.82rem', color:'var(--text-secondary)' }}>
-              {TRANSCRIPTION_MODES.find(m2 => m2.value === mode)?.desc}
-            </p>
-          </div>
-
-          {/* Upload */}
-          <div className="glass-panel" style={{ padding:'1.5rem' }}>
-            <h3 style={{ marginTop:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-              <Upload size={16} color="var(--accent-primary)" /> Upload Audio
-            </h3>
-
-            <label htmlFor="audio-upload"
-              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-              style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'0.75rem',
-                minHeight:'160px', borderRadius:'16px', transition:'all 0.2s',
-                border: isDragOver ? '2px dashed #38bdf8' : file ? '2px dashed rgba(56,189,248,0.4)' : '2px dashed var(--border-color)',
-                background: isDragOver ? 'rgba(56,189,248,0.08)' : file ? 'rgba(56,189,248,0.04)' : 'rgba(255,255,255,0.02)',
-                cursor: user ? 'pointer' : 'not-allowed', opacity: user ? 1 : 0.6,
-                textAlign:'center', padding:'1.25rem', boxShadow: isDragOver ? '0 0 0 4px rgba(56,189,248,0.15)' : 'none' }}
-              onClick={e => { if (!user) { e.preventDefault(); setShowLoginModal(true); } }}>
-              <input ref={fileInputRef} id="audio-upload" type="file" hidden accept={ACCEPTED_AUDIO} onChange={handleFileChange} />
-              <div style={iconBox(isDragOver ? '#38bdf8' : file ? '#22d3ee' : '#3b82f6')}>
-                {isDragOver ? <Download size={20} color="#38bdf8" /> : file ? <FileAudio size={20} color="#22d3ee" /> : <Mic size={20} color="#60a5fa" />}
-              </div>
-              <div>
-                <strong style={{ color: file ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize:'0.95rem' }}>
-                  {isDragOver ? 'Release to upload' : file ? file.name : 'Drop audio or click to browse'}
-                </strong>
-                <p style={{ margin:'0.35rem 0 0', color:'var(--text-secondary)', fontSize:'0.82rem' }}>
-                  {file
-                    ? `${(file.size/1024/1024).toFixed(2)} MB${audioDurMin > 0 ? ` · ${Math.floor(audioDurMin)}m ${Math.round((audioDurMin % 1) * 60)}s` : ''}`
-                    : 'MP3, WAV, M4A, AAC, FLAC, OGG · max 25 MB'}
-                </p>
-              </div>
-            </label>
-            <PreflightWarning durMin={audioDurMin} />
-
-            {/* Language */}
-            <div style={{ marginTop:'1rem' }}>
-              <p style={{ margin:'0 0 0.55rem', fontWeight:600, fontSize:'0.9rem' }}>Output Language</p>
-              <select value={outputLanguage} onChange={e => setOutputLanguage(e.target.value)}
-                style={{ width:'100%', padding:'0.45rem 0.7rem', borderRadius:'10px',
-                  border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.04)',
-                  color:'var(--text-primary)', fontSize:'0.85rem', outline:'none', cursor:'pointer' }}>
-                {OUTPUT_LANGUAGES.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Advanced toggle */}
-            <button onClick={() => setShowAdvanced(v => !v)}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'1rem',
-                background:'transparent', border:'none', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.88rem', padding:0 }}>
-              <Users size={14} /> Speaker Recognition &amp; More Settings
-              {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-
-            {showAdvanced && (
-              <div style={{ marginTop:'0.85rem', display:'flex', flexDirection:'column', gap:'0.65rem',
-                padding:'0.9rem', borderRadius:'12px', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)' }}>
-                {[
-                  { val:speakerRecognition,   set:setSpeakerRecognition,   icon:Users,    label:'Recognize Speakers',    desc:'AI labels who is speaking — adds ~5s of processing' },
-                  { val:enableTimestamps,     set:setEnableTimestamps,     icon:Hash,     label:'Include Timestamps',    desc:'Adds word-level timestamps (verbose_json format)' },
-                  { val:transcribeToEnglish,  set:setTranscribeToEnglish,  icon:Filter,   label:'Force English Output',  desc:'Override language selection and always output English' },
-                  { val:restoreAudio,         set:setRestoreAudio,         icon:Sparkles, label:'Restore Audio',         desc:'AI noise reduction — only for poor-quality recordings' },
-                ].map(({ val, set, icon:Icon, label, desc }) => (
-                  <label key={label} style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem', cursor:'pointer' }}>
-                    <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} style={{ marginTop:'3px', accentColor:'#38bdf8' }} />
-                    <div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontWeight:600, fontSize:'0.88rem' }}>
-                        <Icon size={13} /> {label}
-                      </div>
-                      <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>{desc}</div>
+              {file ? (
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'0.75rem' }}>
+                  <div style={{ width:52, height:52, borderRadius:'50%', background:'rgba(99,102,241,0.15)',
+                    display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <FileAudio size={24} color="#6366f1" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:'0.95rem', marginBottom:'0.25rem' }}>{file.name}</div>
+                    <div style={{ color:'var(--text-secondary)', fontSize:'0.8rem' }}>
+                      {(file.size/1024/1024).toFixed(2)} MB · {audioDurMin > 0 ? `${Math.floor(audioDurMin)}m ${Math.round((audioDurMin%1)*60)}s` : 'Calculating…'}
                     </div>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Text Engine */}
-          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
-            <p style={{ margin:'0 0 0.85rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-              <Settings2 size={16} color="var(--accent-primary)" /> Text Engine
-            </p>
-            {[
-              { val:smartParagraphs,  set:setSmartParagraphs,  label:'Smart Paragraph Breaks',  desc:'Auto-split at natural topic transitions'   },
-              { val:stripFillers,     set:setStripFillers,     label:'Remove Filler Words',      desc:'Strip "um", "uh", "like", "you know"…'    },
-              { val:normalizeNumbers, set:setNormalizeNumbers, label:'Normalize Numbers',        desc:'Convert "twenty three" → "23"'            },
-            ].map(({ val, set, label, desc }) => (
-              <label key={label} style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem', cursor:'pointer', marginBottom:'0.55rem' }}>
-                <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} style={{ marginTop:'3px', accentColor:'#38bdf8' }} />
-                <div>
-                  <div style={{ fontWeight:600, fontSize:'0.88rem' }}>{label}</div>
-                  <div style={{ fontSize:'0.77rem', color:'var(--text-secondary)' }}>{desc}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-
-          {/* ── QA Parameters Panel ── */}
-          {qaMode && (
-            <div className="glass-panel" style={{ padding:'1.25rem 1.5rem', border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.05)' }}>
-              <p style={{ margin:'0 0 0.85rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                <ClipboardCheck size={16} color="#a78bfa" /> QA Parameters
-              </p>
-
-              {/* Load template */}
-              {savedTemplates.length > 0 && (
-                <select
-                  defaultValue=""
-                  onChange={e => {
-                    const tpl = savedTemplates.find(t => t.name === e.target.value);
-                    if (tpl) { setQaParams(tpl.params); toast.success(`Template "${tpl.name}" loaded`); }
-                  }}
-                  style={{ width:'100%', padding:'0.4rem 0.65rem', borderRadius:'8px', marginBottom:'0.75rem',
-                    border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                    color:'var(--text-primary)', fontSize:'0.85rem', outline:'none' }}>
-                  <option value="" disabled>Load saved template…</option>
-                  {savedTemplates.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                </select>
-              )}
-
-              {/* Parameter rows */}
-              <div style={{ display:'flex', flexDirection:'column', gap:'0.45rem', marginBottom:'0.75rem' }}>
-                {qaParams.map((p, i) => (
-                  <div key={i} style={{ display:'flex', gap:'0.45rem', alignItems:'center' }}>
-                    <input
-                      value={p.name} placeholder="Parameter name"
-                      onChange={e => { const u = [...qaParams]; u[i] = { ...u[i], name: e.target.value }; setQaParams(u); }}
-                      style={{ flex:'1', padding:'0.38rem 0.6rem', borderRadius:'8px',
-                        border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                        color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
-                    />
-                    <input
-                      type="number" value={p.marks} min="1" max="100"
-                      onChange={e => { const u = [...qaParams]; u[i] = { ...u[i], marks: Number(e.target.value) }; setQaParams(u); }}
-                      style={{ width:'66px', padding:'0.38rem 0.5rem', borderRadius:'8px', textAlign:'center',
-                        border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                        color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
-                    />
-                    <button onClick={() => setQaParams(prev => prev.filter((_, j) => j !== i))}
-                      style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', padding:'0.2rem', lineHeight:0 }}>
-                      <X size={14} />
+                  </div>
+                  {!isPipelineRunning && (
+                    <button onClick={e => { e.stopPropagation(); setFile(null); setPipelineStage(null); setRawTranscript(''); setTranscript(''); }}
+                      style={{ background:'none', border:'none', color:'var(--text-secondary)', cursor:'pointer',
+                        display:'flex', alignItems:'center', gap:4, fontSize:'0.8rem' }}>
+                      <Trash2 size={13} /> Remove
                     </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'0.75rem', padding:'0.5rem' }}>
+                  <div style={{ width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.06)',
+                    display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <Upload size={22} color="var(--text-secondary)" />
                   </div>
+                  <div>
+                    <div style={{ fontWeight:600, marginBottom:'0.25rem' }}>Drop audio here or click to browse</div>
+                    <div style={{ color:'var(--text-secondary)', fontSize:'0.8rem' }}>
+                      MP3, WAV, M4A, AAC, FLAC, OGG · Max {MAX_FILE_MB} MB
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Mode selector */}
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+              <label style={{ fontSize:'0.78rem', fontWeight:600, color:'var(--text-secondary)',
+                textTransform:'uppercase', letterSpacing:'0.05em' }}>Transcription Mode</label>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'0.5rem' }}>
+                {TRANSCRIPTION_MODES.map(m => (
+                  <button key={m.value} onClick={() => setMode(m.value)}
+                    style={{ padding:'0.75rem 0.5rem', borderRadius:12, cursor:'pointer', textAlign:'center',
+                      border: `1.5px solid ${mode === m.value ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
+                      background: mode === m.value ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
+                      transition:'all 0.2s' }}>
+                    <div style={{ fontSize:'1.3rem', marginBottom:'0.25rem' }}>{m.emoji}</div>
+                    <div style={{ fontSize:'0.8rem', fontWeight:600 }}>{m.label}</div>
+                    <div style={{ fontSize:'0.65rem', color:'var(--text-secondary)', marginTop:2 }}>{m.badge}</div>
+                  </button>
                 ))}
               </div>
-
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem' }}>
-                <button onClick={() => setQaParams(prev => [...prev, { name: '', marks: 10 }])}
-                  className="btn-secondary"
-                  style={{ fontSize:'0.8rem', padding:'0.35rem 0.7rem', display:'flex', alignItems:'center', gap:'0.3rem' }}>
-                  + Add Parameter
-                </button>
-                <span style={{ fontSize:'0.8rem', color:'var(--text-secondary)' }}>
-                  Total: <strong style={{ color:'var(--text-primary)' }}>{qaParams.reduce((s, p) => s + (Number(p.marks) || 0), 0)}</strong> marks
-                </span>
-              </div>
-
-              {/* Save template */}
-              <div style={{ display:'flex', gap:'0.45rem' }}>
-                <input
-                  value={qaTemplateName} onChange={e => setQaTemplateName(e.target.value)}
-                  placeholder="Template name…"
-                  style={{ flex:'1', padding:'0.38rem 0.6rem', borderRadius:'8px',
-                    border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                    color:'var(--text-primary)', fontSize:'0.84rem', outline:'none' }}
-                />
-                <button
-                  onClick={() => {
-                    if (!qaTemplateName.trim()) { toast.error('Enter a template name'); return; }
-                    saveQATemplate(qaTemplateName.trim(), qaParams);
-                    setSavedTemplates(loadQATemplates());
-                    toast.success(`Template "${qaTemplateName.trim()}" saved`);
-                    setQaTemplateName('');
-                  }}
-                  className="btn-primary"
-                  style={{ fontSize:'0.8rem', padding:'0.38rem 0.75rem', display:'flex', alignItems:'center', gap:'0.3rem', whiteSpace:'nowrap' }}>
-                  Save Template
-                </button>
-              </div>
             </div>
-          )}
 
-          {/* Transcribe button + progress */}
-          <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
-            <button onClick={handleTranscribe} disabled={!canTranscribe} className="btn-primary"
-              title={!user ? 'Login to transcribe' : credits.creditsRemaining === 0 ? 'Daily quota reached' : !file ? 'Upload a file first' : ''}
-              style={{ flex:'1 1 200px', opacity: canTranscribe ? 1 : 0.5,
-                cursor: canTranscribe ? 'pointer' : 'not-allowed',
-                display:'inline-flex', alignItems:'center', justifyContent:'center', gap:'0.5rem' }}>
-              {isBusy
-                ? <><LoaderCircle size={17} className="spin" />
-                    {isDiarizing ? 'Identifying Speakers…' : 'Transcribing…'}</>
-                : credits.creditsRemaining === 0 && user
-                  ? <><AlertTriangle size={17} /> Quota Exhausted</>
-                  : <><FileAudio size={17} /> {user ? 'Transcribe Audio' : 'Login to Transcribe'}</>}
-            </button>
-            <button onClick={clearSession} className="btn-secondary" style={{ flex:'0 0 auto' }}>
-              <Trash2 size={16} />
-            </button>
+            {/* Pipeline error */}
+            {pipelineError && (
+              <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)',
+                borderRadius:12, padding:'1rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                <AlertTriangle size={18} color="#f87171" />
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#f87171' }}>Pipeline Failed</div>
+                  <div style={{ fontSize:'0.8rem', color:'var(--text-secondary)', marginTop:2 }}>{pipelineError}</div>
+                </div>
+                <button onClick={runPipeline} style={{ background:'none', border:'1px solid rgba(239,68,68,0.3)',
+                  borderRadius:8, padding:'0.4rem 0.75rem', color:'#f87171', cursor:'pointer', fontSize:'0.8rem',
+                  display:'flex', alignItems:'center', gap:4 }}>
+                  <RefreshCw size={13} /> Retry
+                </button>
+              </div>
+            )}
           </div>
 
-          {isBusy && (
-            <div>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'var(--text-secondary)', marginBottom:'4px' }}>
-                <span>
-                  {progressLabel}
-                  {chunkInfo.total > 1 && (
-                    <span style={{ marginLeft:'0.5rem', color:'#7dd3fc', fontWeight:600 }}>
-                      [{chunkInfo.current}/{chunkInfo.total}]
-                    </span>
-                  )}
-                </span>
-                <span>{progress}%</span>
-              </div>
-              <div style={{ height:'6px', borderRadius:'999px', background:'rgba(255,255,255,0.08)', overflow:'hidden' }}>
-                <div style={{ height:'100%', width:`${progress}%`, transition:'width 0.4s ease',
-                  background: isDiarizing
-                    ? 'linear-gradient(90deg,#a78bfa,#f472b6)'
-                    : 'linear-gradient(90deg,#38bdf8,#818cf8)' }} />
-              </div>
+          {/* Right: Config card */}
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            borderRadius:16, padding:'1.25rem', display:'flex', flexDirection:'column', gap:'1rem' }}>
+
+            <div style={{ fontSize:'0.8rem', fontWeight:700, color:'var(--text-secondary)',
+              textTransform:'uppercase', letterSpacing:'0.05em' }}>Pipeline Settings</div>
+
+            {/* Output language */}
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              <label style={{ fontSize:'0.78rem', color:'var(--text-secondary)' }}>Output Language</label>
+              <select value={outputLanguage} onChange={e => setOutputLanguage(e.target.value)}
+                style={{ padding:'0.6rem 0.75rem', background:'rgba(255,255,255,0.06)',
+                  border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, color:'var(--text-primary)',
+                  fontSize:'0.85rem', cursor:'pointer' }}>
+                {OUTPUT_LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+              {outputLanguage !== 'original' && (
+                <div style={{ fontSize:'0.72rem', color:'#818cf8',
+                  display:'flex', alignItems:'center', gap:4 }}>
+                  <Globe size={11} /> Audio → original language → {outputLanguage}
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* ── RIGHT: Transcript ── */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
-          <div className="glass-panel" style={{ padding:'1.5rem', flex:1, display:'flex', flexDirection:'column' }}>
-
-            {/* Transcript header */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-              marginBottom:'0.85rem', flexWrap:'wrap', gap:'0.5rem' }}>
+            {/* Speaker recognition toggle */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <div>
-                <h3 style={{ margin:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                  <FileText size={16} color="var(--accent-primary)" /> Transcript
-                  {hasSpeakers && (
-                    <span style={{ fontSize:'0.72rem', fontWeight:600, padding:'0.2rem 0.55rem', borderRadius:'999px',
-                      background:'rgba(167,139,250,0.18)', color:'#c4b5fd', border:'1px solid rgba(167,139,250,0.3)' }}>
-                      {speakerCount} speaker{speakerCount!==1?'s':''}
-                    </span>
-                  )}
-                </h3>
-                <p style={{ margin:'0.2rem 0 0', color:'var(--text-secondary)', fontSize:'0.8rem' }}>
-                  {hasSpeakers ? '🎙️ AI Speaker Engine + Text Engine' : transcript ? '✨ Text Engine' : 'Waiting for audio…'}
-                </p>
+                <div style={{ fontSize:'0.85rem', fontWeight:500 }}>Speaker Recognition</div>
+                <div style={{ fontSize:'0.72rem', color:'var(--text-secondary)' }}>Label [Speaker N]: blocks</div>
               </div>
-
-              <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
-                {/* On-demand re-diarize */}
-                {rawTranscript && !isDiarizing && (
-                  <button onClick={() => runDiarization(rawTranscript)} className="btn-secondary"
-                    style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.8rem', padding:'0.45rem 0.75rem' }}
-                    title="Run speaker identification now">
-                    <Users size={13} /> Identify Speakers
-                  </button>
-                )}
-                <button onClick={() => setQaMode(v => !v)}
-                  className={qaMode ? 'btn-primary' : 'btn-secondary'}
-                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.8rem', padding:'0.45rem 0.75rem' }}>
-                  <ClipboardCheck size={13} /> QA
-                </button>
-                {rawTranscript && transcript && (
-                  <button onClick={() => setShowDiff(v => !v)} className="btn-secondary"
-                    style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.8rem', padding:'0.45rem 0.75rem' }}>
-                    <RefreshCw size={13} /> {showDiff ? 'Hide Diff' : 'Show Diff'}
-                  </button>
-                )}
-                <button onClick={copyText} disabled={!activeText} className="btn-secondary"
-                  style={{ opacity: activeText ? 1 : 0.5, cursor: activeText ? 'pointer' : 'not-allowed' }}>
-                  <Copy size={15} />
-                </button>
-              </div>
+              <button onClick={() => setSpeakerRecognition(v => !v)}
+                style={{ width:44, height:24, borderRadius:12, border:'none', cursor:'pointer',
+                  background: speakerRecognition ? '#6366f1' : 'rgba(255,255,255,0.1)',
+                  position:'relative', transition:'background 0.2s' }}>
+                <span style={{ position:'absolute', top:2, left: speakerRecognition ? 22 : 2,
+                  width:20, height:20, borderRadius:'50%', background:'#fff',
+                  transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }} />
+              </button>
             </div>
 
-            {/* AI Action Buttons */}
-            {transcript && (
-              <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'1rem', padding:'0.75rem', 
-                borderRadius:'12px', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
-                <button onClick={() => handleAIAction('improve')} disabled={isProcessingAI} className="btn-secondary"
-                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
-                  <Sparkles size={12} color="#38bdf8" /> Improve Text Quality
-                </button>
-                <button onClick={() => handleAIAction('polish')} disabled={isProcessingAI} className="btn-secondary"
-                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
-                  <Zap size={12} color="#fbbf24" /> AI Translation Polish
-                </button>
-                <button onClick={() => handleAIAction('summarize')} disabled={isProcessingAI} className="btn-secondary"
-                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
-                  <FileText size={12} color="#a78bfa" /> Summarize Call
-                </button>
-                <button onClick={() => handleAIAction('extract')} disabled={isProcessingAI} className="btn-secondary"
-                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
-                  <Hash size={12} color="#34d399" /> Extract Key Points
-                </button>
-                {qaMode && (
-                  <button onClick={() => handleAIAction('qa')} disabled={isProcessingAI} className="btn-primary"
-                    style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem', background:'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                    <Brain size={12} /> AI QA Analysis
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* AI Provider Badge */}
-            {aiProvider && (
-              <div style={{ marginBottom:'0.75rem', display:'flex', justifyContent:'flex-end' }}>
-                <span style={{ fontSize:'0.68rem', padding:'0.2rem 0.5rem', borderRadius:'6px', 
-                  background: aiProvider === 'puter' ? 'rgba(56,189,248,0.1)' : 'rgba(245,158,11,0.1)',
-                  color: aiProvider === 'puter' ? '#38bdf8' : '#fbbf24',
-                  border: `1px solid ${aiProvider === 'puter' ? 'rgba(56,189,248,0.2)' : 'rgba(245,158,11,0.2)'}` }}>
-                  {aiProvider === 'puter' ? '✨ Powered by Puter' : '⚠️ Fallback: Groq'}
-                </span>
-              </div>
-            )}
-
-            {/* AI Processing Indicator */}
-            {isProcessingAI && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.65rem', padding:'0.75rem 1rem',
-                borderRadius:'12px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.2)',
-                marginBottom:'0.85rem' }}>
-                <LoaderCircle size={15} color="#38bdf8" className="spin" />
-                <span style={{ fontSize:'0.88rem', color:'#7dd3fc' }}>
-                  AI is processing {aiActionType}...
-                </span>
-              </div>
-            )}
-
-            {/* Stats */}
-            {stats && (
-              <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'0.85rem' }}>
-                <StatBadge label="Words"     value={stats.wordCount}       />
-                <StatBadge label="Sentences" value={stats.sentenceCount}   />
-                <StatBadge label="Read"      value={`${stats.estimatedReadMin}m`} />
-                <StatBadge label="Grade"     value={stats.readabilityLabel}
-                  color={stats.readabilityLabel==='Easy'?'#4ade80':stats.readabilityLabel==='Moderate'?'#facc15':'#f87171'} />
-              </div>
-            )}
-
-            {/* QA: Find & Replace */}
-            {qaMode && (
-              <div style={{ padding:'0.85rem', borderRadius:'12px', background:'rgba(255,255,255,0.04)',
-                border:'1px solid rgba(255,255,255,0.08)', marginBottom:'0.85rem',
-                display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-                <p style={{ margin:0, fontWeight:700, fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                  <Search size={13} /> Find &amp; Replace
-                </p>
-                <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
-                  <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Find…"
-                    style={{ flex:'1 1 100px', padding:'0.4rem 0.65rem', borderRadius:'8px',
-                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none' }} />
-                  <input value={replaceTerm} onChange={e => setReplaceTerm(e.target.value)} placeholder="Replace with…"
-                    style={{ flex:'1 1 100px', padding:'0.4rem 0.65rem', borderRadius:'8px',
-                      border:'1px solid var(--border-color)', background:'rgba(255,255,255,0.05)',
-                      color:'var(--text-primary)', fontSize:'0.85rem', outline:'none' }} />
-                  <button onClick={handleReplace} className="btn-primary"
-                    style={{ fontSize:'0.82rem', padding:'0.4rem 0.8rem', display:'flex', alignItems:'center', gap:'0.35rem' }}>
-                    <RefreshCw size={12} /> Replace
-                  </button>
+            {/* QA Mode toggle */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <div style={{ fontSize:'0.85rem', fontWeight:500, display:'flex', alignItems:'center', gap:5 }}>
+                  <BarChart3 size={14} color="#a78bfa" /> QA Analysis Mode
                 </div>
+                <div style={{ fontSize:'0.72rem', color:'var(--text-secondary)' }}>Score call quality with AI</div>
               </div>
-            )}
+              <button onClick={() => setQaMode(v => !v)}
+                style={{ width:44, height:24, borderRadius:12, border:'none', cursor:'pointer',
+                  background: qaMode ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+                  position:'relative', transition:'background 0.2s' }}>
+                <span style={{ position:'absolute', top:2, left: qaMode ? 22 : 2,
+                  width:20, height:20, borderRadius:'50%', background:'#fff',
+                  transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }} />
+              </button>
+            </div>
 
-            {/* Diff viewer */}
-            {showDiff && rawTranscript && transcript && (
-              <div style={{ padding:'0.85rem', borderRadius:'12px', background:'rgba(255,255,255,0.03)',
-                border:'1px solid rgba(255,255,255,0.08)', marginBottom:'0.85rem', fontSize:'0.82rem' }}>
-                <p style={{ margin:'0 0 0.5rem', fontWeight:700 }}>Before / After Text Engine</p>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
-                  <div>
-                    <p style={{ margin:'0 0 0.3rem', color:'#f87171', fontSize:'0.77rem', fontWeight:600 }}>RAW</p>
-                    <div style={{ background:'rgba(239,68,68,0.07)', borderRadius:'8px', padding:'0.6rem',
-                      color:'var(--text-secondary)', lineHeight:1.6, maxHeight:'120px', overflowY:'auto', whiteSpace:'pre-wrap' }}>
-                      {rawTranscript}
+            {/* QA Params editor */}
+            <AnimatePresence>
+              {qaMode && (
+                <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }}
+                  exit={{ opacity:0, height:0 }} style={{ overflow:'hidden' }}>
+                  <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', paddingTop:'0.9rem',
+                    display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+                    <div style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--text-secondary)',
+                      textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                      QA Parameters · Total: {totalQAMarks} marks
+                    </div>
+                    {qaParams.map((p,i) => (
+                      <div key={i} style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
+                        <input value={p.name} onChange={e => setQaParams(prev => prev.map((x,j) => j===i?{...x,name:e.target.value}:x))}
+                          style={{ flex:1, padding:'0.35rem 0.6rem', background:'rgba(255,255,255,0.06)',
+                            border:'1px solid rgba(255,255,255,0.1)', borderRadius:7,
+                            color:'var(--text-primary)', fontSize:'0.8rem' }} />
+                        <input type="number" value={p.marks} min={1} max={100}
+                          onChange={e => setQaParams(prev => prev.map((x,j) => j===i?{...x,marks:parseInt(e.target.value)||0}:x))}
+                          style={{ width:54, padding:'0.35rem 0.5rem', background:'rgba(255,255,255,0.06)',
+                            border:'1px solid rgba(255,255,255,0.1)', borderRadius:7,
+                            color:'var(--text-primary)', fontSize:'0.8rem', textAlign:'center' }} />
+                        <button onClick={() => setQaParams(prev => prev.filter((_,j)=>j!==i))}
+                          style={{ background:'none', border:'none', color:'var(--text-secondary)', cursor:'pointer', padding:4 }}>
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:'0.4rem' }}>
+                      <input value={newParamName} onChange={e => setNewParamName(e.target.value)}
+                        placeholder="Add parameter…"
+                        style={{ flex:1, padding:'0.35rem 0.6rem', background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.1)', borderRadius:7,
+                          color:'var(--text-primary)', fontSize:'0.8rem' }} />
+                      <input type="number" value={newParamMarks} min={1} max={100}
+                        onChange={e => setNewParamMarks(parseInt(e.target.value)||0)}
+                        style={{ width:54, padding:'0.35rem 0.5rem', background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.1)', borderRadius:7,
+                          color:'var(--text-primary)', fontSize:'0.8rem', textAlign:'center' }} />
+                      <button onClick={() => { if(newParamName.trim()){ setQaParams(prev=>[...prev,{name:newParamName.trim(),marks:newParamMarks}]); setNewParamName(''); setNewParamMarks(10); }}}
+                        style={{ background:'rgba(99,102,241,0.15)', border:'1px solid rgba(99,102,241,0.3)',
+                          borderRadius:7, padding:'0.35rem 0.6rem', color:'#818cf8', cursor:'pointer' }}>
+                        <Plus size={14} />
+                      </button>
                     </div>
                   </div>
-                  <div>
-                    <p style={{ margin:'0 0 0.3rem', color:'#4ade80', fontSize:'0.77rem', fontWeight:600 }}>CLEANED</p>
-                    <div style={{ background:'rgba(74,222,128,0.07)', borderRadius:'8px', padding:'0.6rem',
-                      color:'var(--text-secondary)', lineHeight:1.6, maxHeight:'120px', overflowY:'auto', whiteSpace:'pre-wrap' }}>
-                      {transcript}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            {/* Diarizing spinner */}
-            {isDiarizing && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.65rem', padding:'0.75rem 1rem',
-                borderRadius:'12px', background:'rgba(167,139,250,0.1)', border:'1px solid rgba(167,139,250,0.25)',
-                marginBottom:'0.85rem' }}>
-                <LoaderCircle size={15} color="#a78bfa" className="spin" />
-                <span style={{ fontSize:'0.88rem', color:'#c4b5fd' }}>
-                  AI Speaker Engine is analysing conversational patterns…
-                </span>
-              </div>
-            )}
-
-            {/* Transcript body */}
-            {qaMode ? (
-              <textarea value={editableText} onChange={e => setEditableText(e.target.value)}
-                style={{ flex:1, minHeight:'320px', borderRadius:'14px',
-                  border:'1px solid rgba(56,189,248,0.3)', background:'rgba(2,6,23,0.45)',
-                  padding:'1rem', whiteSpace:'pre-wrap', lineHeight:1.75,
-                  color:'var(--text-primary)', resize:'vertical', fontFamily:'inherit',
-                  fontSize:'0.95rem', outline:'none', width:'100%', boxSizing:'border-box' }} />
-            ) : (
-              <div style={{ flex:1, minHeight:'320px', borderRadius:'14px',
-                border:'1px solid var(--border-color)', background:'rgba(2,6,23,0.45)',
-                padding:'1rem', overflowY:'auto' }}>
-                <SpeakerBlocks text={transcript} searchTerm={searchTerm} />
-              </div>
-            )}
-
-            {transcript && !qaMode && (
-              <p style={{ margin:'0.55rem 0 0', fontSize:'0.77rem', color:'var(--text-secondary)',
-                display:'flex', alignItems:'center', gap:'0.35rem' }}>
-                <Info size={11} /> Enable QA Mode to edit inline · "Identify Speakers" reruns diarization any time
-              </p>
-            )}
-
-            {/* ── AI QA Report (from Puter/Groq) ── */}
-            {aiReport && qaMode && (
-              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
-                border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.06)' }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
-                  <p style={{ margin:0, fontWeight:700, fontSize:'0.95rem', display:'flex', alignItems:'center', gap:'0.5rem', color:'#c4b5fd' }}>
-                    <Brain size={16} color="#a78bfa" /> AI QA Analysis Report
-                  </p>
-                  {aiProvider && (
-                    <span style={{ fontSize:'0.72rem', padding:'3px 8px', borderRadius:'6px',
-                      background: aiProvider === 'puter' ? 'rgba(56,189,248,0.15)' : 'rgba(245,158,11,0.15)',
-                      color: aiProvider === 'puter' ? '#38bdf8' : '#fbbf24' }}>
-                      {aiProvider === 'puter' ? '⚡ Puter AI' : '🔄 Groq'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Final Score Header */}
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem',
-                  background:'rgba(255,255,255,0.04)', borderRadius:'8px', marginBottom:'1rem', borderLeft:'3px solid #a78bfa' }}>
-                  <div>
-                    <p style={{ margin:0, fontSize:'0.8rem', color:'var(--text-secondary)' }}>Final Score</p>
-                    <p style={{ margin:'0.2rem 0 0', fontWeight:700, fontSize:'1.3rem', color:'#c4b5fd' }}>
-                      {aiReport.finalScore}/{aiReport.totalMarks}
-                    </p>
-                  </div>
-                  <div style={{ textAlign:'right' }}>
-                    <p style={{ margin:0, fontSize:'0.9rem', fontWeight:600, color: aiReport.performance === 'Excellent' ? '#4ade80' : aiReport.performance === 'Good' ? '#facc15' : aiReport.performance === 'Average' ? '#f97316' : '#ef4444' }}>
-                      {aiReport.performance}
-                    </p>
-                    <p style={{ margin:'0.2rem 0 0', fontSize:'0.75rem', color:'var(--text-secondary)' }}>Overall Performance</p>
-                  </div>
-                </div>
-
-                {/* Parameter-wise Scores */}
-                <div style={{ marginBottom:'1rem' }}>
-                  <p style={{ margin:'0 0 0.65rem', fontWeight:600, fontSize:'0.88rem', color:'#e0e7ff' }}>Parameter-wise Breakdown</p>
-                  <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
-                    {aiReport.parameters && aiReport.parameters.map((param, idx) => {
-                      const percent = (param.score / param.maxScore) * 100;
-                      const barColor = percent >= 80 ? '#4ade80' : percent >= 60 ? '#facc15' : percent >= 40 ? '#f97316' : '#ef4444';
-                      return (
-                        <div key={idx}>
-                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.3rem' }}>
-                            <span style={{ fontSize:'0.85rem', fontWeight:500, color:'var(--text-primary)' }}>{param.name}</span>
-                            <span style={{ fontSize:'0.8rem', fontWeight:600, color:barColor }}>{param.score}/{param.maxScore}</span>
-                          </div>
-                          <div style={{ height:'5px', background:'rgba(255,255,255,0.1)', borderRadius:'3px', overflow:'hidden' }}>
-                            <div style={{ height:'100%', width:`${percent}%`, background:barColor, transition:'width 0.3s' }} />
-                          </div>
-                          {param.feedback && (
-                            <p style={{ margin:'0.25rem 0 0', fontSize:'0.78rem', color:'var(--text-secondary)', fontStyle:'italic' }}>
-                              {param.feedback}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Strengths & Areas */}
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'1rem' }}>
-                  <div>
-                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#4ade80' }}>✓ Strengths</p>
-                    <ul style={{ margin:0, paddingLeft:'1.2rem', fontSize:'0.82rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
-                      {aiReport.strengths && aiReport.strengths.map((s, i) => <li key={i}>{s}</li>)}
-                    </ul>
-                  </div>
-                  <div>
-                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#f97316' }}>⚠ Areas to Improve</p>
-                    <ul style={{ margin:0, paddingLeft:'1.2rem', fontSize:'0.82rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
-                      {aiReport.areasToImprove && aiReport.areasToImprove.map((a, i) => <li key={i}>{a}</li>)}
-                    </ul>
-                  </div>
-                </div>
-
-                {/* Summary */}
-                {aiReport.summary && (
-                  <div>
-                    <p style={{ margin:'0 0 0.5rem', fontWeight:600, fontSize:'0.88rem', color:'#a78bfa' }}>📋 Summary</p>
-                    <p style={{ margin:0, fontSize:'0.85rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
-                      {aiReport.summary}
-                    </p>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.85rem', flexWrap:'wrap' }}>
-                  <button onClick={() => {
-                    const text = `QA ANALYSIS REPORT\n\nFinal Score: ${aiReport.finalScore}/${aiReport.totalMarks} (${aiReport.performance})\n\n` +
-                      aiReport.parameters.map(p => `${p.name}: ${p.score}/${p.maxScore}\n${p.feedback}`).join('\n\n') +
-                      `\n\nStrengths:\n${aiReport.strengths.join('\n')}\n\nAreas to Improve:\n${aiReport.areasToImprove.join('\n')}\n\n${aiReport.summary}`;
-                    navigator.clipboard.writeText(text).then(() => toast.success('Report copied!'));
-                  }} className="btn-secondary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
-                    <Copy size={13} /> Copy Report
-                  </button>
-                  <button onClick={() => {
-                    const text = `QA ANALYSIS REPORT\n\nFinal Score: ${aiReport.finalScore}/${aiReport.totalMarks} (${aiReport.performance})\n\n` +
-                      aiReport.parameters.map(p => `${p.name}: ${p.score}/${p.maxScore}\n${p.feedback}`).join('\n\n') +
-                      `\n\nStrengths:\n${aiReport.strengths.join('\n')}\n\nAreas to Improve:\n${aiReport.areasToImprove.join('\n')}\n\n${aiReport.summary}`;
-                    const blob = new Blob([text], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'qa-report.txt';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success('Report downloaded!');
-                  }} className="btn-secondary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
-                    <Download size={13} /> Download
-                  </button>
-                  <button onClick={() => handleAIAction('qa')} className="btn-secondary"
-                    style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
-                    <RefreshCw size={13} /> Retry
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Enhanced Text Panel ── */}
-            {enhancedText && (
-              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
-                border:'1px solid rgba(99,102,241,0.3)', background:'rgba(99,102,241,0.06)' }}>
-                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
-                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#6366f1' }}>
-                  <Sparkles size={15} color="#6366f1" /> ✨ Improved Text
-                </p>
-                <div style={{ background:'rgba(99,102,241,0.08)', borderRadius:'8px', padding:'1rem',
-                  maxHeight:'200px', overflowY:'auto', marginBottom:'0.75rem' }}>
-                  <p style={{ margin:0, fontSize:'0.9rem', color:'var(--text-primary)', whiteSpace:'pre-wrap', lineHeight:1.7 }}>
-                    {enhancedText}
-                  </p>
-                </div>
-                <div style={{ display:'flex', gap:'0.5rem' }}>
-                  <button onClick={() => {
-                    if (qaMode) setEditableText(enhancedText);
-                    else setTranscript(enhancedText);
-                    setEnhancedText('');
-                    toast.success('Changes applied!');
-                  }} className="btn-primary" style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
-                    <Check size={13} /> Apply Changes
-                  </button>
-                  <button onClick={() => navigator.clipboard.writeText(enhancedText)} className="btn-secondary"
-                    style={{ fontSize:'0.8rem', padding:'0.4rem 0.7rem' }}>
-                    <Copy size={13} /> Copy
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Call Summary Panel ── */}
-            {callSummary && (
-              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
-                border:'1px solid rgba(167,139,250,0.3)', background:'rgba(167,139,250,0.06)' }}>
-                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
-                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#a78bfa' }}>
-                  <FileText size={15} color="#a78bfa" /> 📝 Call Summary
-                </p>
-                <p style={{ margin:0, fontSize:'0.9rem', color:'var(--text-primary)', lineHeight:1.7 }}>
-                  {callSummary}
-                </p>
-              </div>
-            )}
-
-            {/* ── Key Points Panel ── */}
-            {keyPoints && (
-              <div style={{ marginTop:'1.25rem', padding:'1.25rem', borderRadius:'14px',
-                border:'1px solid rgba(52,211,153,0.3)', background:'rgba(52,211,153,0.06)' }}>
-                <p style={{ margin:'0 0 0.75rem', fontWeight:700, fontSize:'0.92rem',
-                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#34d399' }}>
-                  <Hash size={15} color="#34d399" /> 📌 Key Points
-                </p>
-                <ul style={{ margin:0, paddingLeft:'1.5rem', fontSize:'0.9rem', color:'var(--text-primary)', lineHeight:1.8 }}>
-                  {keyPoints.split('\n').filter(p => p.trim()).map((point, i) => (
-                    <li key={i} style={{ marginBottom:'0.4rem' }}>{point.replace(/^[-*]\s*/, '')}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* ── ChatGPT QA Button — shown inline when ready ── */}
-            {qaMode && chatGptUrl && !aiReport && (
-              <div style={{ marginTop:'1rem', padding:'1rem', borderRadius:'14px',
-                border:'1px solid rgba(167,139,250,0.4)', background:'rgba(167,139,250,0.08)' }}>
-                <p style={{ margin:'0 0 0.35rem', fontWeight:700, fontSize:'0.92rem',
-                  display:'flex', alignItems:'center', gap:'0.5rem', color:'#c4b5fd' }}>
-                  <Sparkles size={15} color="#a78bfa" /> QA Analysis Ready
-                </p>
-                <p style={{ margin:'0 0 0.75rem', fontSize:'0.82rem', color:'var(--text-secondary)' }}>
-                  Transcript + parameters compiled. ChatGPT will score each parameter and give feedback.
-                </p>
-                <a href={chatGptUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
-                    textDecoration:'none', padding:'0.85rem 1rem', borderRadius:'12px', fontWeight:700,
-                    fontSize:'0.95rem', color:'#fff',
-                    background:'linear-gradient(135deg,#7c3aed,#a855f7)',
-                    boxShadow:'0 4px 20px rgba(139,92,246,0.4)', transition:'opacity 0.2s' }}
-                  onMouseEnter={e => e.currentTarget.style.opacity='0.88'}
-                  onMouseLeave={e => e.currentTarget.style.opacity='1'}>
-                  <Sparkles size={17} /> Analyze with ChatGPT
-                </a>
-              </div>
-            )}
-
-            {/* Prompt if QA mode on but no transcript yet */}
-            {qaMode && !transcript && (
-              <p style={{ margin:'0.75rem 0 0', fontSize:'0.82rem', color:'#a78bfa',
-                display:'flex', alignItems:'center', gap:'0.35rem' }}>
-                <ClipboardCheck size={13} /> QA mode active — transcribe your audio to generate AI or ChatGPT analysis.
-              </p>
-            )}
+            {/* Start button */}
+            <button
+              onClick={canStart ? runPipeline : isPipelineRunning ? () => { abortRef.current = true; } : undefined}
+              disabled={!file}
+              style={{ width:'100%', padding:'0.9rem', borderRadius:12, border:'none', cursor: file ? 'pointer' : 'not-allowed',
+                fontWeight:700, fontSize:'0.95rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
+                background: !file ? 'rgba(255,255,255,0.06)' :
+                           isPipelineRunning ? 'rgba(239,68,68,0.15)' :
+                           'linear-gradient(135deg,#6366f1,#a78bfa)',
+                color: !file ? 'var(--text-secondary)' : isPipelineRunning ? '#f87171' : '#fff',
+                transition:'all 0.2s', boxShadow: file && !isPipelineRunning ? '0 4px 20px rgba(99,102,241,0.3)' : 'none' }}>
+              {isPipelineRunning ? (
+                <><motion.div animate={{ rotate:360 }} transition={{ repeat:Infinity, duration:1 }}><Loader size={18} /></motion.div> Stop Pipeline</>
+              ) : (
+                <><Zap size={18} /> {isDone ? 'Re-Transcribe' : 'Start Pipeline'}</>
+              )}
+            </button>
           </div>
+        </div>
 
-          {/* Export */}
-          {transcript && (
-            <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
-              <p style={{ margin:'0 0 0.85rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                <Download size={15} color="var(--accent-primary)" /> Export Transcript
-              </p>
-              <div style={{ display:'flex', gap:'0.6rem', flexWrap:'wrap' }}>
-                {EXPORT_FORMATS.map(({ value, label, icon:Icon }) => (
-                  <button key={value} onClick={() => handleExport(value)} className="btn-secondary"
-                    style={{ display:'flex', alignItems:'center', gap:'0.5rem', fontSize:'0.83rem', padding:'0.55rem 0.85rem' }}>
-                    <Icon size={13} /> {label}
+        {/* ── Pipeline progress tracker ── */}
+        <AnimatePresence>
+          {(isPipelineRunning || isDone) && (
+            <motion.div initial={{ opacity:0, y:-10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
+              <PipelineTracker
+                stages={PIPELINE_STAGES}
+                currentStage={pipelineStage}
+                providerNote={providerNote}
+                progress={pipelineProgress}
+                showTranslation={needsTranslation}
+                showQA={qaMode}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Results section ── */}
+        <AnimatePresence>
+          {(transcript || isDone) && (
+            <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 }}
+              style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                borderRadius:20, overflow:'hidden' }}>
+
+              {/* Tab bar */}
+              <div style={{ display:'flex', alignItems:'center', gap:0,
+                borderBottom:'1px solid rgba(255,255,255,0.08)', background:'rgba(255,255,255,0.02)',
+                overflowX:'auto', flexWrap:'nowrap' }}>
+                {tabs.map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    style={{ padding:'0.85rem 1.25rem', border:'none', cursor:'pointer', whiteSpace:'nowrap',
+                      background:'transparent', fontWeight: activeTab === tab.id ? 600 : 400,
+                      fontSize:'0.88rem', color: activeTab === tab.id ? '#f3f4f6' : 'var(--text-secondary)',
+                      borderBottom: activeTab === tab.id ? '2px solid #6366f1' : '2px solid transparent',
+                      transition:'all 0.2s', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                    {tab.label}
+                    {tab.hasContent && (
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:'#34d399', display:'inline-block' }} />
+                    )}
                   </button>
                 ))}
               </div>
-            </div>
+
+              {/* Tab content */}
+              <div style={{ padding:'1.5rem' }}>
+
+                {/* Original tab */}
+                {activeTab === 'original' && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                    {/* Stats row */}
+                    {transcriptStats && (
+                      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+                        <StatBadge label="Words"    value={transcriptStats.wordCount.toLocaleString()} />
+                        <StatBadge label="Sentences" value={transcriptStats.sentenceCount} />
+                        <StatBadge label="Read Time" value={`${transcriptStats.estimatedReadMin}m`} color="#34d399" />
+                        <StatBadge label="Readability" value={transcriptStats.readabilityLabel} color="#fbbf24" />
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                      <button onClick={() => handleCopy(transcript)}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'var(--text-primary)' }}>
+                        <Copy size={13} /> Copy
+                      </button>
+                      <button onClick={handleImproveOriginal} disabled={isImprovingOriginal}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(99,102,241,0.1)',
+                          border:'1px solid rgba(99,102,241,0.25)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'#818cf8' }}>
+                        {isImprovingOriginal ? <Loader size={13} /> : <Sparkles size={13} />}
+                        {isImprovingOriginal ? 'Improving…' : 'Improve'}
+                      </button>
+                      {qaMode && (
+                        <button onClick={handleRunQA} disabled={isRunningQA}
+                          style={{ padding:'0.5rem 0.9rem', background:'rgba(167,139,250,0.1)',
+                            border:'1px solid rgba(167,139,250,0.25)', borderRadius:9, cursor:'pointer',
+                            fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                            color:'#a78bfa' }}>
+                          {isRunningQA ? <Loader size={13} /> : <BarChart3 size={13} />}
+                          {isRunningQA ? 'Analyzing…' : 'Run QA'}
+                        </button>
+                      )}
+                      {['txt','srt','json'].map(fmt => (
+                        <button key={fmt} onClick={() => handleExport(transcript, fmt, 'original')}
+                          style={{ padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.04)',
+                            border:'1px solid rgba(255,255,255,0.08)', borderRadius:9, cursor:'pointer',
+                            fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.35rem',
+                            color:'var(--text-secondary)' }}>
+                          <Download size={12} /> .{fmt}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Transcript content */}
+                    <div style={{ background:'rgba(255,255,255,0.02)', borderRadius:12,
+                      border:'1px solid rgba(255,255,255,0.06)', padding:'1.25rem',
+                      maxHeight:480, overflowY:'auto' }}>
+                      <SpeakerBlocks text={transcript} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Improved tab */}
+                {activeTab === 'improved' && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                    {improvedStats && (
+                      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+                        <StatBadge label="Words"    value={improvedStats.wordCount.toLocaleString()} />
+                        <StatBadge label="Sentences" value={improvedStats.sentenceCount} />
+                        <StatBadge label="Read Time" value={`${improvedStats.estimatedReadMin}m`} color="#34d399" />
+                        <StatBadge label="Readability" value={improvedStats.readabilityLabel} color="#fbbf24" />
+                      </div>
+                    )}
+
+                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                      <button onClick={() => handleCopy(improvedTranscript)}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'var(--text-primary)' }}>
+                        <Copy size={13} /> Copy
+                      </button>
+                      <button onClick={handleImproveOriginal} disabled={isImprovingOriginal}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(99,102,241,0.1)',
+                          border:'1px solid rgba(99,102,241,0.25)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'#818cf8' }}>
+                        {isImprovingOriginal ? <Loader size={13} /> : <RefreshCw size={13} />}
+                        Re-improve
+                      </button>
+                      {['txt','srt','json'].map(fmt => (
+                        <button key={fmt} onClick={() => handleExport(improvedTranscript, fmt, 'improved')}
+                          style={{ padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.04)',
+                            border:'1px solid rgba(255,255,255,0.08)', borderRadius:9, cursor:'pointer',
+                            fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.35rem',
+                            color:'var(--text-secondary)' }}>
+                          <Download size={12} /> .{fmt}
+                        </button>
+                      ))}
+                    </div>
+
+                    {improvedTranscript ? (
+                      <div style={{ background:'rgba(255,255,255,0.02)', borderRadius:12,
+                        border:'1px solid rgba(255,255,255,0.06)', padding:'1.25rem',
+                        maxHeight:480, overflowY:'auto' }}>
+                        <SpeakerBlocks text={improvedTranscript} />
+                      </div>
+                    ) : (
+                      <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-secondary)' }}>
+                        <Sparkles size={32} style={{ opacity:0.2, marginBottom:'0.75rem', display:'block', margin:'0 auto 0.75rem' }} />
+                        <div style={{ fontSize:'0.9rem' }}>No improved transcript yet</div>
+                        <div style={{ fontSize:'0.8rem', marginTop:'0.4rem', opacity:0.6 }}>
+                          Click "Improve" on the Original tab to generate
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Translation tab */}
+                {activeTab === 'translation' && needsTranslation && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'center' }}>
+                      <span style={{ fontSize:'0.78rem', padding:'3px 10px', borderRadius:20,
+                        background:'rgba(99,102,241,0.12)', color:'#818cf8' }}>
+                        {OUTPUT_LANGUAGES.find(l=>l.value===outputLanguage)?.label || outputLanguage}
+                      </span>
+                      <div style={{ flex:1 }} />
+                      <button onClick={() => handleCopy(translatedTranscript)}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'var(--text-primary)' }}>
+                        <Copy size={13} /> Copy
+                      </button>
+                      <button onClick={handleImproveTranslation} disabled={isImprovingTranslation}
+                        style={{ padding:'0.5rem 0.9rem', background:'rgba(99,102,241,0.1)',
+                          border:'1px solid rgba(99,102,241,0.25)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                          color:'#818cf8' }}>
+                        {isImprovingTranslation ? <Loader size={13} /> : <Sparkles size={13} />}
+                        Polish
+                      </button>
+                      {['txt','srt'].map(fmt => (
+                        <button key={fmt} onClick={() => handleExport(translatedTranscript, fmt, 'translation')}
+                          style={{ padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.04)',
+                            border:'1px solid rgba(255,255,255,0.08)', borderRadius:9, cursor:'pointer',
+                            fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.35rem',
+                            color:'var(--text-secondary)' }}>
+                          <Download size={12} /> .{fmt}
+                        </button>
+                      ))}
+                    </div>
+
+                    {translatedTranscript ? (
+                      <div style={{ background:'rgba(255,255,255,0.02)', borderRadius:12,
+                        border:'1px solid rgba(255,255,255,0.06)', padding:'1.25rem',
+                        maxHeight:480, overflowY:'auto' }}>
+                        <SpeakerBlocks text={translatedTranscript} />
+                      </div>
+                    ) : (
+                      <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-secondary)' }}>
+                        <Globe size={32} style={{ opacity:0.2, marginBottom:'0.75rem', display:'block', margin:'0 auto 0.75rem' }} />
+                        <div style={{ fontSize:'0.9rem' }}>Translation will appear here after processing</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* QA tab */}
+                {activeTab === 'qa' && qaMode && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                    {!qaReport ? (
+                      <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-secondary)' }}>
+                        <BarChart3 size={32} style={{ opacity:0.2, marginBottom:'0.75rem', display:'block', margin:'0 auto 0.75rem' }} />
+                        <div style={{ fontSize:'0.9rem', marginBottom:'0.75rem' }}>QA analysis not run yet</div>
+                        <button onClick={handleRunQA} disabled={!transcript || isRunningQA}
+                          style={{ padding:'0.7rem 1.5rem', background:'rgba(167,139,250,0.15)',
+                            border:'1px solid rgba(167,139,250,0.3)', borderRadius:10, cursor:'pointer',
+                            fontSize:'0.88rem', display:'inline-flex', alignItems:'center', gap:'0.5rem',
+                            color:'#a78bfa', fontWeight:600 }}>
+                          {isRunningQA ? <Loader size={15} /> : <BarChart3 size={15} />}
+                          {isRunningQA ? 'Analyzing…' : 'Run QA Analysis'}
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
+                          <button onClick={handleRunQA} disabled={isRunningQA}
+                            style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
+                              border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
+                              fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                              color:'var(--text-secondary)' }}>
+                            {isRunningQA ? <Loader size={13} /> : <RefreshCw size={13} />}
+                            Re-analyze
+                          </button>
+                          <button onClick={() => {
+                            const lines = [
+                              `QA Analysis Report`,
+                              `Score: ${qaReport.finalScore}/${qaReport.totalMarks} — ${qaReport.performance}`,
+                              '', ...qaReport.parameters.map(p => `${p.name}: ${p.score}/${p.maxScore}\n${p.feedback}`),
+                              '',`Strengths:\n${qaReport.strengths.map(s=>`• ${s}`).join('\n')}`,
+                              '',`Areas to Improve:\n${qaReport.areasToImprove.map(a=>`• ${a}`).join('\n')}`,
+                              '',`Summary: ${qaReport.summary}`,
+                            ].join('\n');
+                            downloadFile(lines, 'qa-report.txt', 'text/plain');
+                          }} style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
+                            border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
+                            fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
+                            color:'var(--text-secondary)' }}>
+                            <Download size={13} /> Export Report
+                          </button>
+                        </div>
+                        <QAReportView report={qaReport} />
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
 
-      <LoginRequiredModal open={showLoginModal} onClose={() => setShowLoginModal(false)} pathname={location.pathname} />
-
-      <style>{`
-        .spin { animation: spin 0.9s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        textarea:focus { border-color: rgba(56,189,248,0.5) !important; }
-      `}</style>
+      {/* Login Modal */}
+      <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} pathname={location.pathname} />
     </div>
   );
 }
