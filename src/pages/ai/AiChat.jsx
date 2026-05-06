@@ -96,6 +96,63 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ─── Response parsing helpers (provider-agnostic) ──────────────────────────────
+function extractResponseContent(response) {
+  if (!response) return '';
+
+  // Already a string
+  if (typeof response === 'string') return response;
+
+  // Puter.js format: { message?: { content?: string }, text?: string, content?: string }
+  if (response.message?.content) return String(response.message.content).trim();
+  if (response.text) return String(response.text).trim();
+  if (response.content) return String(response.content).trim();
+
+  // OpenAI format: { choices: [{ message: { content: string } }] }
+  if (Array.isArray(response.choices) && response.choices[0]?.message?.content) {
+    return String(response.choices[0].message.content).trim();
+  }
+
+  // Gemini format: { candidates: [{ content: { parts: [{ text: string }] } }] }
+  if (Array.isArray(response.candidates) && response.candidates[0]?.content?.parts?.[0]?.text) {
+    return String(response.candidates[0].content.parts[0].text).trim();
+  }
+
+  // Claude/Anthropic format: { content: [{ type: 'text', text: string }] }
+  if (Array.isArray(response.content) && response.content[0]?.text) {
+    return String(response.content[0].text).trim();
+  }
+
+  // Groq format: { choices: [{ message: { content: string } }] }
+  if (response.choices?.[0]?.message?.content) {
+    return String(response.choices[0].message.content).trim();
+  }
+
+  // Last resort: try JSON.stringify but only if it's not a plain object
+  const str = String(response);
+  if (str && str !== '[object Object]') return str.trim();
+
+  return '';
+}
+
+// Detect intent for live data (weather, elections, sports, news)
+function detectLiveDataIntent(text) {
+  const lowerText = text.toLowerCase();
+  const patterns = {
+    weather: /weather|temperature|rain|sunny|forecast|climate|wind speed/i,
+    elections: /election|vote|polling|political|candidate|campaign/i,
+    sports: /score|game|match|team|league|championship|final|basketball|football|soccer|cricket/i,
+    news: /latest news|breaking news|headline|current event|recent|today's news/i,
+    stocks: /stock price|market|crypto|bitcoin|ethereum|trading|nasdaq|dow jones/i,
+    time: /current time|what time|timezone/i,
+  };
+
+  for (const [type, pattern] of Object.entries(patterns)) {
+    if (pattern.test(lowerText)) return type;
+  }
+  return null;
+}
+
 // ─── Thinking dots ────────────────────────────────────────────────────────────
 const ThinkingDots = memo(() => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 0' }}>
@@ -566,6 +623,14 @@ export default function AiChat() {
     setUsage({ date: getTodayKey(), count: newCount });
 
     try {
+      // Check for live data intent and warn user if detected
+      const liveDataType = detectLiveDataIntent(trimmed);
+      if (liveDataType) {
+        toast('ℹ️ Live data queries may have limited accuracy. Ask the AI to note if this is real-time data.', {
+          duration: 4000,
+        });
+      }
+
       // Build conversation history for puter (last 20 messages for context window)
       const history = [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -583,27 +648,46 @@ export default function AiChat() {
 
       for await (const part of response) {
         if (abortRef.current) break;
-        const chunk = part?.text || part?.toString?.() || '';
-        accumulated += chunk;
-        // Update AI message content live
-        updateSession(sid, s => ({
-          messages: s.messages.map(m =>
-            m.id === aiMsg.id ? { ...m, content: accumulated, thinking: false } : m
-          ),
-        }));
+
+        // Use provider-agnostic parser to extract content safely
+        let chunk = '';
+        if (typeof part === 'string') {
+          chunk = part;
+        } else {
+          chunk = extractResponseContent(part);
+        }
+
+        // Only append valid strings, never [object Object]
+        if (typeof chunk === 'string' && chunk.length > 0) {
+          accumulated += chunk;
+          // Update AI message content live
+          updateSession(sid, s => ({
+            messages: s.messages.map(m =>
+              m.id === aiMsg.id ? { ...m, content: accumulated, thinking: false } : m
+            ),
+          }));
+        }
       }
 
-      // Finalize
+      // Finalize with fallback if no content was extracted
+      const finalContent = accumulated.trim() || 'Unable to generate response. Please try again.';
+      if (finalContent.includes('[object Object]')) {
+        console.warn('[AiChat] Detected [object Object] in response, clearing invalid content');
+      }
+
       updateSession(sid, s => ({
         messages: s.messages.map(m =>
-          m.id === aiMsg.id ? { ...m, content: accumulated || '(No response)', thinking: false } : m
+          m.id === aiMsg.id ? { ...m, content: finalContent, thinking: false } : m
         ),
       }));
     } catch (err) {
-      console.error('[AiChat]', err);
+      console.error('[AiChat] Error:', err);
       const errText = err?.message?.includes('quota') || err?.message?.includes('limit')
-        ? 'Rate limit hit — please wait a moment and try again.'
-        : `Error: ${err.message || 'Failed to get response'}`;
+        ? 'Daily message limit reached. Come back tomorrow!'
+        : err?.message?.includes('API key')
+        ? 'API configuration issue. Please contact support.'
+        : `Error: ${err.message || 'Failed to connect to AI service'}`;
+
       updateSession(sid, s => ({
         messages: s.messages.map(m =>
           m.id === aiMsg.id ? { ...m, content: errText, thinking: false } : m
