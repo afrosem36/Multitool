@@ -35,14 +35,15 @@ import { useAuth } from '../../context/AuthContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DAILY_LIMIT    = 10;
-const MAX_FILE_MB    = 25;
+const MAX_FILE_MB    = 500;                           // chunking handles large files
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const ACCEPTED_AUDIO = 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm';
 const RETRY_ATTEMPTS = 3;
 const RETRY_DELAYS   = [1000, 2500, 5000];
-const CHUNK_DURATION_SEC    = 180; // 3-minute WAV chunks
-const MAX_FILE_MB_OWN_KEY   = 200;
-const MAX_FILE_BYTES_OWN_KEY = MAX_FILE_MB_OWN_KEY * 1024 * 1024;
+// Groq Whisper hard limit is 25 MB per file.  Each WAV chunk at 16 kHz mono
+// uses ~3.84 MB/min, so 4-minute chunks = ~15.4 MB — safely under the limit.
+const CHUNK_DURATION_SEC = 240;   // 4 minutes per chunk
+const CHUNK_TRIGGER_SEC  = 290;   // start chunking when audio > ~4m 50s
 
 // Fast cheap Groq LLM used for the diarization pass
 const GROQ_DIARIZE_MODEL = 'llama-3.1-8b-instant';
@@ -190,37 +191,76 @@ function audioBufferToWavBlob(buffer) {
   return new Blob([ab], { type: 'audio/wav' });
 }
 
-async function splitAudioIntoChunks(file, onChunk) {
-  const TARGET_SR   = 16000;
-  const audioCtx    = new AudioContext();
-  const decoded     = await audioCtx.decodeAudioData(await file.arrayBuffer());
+async function splitAudioIntoChunks(file, onProgress) {
+  const TARGET_SR    = 16000;
+  const OVERLAP_SEC  = 2; // 2-second overlap to avoid cutting words at boundaries
+
+  const audioCtx = new AudioContext();
+  const decoded  = await audioCtx.decodeAudioData(await file.arrayBuffer());
   await audioCtx.close();
 
-  const srcSR       = decoded.sampleRate;
-  const srcPerChunk = Math.floor(srcSR * CHUNK_DURATION_SEC);
-  const totalSrc    = decoded.length;
-  const numChunks   = Math.ceil(totalSrc / srcPerChunk);
-  const blobs       = [];
+  const srcSR        = decoded.sampleRate;
+  const chunkSamples = Math.floor(srcSR * CHUNK_DURATION_SEC);
+  const overlapSamp  = Math.floor(srcSR * OVERLAP_SEC);
+  const stepSamples  = chunkSamples - overlapSamp; // advance by this much each chunk
+  const totalSrc     = decoded.length;
+  const numChunks    = Math.ceil((totalSrc - overlapSamp) / stepSamples);
+  const blobs        = [];
 
   for (let i = 0; i < numChunks; i++) {
-    const start  = i * srcPerChunk;
-    const end    = Math.min(start + srcPerChunk, totalSrc);
+    const start  = i * stepSamples;
+    const end    = Math.min(start + chunkSamples, totalSrc);
     const srcLen = end - start;
     const dstLen = Math.ceil(srcLen * TARGET_SR / srcSR);
 
     const off = new OfflineAudioContext(1, dstLen, TARGET_SR);
-    const tmp = new AudioBuffer({ length: srcLen, numberOfChannels: decoded.numberOfChannels, sampleRate: srcSR });
+    // Mix all channels down to mono for smaller WAV output
+    const mono = off.createGain();
+    mono.gain.value = 1 / decoded.numberOfChannels;
+    mono.connect(off.destination);
+
     for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-      tmp.getChannelData(ch).set(decoded.getChannelData(ch).subarray(start, end));
+      const tmp = new AudioBuffer({ length: srcLen, numberOfChannels: 1, sampleRate: srcSR });
+      tmp.getChannelData(0).set(decoded.getChannelData(ch).subarray(start, end));
+      const src = off.createBufferSource();
+      src.buffer = tmp;
+      src.connect(mono);
+      src.start(0);
     }
-    const src = off.createBufferSource();
-    src.buffer = tmp;
-    src.connect(off.destination);
-    src.start(0);
+
     blobs.push(audioBufferToWavBlob(await off.startRendering()));
-    onChunk?.(i + 1, numChunks);
+    onProgress?.(i + 1, numChunks);
   }
-  return blobs;
+  return { blobs, overlapSec: OVERLAP_SEC, stepSec: CHUNK_DURATION_SEC - OVERLAP_SEC };
+}
+
+// ─── Chunk transcript stitcher ────────────────────────────────────────────────
+// Removes the duplicated overlap region between adjacent chunks by finding the
+// longest common suffix/prefix word sequence (up to 12 words).
+function stitchChunks(transcripts) {
+  if (transcripts.length === 0) return '';
+  if (transcripts.length === 1) return transcripts[0];
+
+  let result = transcripts[0];
+  for (let i = 1; i < transcripts.length; i++) {
+    const prev  = result.trimEnd();
+    const next  = transcripts[i].trimStart();
+    const pWords = prev.split(/\s+/);
+    const nWords = next.split(/\s+/);
+
+    // Find longest matching suffix/prefix (up to 12 words)
+    let overlap = 0;
+    const maxCheck = Math.min(12, pWords.length, nWords.length);
+    for (let len = maxCheck; len >= 1; len--) {
+      const suffix = pWords.slice(-len).join(' ').toLowerCase();
+      const prefix = nWords.slice(0, len).join(' ').toLowerCase();
+      if (suffix === prefix) { overlap = len; break; }
+    }
+
+    const trimmedNext = overlap > 0 ? nWords.slice(overlap).join(' ') : next;
+    result = prev + (trimmedNext ? ' ' + trimmedNext : '');
+  }
+  return result.trim();
 }
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
@@ -552,26 +592,23 @@ function StatBadge({ label, value, color = 'var(--accent-primary)' }) {
 }
 
 // ─── PreflightWarning ─────────────────────────────────────────────────────────
-function PreflightWarning({ file, usingOwnKey }) {
-  if (!file) return null;
-  const mb   = file.size / 1024 / 1024;
-  const hard = !usingOwnKey && mb > MAX_FILE_MB;
-  const soft = mb > 15 && mb <= MAX_FILE_MB;
-  const big  = usingOwnKey && mb > 50;
-  if (!hard && !soft && !big) return null;
-  const color = hard ? '#ef4444' : '#f59e0b';
-  const bg    = hard ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)';
-  const bdr   = hard ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)';
+function PreflightWarning({ durMin }) {
+  if (!durMin) return null;
+  const durSec     = durMin * 60;
+  const willChunk  = durSec > CHUNK_TRIGGER_SEC;
+  const numChunks  = willChunk ? Math.ceil(durSec / CHUNK_DURATION_SEC) : 0;
+  const mb         = durMin * 60 * 16000 * 2 / (1024 * 1024); // estimated WAV size
+
+  if (!willChunk) return null;
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.65rem 0.9rem', borderRadius:'10px',
-      background: bg, border:`1px solid ${bdr}`, marginTop:'0.75rem', fontSize:'0.85rem' }}>
-      <AlertTriangle size={15} color={color} />
-      <span style={{ color: hard ? '#fca5a5' : '#fcd34d' }}>
-        {hard
-          ? `File exceeds ${MAX_FILE_MB} MB limit — add your Groq API key below to unlock chunked transcription up to ${MAX_FILE_MB_OWN_KEY} MB.`
-          : big
-            ? `Large file (${mb.toFixed(1)} MB) — will be split into ${Math.ceil(mb / 5)} chunks automatically.`
-            : `Large file (${mb.toFixed(1)} MB) — Whale mode recommended.`}
+    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', padding:'0.7rem 0.9rem',
+      borderRadius:'10px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)',
+      marginTop:'0.75rem', fontSize:'0.83rem' }}>
+      <Info size={15} color="#38bdf8" style={{ marginTop:'1px', flexShrink:0 }} />
+      <span style={{ color:'#7dd3fc', lineHeight:1.5 }}>
+        Long audio ({Math.floor(durMin)}m {Math.round((durMin % 1) * 60)}s) — will be split into{' '}
+        <strong>{numChunks} chunks</strong> of {CHUNK_DURATION_SEC / 60} min each.{' '}
+        Counts as <strong>1 credit</strong>. Chunks are stitched automatically.
       </span>
     </div>
   );
@@ -678,7 +715,7 @@ export default function AudioTranscription() {
   const isBusy = isTranscribing || isDiarizing;
 
   const canTranscribe = useMemo(() =>
-    !!user && !!file && !isBusy && credits.creditsRemaining > 0 && file.size <= MAX_FILE_BYTES,
+    !!user && !!file && !isBusy && credits.creditsRemaining > 0,
   [user, file, isBusy, credits.creditsRemaining]);
 
   const handleBlockedAction = () => {
@@ -691,13 +728,27 @@ export default function AudioTranscription() {
     if (handleBlockedAction()) return;
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > MAX_FILE_BYTES) { toast.error(`File too large — max ${MAX_FILE_MB} MB`); return; }
+    if (f.size > MAX_FILE_BYTES) {
+      toast.error(`File too large — max ${MAX_FILE_MB} MB`);
+      return;
+    }
     setFile(f);
     setTranscript('');
     setRawTranscript('');
     setDiarizedSource('');
-    toast.success('Audio file ready');
-    getAudioDurationMin(f).then(setAudioDurMin);
+    setSegments([]);
+
+    const durMin = await getAudioDurationMin(f);
+    setAudioDurMin(durMin);
+
+    const willChunk = durMin * 60 > CHUNK_TRIGGER_SEC;
+    const numChunks = willChunk ? Math.ceil((durMin * 60) / CHUNK_DURATION_SEC) : 1;
+    if (willChunk) {
+      toast(`Long audio detected — will split into ${numChunks} chunks`, { icon: '✂️' });
+    } else {
+      toast.success('Audio file ready');
+    }
+
     const hash = await hashFile(f);
     setFileHash(hash);
     if (sessionCache.has(hash)) {
@@ -776,49 +827,71 @@ export default function AudioTranscription() {
     setProgressLabel('Pre-flight checks…');
 
     const selectedMode  = TRANSCRIPTION_MODES.find(m => m.value === mode);
-    const needsChunking = file.size > MAX_FILE_BYTES;
+    // Trigger chunking by DURATION (not file size) — Groq's hard limit is 25 MB
+    // per file, which at 16 kHz mono WAV equals ~108 min. We chunk earlier to
+    // stay well within any duration limits Groq enforces.
+    const needsChunking = audioDurMin * 60 > CHUNK_TRIGGER_SEC;
 
     try {
       let fullTranscript = '';
       let allSegments    = [];
 
       if (needsChunking) {
-        // ── Chunked path: decode → 16kHz mono WAV chunks ──
-        setProgressLabel('Decoding audio…');
-        let chunks;
+        // ── Chunked path ──────────────────────────────────────────────────────
+        setProgressLabel('Decoding audio — this may take a moment for long files…');
+        setProgress(8);
+
+        let blobs, stepSec;
         try {
-          chunks = await splitAudioIntoChunks(file, (cur, total) => {
+          const result = await splitAudioIntoChunks(file, (cur, total) => {
             setChunkInfo({ current: cur, total });
-            setProgress(5 + Math.round((cur / total) * 20));
-            setProgressLabel(`Preparing chunk ${cur} of ${total}…`);
+            setProgress(8 + Math.round((cur / total) * 17)); // 8 → 25 %
+            setProgressLabel(`Preparing chunk ${cur} / ${total}…`);
           });
+          blobs   = result.blobs;
+          stepSec = result.stepSec;
         } catch (err) {
           throw new Error('Failed to decode audio: ' + err.message);
         }
 
-        let segOffset = 0;
-        for (let i = 0; i < chunks.length; i++) {
-          setChunkInfo({ current: i + 1, total: chunks.length });
-          setProgress(25 + Math.round(((i + 0.5) / chunks.length) * 50));
-          setProgressLabel(`${selectedMode.emoji} Chunk ${i + 1} of ${chunks.length}…`);
+        const chunkTexts = [];
+        let   segOffset  = 0;
+
+        for (let i = 0; i < blobs.length; i++) {
+          setChunkInfo({ current: i + 1, total: blobs.length });
+          const pct = 25 + Math.round(((i + 0.5) / blobs.length) * 58); // 25 → 83 %
+          setProgress(pct);
+          setProgressLabel(
+            `${selectedMode.emoji} Transcribing chunk ${i + 1} of ${blobs.length}` +
+            ` (${Math.round(((i + 1) / blobs.length) * 100)}%)…`
+          );
 
           const fd = new FormData();
-          fd.append('file', new File([chunks[i]], `chunk_${i}.wav`, { type: 'audio/wav' }));
+          fd.append('file', new File([blobs[i]], `chunk_${i}.wav`, { type: 'audio/wav' }));
           fd.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
           fd.append('model', selectedMode.model);
           fd.append('timestamps', enableTimestamps ? 'true' : 'false');
+          // Only the first chunk increments the daily quota — the whole session
+          // counts as one transcription credit regardless of chunk count.
+          fd.append('firstChunk', i === 0 ? 'true' : 'false');
 
           const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: fd });
-          fullTranscript += (fullTranscript ? ' ' : '') + (data?.data?.transcript || '');
+          chunkTexts.push(data?.data?.transcript || '');
 
           if (enableTimestamps && data?.data?.segments) {
-            allSegments = [...allSegments, ...data.data.segments.map(seg => ({
-              ...seg, start: seg.start + segOffset, end: seg.end + segOffset,
-            }))];
-            segOffset += CHUNK_DURATION_SEC;
+            allSegments = [
+              ...allSegments,
+              ...data.data.segments.map(seg => ({
+                ...seg,
+                start: seg.start + segOffset,
+                end:   seg.end   + segOffset,
+              })),
+            ];
           }
+          segOffset += stepSec;
 
-          if (!usingOwnKey && typeof data.creditsUsed === 'number') {
+          // Update credit display only after the first chunk (when quota was used)
+          if (i === 0 && !usingOwnKey && typeof data.creditsUsed === 'number') {
             setCredits({
               creditsUsed:      data.creditsUsed,
               creditsRemaining: Math.max(0, (data.creditsTotal || DAILY_LIMIT) - data.creditsUsed),
@@ -826,16 +899,22 @@ export default function AudioTranscription() {
             });
           }
         }
+
+        // Stitch chunks, deduplicating the overlap region at each boundary
+        fullTranscript = stitchChunks(chunkTexts);
+
       } else {
-        // ── Direct path ──
+        // ── Direct path ──────────────────────────────────────────────────────
         setProgress(20); setProgressLabel('Uploading audio…');
         const formData = new FormData();
         formData.append('file', file);
         formData.append('outputLanguage', transcribeToEnglish ? 'english' : outputLanguage);
         formData.append('model', selectedMode.model);
         formData.append('timestamps', enableTimestamps ? 'true' : 'false');
+        formData.append('firstChunk', 'true');
 
-        setProgress(45); setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
+        setProgress(45);
+        setProgressLabel(`${selectedMode.emoji} ${selectedMode.label} engine transcribing…`);
         const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method: 'POST', body: formData });
         fullTranscript = data?.data?.transcript || '';
         if (enableTimestamps && data?.data?.segments) allSegments = data.data.segments;
@@ -864,8 +943,9 @@ export default function AudioTranscription() {
       } else {
         setDiarizedSource('');
         setProgress(100); setProgressLabel('Done!');
-        toast.success(`Transcription complete — ${selectedMode.label} mode`);
-        setTimeout(() => { setProgress(0); setProgressLabel(''); }, 800);
+        const chunkMsg = needsChunking ? ` (${Math.ceil(audioDurMin / (CHUNK_DURATION_SEC / 60))} chunks merged)` : '';
+        toast.success(`Transcription complete — ${selectedMode.label} mode${chunkMsg}`);
+        setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1000);
       }
     } catch (err) {
       toast.error(err.message || 'Transcription failed');
@@ -1051,7 +1131,7 @@ export default function AudioTranscription() {
                 </p>
               </div>
             </label>
-            <PreflightWarning file={file} usingOwnKey={usingOwnKey} />
+            <PreflightWarning durMin={audioDurMin} />
 
             {/* Language */}
             <div style={{ marginTop:'1rem' }}>

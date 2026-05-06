@@ -2207,19 +2207,26 @@ app.post('/api/transcribe', requireAuth, async (c) => {
     return c.json({ error: 'Invalid form data' }, 400);
   }
 
-  const userGroqKey    = (formData.get('groqApiKey') || '').trim();
-  const groqKey        = (userGroqKey || (c.env.GROQ_API_KEY ?? '')).trim();
-  const usingOwnKey    = !!userGroqKey;
+  const userGroqKey = (formData.get('groqApiKey') || '').trim();
+  const groqKey     = (userGroqKey || (c.env.GROQ_API_KEY ?? '')).trim();
+  const usingOwnKey = !!userGroqKey;
+  // firstChunk=false means this is a subsequent chunk of a chunked upload.
+  // Only the first chunk counts against the daily quota so a 1-hour file
+  // split into 15 chunks still uses exactly 1 credit.
+  const isFirstChunk = formData.get('firstChunk') !== 'false';
 
   if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
 
-  // Quota only applies when using shared server key
+  // Quota check only on first chunk (or non-chunked requests)
   let used = 0;
-  if (!usingOwnKey) {
+  if (!usingOwnKey && isFirstChunk) {
     used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
     if (used >= TRANSCRIBE_DAILY_MAX) {
       return c.json({ error: 'Daily transcription limit reached. Resets at midnight.' }, 429);
     }
+  } else if (!usingOwnKey) {
+    // Non-first chunks: fetch current count so the response carries accurate data
+    used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
   }
 
   const file           = formData.get('file');
@@ -2264,7 +2271,7 @@ app.post('/api/transcribe', requireAuth, async (c) => {
       return c.json({ error: msg }, groqRes.status);
     }
 
-    if (!usingOwnKey) {
+    if (!usingOwnKey && isFirstChunk) {
       await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
       used += 1;
     }
