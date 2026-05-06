@@ -81,6 +81,7 @@ const AllToolsPage = React.lazy(() => import('./pages/misc/AllToolsPage'));
 const YouTubeDownloader = React.lazy(() => import('./pages/other-tools/YouTubeDownloader'));
 const Trending = React.lazy(() => import('./pages/misc/Trending'));
 const AdminPage = React.lazy(() => import('./pages/admin/AdminPage'));
+const AiChat    = React.lazy(() => import('./pages/ai/AiChat'));
 import { Login, Signup } from './pages/auth/AuthPages';
 import GlobalBackground from './components/GlobalBackground';
 
@@ -110,6 +111,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/gate/:slug" element={<LeadGate />} />
       <Route path="/link-expired/:slug" element={<ExpiredLink />} />
+      <Route path="/ai-chat" element={<AiChat />} />
 
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
