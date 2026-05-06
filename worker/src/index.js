@@ -2208,7 +2208,7 @@ app.post('/api/transcribe', requireAuth, async (c) => {
   }
 
   const userGroqKey    = (formData.get('groqApiKey') || '').trim();
-  const groqKey        = userGroqKey || c.env.GROQ_API_KEY;
+  const groqKey        = (userGroqKey || (c.env.GROQ_API_KEY ?? '')).trim();
   const usingOwnKey    = !!userGroqKey;
 
   if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
@@ -2235,8 +2235,13 @@ app.post('/api/transcribe', requireAuth, async (c) => {
   }
 
   try {
+    // Buffer the file fully — Cloudflare Workers can drop File streams when
+    // the body is forwarded to an outbound fetch without materialising first.
+    const fileBytes = await file.arrayBuffer();
+    const fileBlob  = new Blob([fileBytes], { type: file.type || 'audio/mpeg' });
+
     const groqForm = new FormData();
-    groqForm.append('file', file);
+    groqForm.append('file', fileBlob, file.name || 'audio.mp3');
     groqForm.append('model', model);
     groqForm.append('response_format', wantTimestamps ? 'verbose_json' : 'json');
     const langCode = LANGUAGE_CODES[outputLanguage];
