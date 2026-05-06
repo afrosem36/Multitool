@@ -614,6 +614,37 @@ function PreflightWarning({ durMin }) {
   );
 }
 
+// ─── AI Helper Engine ─────────────────────────────────────────────────────────
+async function runAIAction(prompt, apiFetch, onProviderChange) {
+  try {
+    // 1. Try Puter AI first
+    const { puter } = await import('@heyputer/puter.js');
+    onProviderChange?.('puter');
+    const response = await puter.ai.chat(prompt);
+    return { content: response.message.content, provider: 'puter' };
+  } catch (err) {
+    console.warn('[Puter AI] failed, falling back to Groq:', err.message);
+    // 2. If Puter fails -> auto fallback to Groq
+    onProviderChange?.('groq');
+    toast.error('Using backup AI enhancement...');
+    
+    const res = await apiFetch('/api/groq/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+      }),
+    });
+
+    const data = await parseJsonResponse(res);
+    const content = data?.choices?.[0]?.message?.content || data?.content || '';
+    if (!content) throw new Error('AI Fallback failed');
+    return { content, provider: 'groq' };
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AudioTranscription() {
   const { user, apiFetch } = useAuth();
@@ -660,6 +691,12 @@ export default function AudioTranscription() {
   const [savedTemplates, setSavedTemplates] = useState(loadQATemplates);
   const [audioDurMin, setAudioDurMin]       = useState(0);
   const [chatGptUrl, setChatGptUrl]         = useState('');
+
+  // ── AI Enhancement State ──
+  const [isProcessingAI, setIsProcessingAI] = useState(false);
+  const [aiProvider, setAiProvider]         = useState(null); // 'puter' | 'groq'
+  const [aiReport, setAiReport]             = useState(null);
+  const [aiActionType, setAiActionType]     = useState(null);
 
   // ── Credits ──
   const [credits, setCredits]                   = useState({ creditsUsed:0, creditsRemaining:DAILY_LIMIT, creditsTotal:DAILY_LIMIT });
@@ -984,6 +1021,48 @@ export default function AudioTranscription() {
     a.href = url; a.download = `transcript.${ext}`; a.click();
     URL.revokeObjectURL(url);
     toast.success(`Exported as .${ext}`);
+  };
+
+  // ── AI Action Handlers ──
+  const handleAIAction = async (type) => {
+    if (!transcript) { toast.error('No transcript to process'); return; }
+    
+    setIsProcessingAI(true);
+    setAiActionType(type);
+    setAiProvider(null);
+    setAiReport(null);
+
+    let prompt = '';
+    const textToProcess = qaMode ? editableText : transcript;
+
+    if (type === 'improve') {
+      prompt = `Improve the following transcript. Fix grammar, punctuation, and readability. Keep the original meaning and preserve speaker labels (e.g., [Speaker 1]:). Do NOT over-formalize; keep it natural. If Hinglish/Hindi is present, keep it natural.\n\nTranscript:\n${textToProcess}`;
+    } else if (type === 'polish') {
+      prompt = `Polish the translation of this transcript. Ensure natural wording, better sentence flow, and conversational formatting while preserving the business/call-center tone. Keep speaker formatting.\n\nTranscript:\n${textToProcess}`;
+    } else if (type === 'summarize') {
+      prompt = `Provide a concise summary of the following call transcript.\n\nTranscript:\n${textToProcess}`;
+    } else if (type === 'extract') {
+      prompt = `Extract the key points and action items from the following call transcript.\n\nTranscript:\n${textToProcess}`;
+    } else if (type === 'qa') {
+      const totalMarks = qaParams.reduce((s, p) => s + (Number(p.marks) || 0), 0);
+      const paramsList = qaParams.map(p => `- ${p.name}: ${p.marks} marks`).join('\n');
+      prompt = `You are a professional call quality analyst. Evaluate the following transcript based on these parameters:\n${paramsList}\nTotal Marks: ${totalMarks}\n\nTranscript:\n${textToProcess}\n\nGenerate a structured report with:\n1. Parameter-wise scoring and feedback\n2. Final Score\n3. Overall Performance\n4. Strengths\n5. Areas to Improve\n6. Customer handling review\n7. Empathy analysis\n8. Communication quality\n9. Professionalism score\n10. Actionable Suggestions\n\nFormat the report cleanly.`;
+    }
+
+    try {
+      const result = await runAIAction(prompt, apiFetch, (p) => setAiProvider(p));
+      if (type === 'qa') {
+        setAiReport(result.content);
+      } else {
+        if (qaMode) setEditableText(result.content);
+        else setTranscript(result.content);
+        toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} complete`);
+      }
+    } catch (err) {
+      toast.error('AI Processing failed');
+    } finally {
+      setIsProcessingAI(false);
+    }
   };
 
   const copyText = async () => {
@@ -1372,6 +1451,59 @@ export default function AudioTranscription() {
                 </button>
               </div>
             </div>
+
+            {/* AI Action Buttons */}
+            {transcript && (
+              <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'1rem', padding:'0.75rem', 
+                borderRadius:'12px', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <button onClick={() => handleAIAction('improve')} disabled={isProcessingAI} className="btn-secondary"
+                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
+                  <Sparkles size={12} color="#38bdf8" /> Improve Text Quality
+                </button>
+                <button onClick={() => handleAIAction('polish')} disabled={isProcessingAI} className="btn-secondary"
+                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
+                  <Zap size={12} color="#fbbf24" /> AI Translation Polish
+                </button>
+                <button onClick={() => handleAIAction('summarize')} disabled={isProcessingAI} className="btn-secondary"
+                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
+                  <FileText size={12} color="#a78bfa" /> Summarize Call
+                </button>
+                <button onClick={() => handleAIAction('extract')} disabled={isProcessingAI} className="btn-secondary"
+                  style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem' }}>
+                  <Hash size={12} color="#34d399" /> Extract Key Points
+                </button>
+                {qaMode && (
+                  <button onClick={() => handleAIAction('qa')} disabled={isProcessingAI} className="btn-primary"
+                    style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.78rem', padding:'0.4rem 0.7rem', background:'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                    <Brain size={12} /> AI QA Analysis
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* AI Provider Badge */}
+            {aiProvider && (
+              <div style={{ marginBottom:'0.75rem', display:'flex', justifyContent:'flex-end' }}>
+                <span style={{ fontSize:'0.68rem', padding:'0.2rem 0.5rem', borderRadius:'6px', 
+                  background: aiProvider === 'puter' ? 'rgba(56,189,248,0.1)' : 'rgba(245,158,11,0.1)',
+                  color: aiProvider === 'puter' ? '#38bdf8' : '#fbbf24',
+                  border: `1px solid ${aiProvider === 'puter' ? 'rgba(56,189,248,0.2)' : 'rgba(245,158,11,0.2)'}` }}>
+                  {aiProvider === 'puter' ? '✨ Powered by Puter' : '⚠️ Fallback: Groq'}
+                </span>
+              </div>
+            )}
+
+            {/* AI Processing Indicator */}
+            {isProcessingAI && (
+              <div style={{ display:'flex', alignItems:'center', gap:'0.65rem', padding:'0.75rem 1rem',
+                borderRadius:'12px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.2)',
+                marginBottom:'0.85rem' }}>
+                <LoaderCircle size={15} color="#38bdf8" className="spin" />
+                <span style={{ fontSize:'0.88rem', color:'#7dd3fc' }}>
+                  AI is processing {aiActionType}...
+                </span>
+              </div>
+            )}
 
             {/* Stats */}
             {stats && (
