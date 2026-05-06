@@ -1,451 +1,167 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
-
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://multitoolhub.space/</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1</priority>
+    <loc>https://multitool.vercel.app/</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/explore</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://multitool.vercel.app/guides</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/guides</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/pdf-tools</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/trending</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/text-tools</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/favorites</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/whatsapp-link-creator</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/pdf-tools</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://multitool.vercel.app/share</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image-tools</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://multitool.vercel.app/analytics</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/text-tools</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://multitool.vercel.app/image/heic-to-jpg</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/calculators</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/seo-analyzer</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/ai-tools</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://multitool.vercel.app/time-converter</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/utilities</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/privacy-policy</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/excel</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/about-us</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/merge</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/contact-us</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/split</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/guides/how-to-compress-image-online</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/protect</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/guides/best-pdf-tools-free</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/organize</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/guides/how-to-convert-jpg-to-png</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/edit</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/guides/how-to-merge-pdf-files-online</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/watermark</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/guides/how-to-remove-extra-spaces-from-text</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/to-jpg</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/guides/how-to-create-whatsapp-link-for-business</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/to-word</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/merge</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image-to-pdf</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/split</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/word-to-pdf</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/organize</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/pdf/excel-to-pdf</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/word-to-pdf</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/pdf-lightener</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/image-to-pdf</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/compress</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/watermark</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/collage</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/edit</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/enhance</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/protect</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/jpg-to-png</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/to-jpg</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/png-to-jpg</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/to-word</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/html-to-image</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/remove-punctuation</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/image/heic-to-jpg</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/remove-accents</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/whatsapp-link-creator</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://multitool.vercel.app/text/remove-duplicate-lines</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/utilities/qr-generator</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/text/remove-empty-lines</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/utilities/qr-decoder</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/text/remove-line-breaks</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/utilities/url-shortener</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://multitool.vercel.app/text/remove-extra-spaces</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/json-formatter</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/remove-whitespace</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/sql-formatter</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/remove-lines-containing</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/font-preview</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/random-password-generator</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/passport-photo</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/random-words</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/html-ide</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/random-emoji</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
   <url>
-    <loc>https://multitoolhub.space/tools/sql-practice</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <loc>https://multitool.vercel.app/text/word-repeater</loc>
+    <lastmod>2026-05-06T17:41:48.935Z</lastmod>
   </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/youtube-downloader</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/background-remover</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/audio-transcription</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/typing-test</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/data-converter</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/text-to-sql</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/tools/mojibake-decoder</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/seo-analyzer</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/personal-finance</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/finance</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/bmi</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/age</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/days</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/duration</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/currency</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/calculator/unit-converter</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/excel/merge</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/excel/convert</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/ai-chat</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/about-us</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/contact-us</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/privacy-policy</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    
-  <url>
-    <loc>https://multitoolhub.space/terms</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-    </urlset>
+</urlset>
