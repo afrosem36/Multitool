@@ -647,9 +647,13 @@ app.post('/api/auth/google', async (c) => {
     if (!user) {
       const id = nanoid();
       const dummyHash = bcrypt.hashSync(nanoid(), 10);
-      await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
-        .bind(id, name, sanitizedEmail, dummyHash).run();
-      user = { id, name, email: sanitizedEmail };
+      await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash, oauth_provider) VALUES (?, ?, ?, ?, ?)')
+        .bind(id, name, sanitizedEmail, dummyHash, 'google').run();
+      user = { id, name, email: sanitizedEmail, oauth_provider: 'google' };
+    } else if (!user.oauth_provider) {
+      // Update existing user to mark as google if not already marked
+      await c.env.multitool_db.prepare('UPDATE users SET oauth_provider = ? WHERE id = ?')
+        .bind('google', user.id).run();
     }
     console.log("✅ User saved");
 
@@ -2380,11 +2384,23 @@ app.get('/api/admin/users', requireAuth, async (c) => {
   }
 
   try {
-    const users = await db.prepare(`
-      SELECT u.id, u.name, u.email, u.password_hash, u.created_at, u.oauth_provider
-      FROM users u
-      ORDER BY u.created_at DESC
-    `).all();
+    // Try to fetch with oauth_provider, fallback if column doesn't exist
+    let users;
+    try {
+      users = await db.prepare(`
+        SELECT u.id, u.name, u.email, u.password_hash, u.created_at, u.oauth_provider
+        FROM users u
+        ORDER BY u.created_at DESC
+      `).all();
+    } catch (err) {
+      console.warn('oauth_provider column might not exist, fetching without it:', err.message);
+      // Fallback query without oauth_provider column
+      users = await db.prepare(`
+        SELECT u.id, u.name, u.email, u.password_hash, u.created_at, NULL as oauth_provider
+        FROM users u
+        ORDER BY u.created_at DESC
+      `).all();
+    }
 
     const usersWithQuota = await Promise.all((users.results || []).map(async (u) => {
       const today = getTodayUtcDate();
@@ -2405,7 +2421,7 @@ app.get('/api/admin/users', requireAuth, async (c) => {
     return c.json({ data: usersWithQuota });
   } catch (err) {
     console.error('Admin: Failed to fetch users:', err);
-    return c.json({ error: 'Failed to fetch users' }, 500);
+    return c.json({ error: 'Failed to fetch users: ' + err.message }, 500);
   }
 });
 
