@@ -82,8 +82,22 @@ async function incrementUserQuota(db, userId, toolId) {
 
 // Accounts with unlimited access — exempt from all daily quotas
 const UNLIMITED_EMAILS = new Set(['afrosem36@gmail.com']);
-function hasUnlimitedCredits(user) {
-  return UNLIMITED_EMAILS.has((user?.email ?? '').toLowerCase().trim());
+
+// Google login accounts get free tier for specific tools (transcription, text-to-sql)
+const FREE_TIER_TOOLS = new Set(['transcription', 'text-to-sql']);
+
+function hasUnlimitedCredits(user, toolId) {
+  const email = (user?.email ?? '').toLowerCase().trim();
+
+  // afrosem36@gmail.com: unlimited for ALL tools
+  if (UNLIMITED_EMAILS.has(email)) return true;
+
+  // All Gmail/Google accounts: free tier for specific tools
+  if ((email.endsWith('@gmail.com') || email.endsWith('@googlemail.com')) && FREE_TIER_TOOLS.has(toolId)) {
+    return true;
+  }
+
+  return false;
 }
 
 function getRequiredEnvValue(env, key) {
@@ -1801,6 +1815,9 @@ const TEXT_TO_SQL_DAILY_MAX = 20;
 app.get('/api/text-to-sql/credits', requireAuth, async (c) => {
   const db   = getDb(c.env);
   const user = c.get('user');
+  if (hasUnlimitedCredits(user, TEXT_TO_SQL_TOOL_ID)) {
+    return c.json({ data: { creditsUsed: 0, creditsRemaining: 9999, creditsTotal: 9999, unlimited: true } }, 200);
+  }
   const used = await checkUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
   const remaining = Math.max(0, TEXT_TO_SQL_DAILY_MAX - used);
   return c.json({
@@ -1826,9 +1843,13 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
     if (!question) return c.json({ error: 'question is required' }, 400);
     if (!schema)   return c.json({ error: 'schema is required' }, 400);
 
-    const used = await checkUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
-    if (used >= TEXT_TO_SQL_DAILY_MAX) {
-      return c.json({ error: 'Daily limit reached. Resets at midnight UTC.', creditsTotal: TEXT_TO_SQL_DAILY_MAX }, 429);
+    const unlimited = hasUnlimitedCredits(user, TEXT_TO_SQL_TOOL_ID);
+    let used = 0;
+    if (!unlimited) {
+      used = await checkUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
+      if (used >= TEXT_TO_SQL_DAILY_MAX) {
+        return c.json({ error: 'Daily limit reached. Resets at midnight UTC.', creditsTotal: TEXT_TO_SQL_DAILY_MAX }, 429);
+      }
     }
 
     const groqKey = getRequiredEnvValue(c.env, 'GROQ_API_KEY');
@@ -1872,13 +1893,15 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
     const sql = groqData.choices?.[0]?.message?.content?.trim() || '';
     if (!sql) return c.json({ error: 'Groq returned empty response' }, 502);
 
-    await incrementUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
-    const newUsed = used + 1;
+    if (!unlimited) {
+      await incrementUserQuota(db, user.id, TEXT_TO_SQL_TOOL_ID);
+      used += 1;
+    }
 
     return c.json({
       data: { sql },
-      creditsUsed:  newUsed,
-      creditsTotal: TEXT_TO_SQL_DAILY_MAX,
+      creditsUsed:  unlimited ? null : used,
+      creditsTotal: unlimited ? null : TEXT_TO_SQL_DAILY_MAX,
     });
   } catch (err) {
     console.error('[text-to-sql] Unhandled error:', err);
@@ -2186,7 +2209,7 @@ const TRANSCRIBE_DAILY_MAX = 10;
 app.get('/api/transcribe/credits', requireAuth, async (c) => {
   const db   = getDb(c.env);
   const user = c.get('user');
-  if (hasUnlimitedCredits(user)) {
+  if (hasUnlimitedCredits(user, TRANSCRIBE_TOOL_ID)) {
     return c.json({ data: { creditsUsed: 0, creditsRemaining: 9999, creditsTotal: 9999, unlimited: true } }, 200);
   }
   const used      = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
@@ -2226,8 +2249,8 @@ app.post('/api/transcribe', requireAuth, async (c) => {
 
   if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
 
-  // Unlimited accounts skip all quota logic
-  const unlimited = hasUnlimitedCredits(user);
+  // Unlimited/free-tier accounts skip quota logic
+  const unlimited = hasUnlimitedCredits(user, TRANSCRIBE_TOOL_ID);
 
   // Quota check only on first chunk (or non-chunked requests)
   let used = 0;
