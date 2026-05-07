@@ -542,6 +542,100 @@ const StatBadge = ({ label, value, color = 'var(--accent-primary)' }) => (
   </div>
 );
 
+// ─── Credits Bar ─────────────────────────────────────────────────────────────
+const CreditsBar = memo(({ credits, onRefresh }) => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await onRefresh?.();
+    setTimeout(() => setRefreshing(false), 600);
+  };
+
+  // Skeleton while loading
+  if (!credits) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap:'0.45rem',
+        background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+        borderRadius:10, padding:'0.7rem 0.85rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ width:80, height:10, borderRadius:4, background:'rgba(255,255,255,0.08)' }} />
+          <div style={{ width:40, height:10, borderRadius:4, background:'rgba(255,255,255,0.08)' }} />
+        </div>
+        <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:5 }} />
+      </div>
+    );
+  }
+
+  const { creditsUsed, creditsRemaining, creditsTotal } = credits;
+  const usedPct = Math.round((creditsUsed / creditsTotal) * 100);
+  const isLow   = creditsRemaining <= 2 && creditsRemaining > 0;
+  const isEmpty = creditsRemaining === 0;
+
+  const accentColor = isEmpty ? '#ef4444' : isLow ? '#f59e0b' : '#818cf8';
+  const barColor    = isEmpty
+    ? '#ef4444'
+    : isLow
+    ? 'linear-gradient(90deg,#f59e0b,#fbbf24)'
+    : 'linear-gradient(90deg,#6366f1,#a78bfa)';
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'0.45rem',
+      background: isEmpty ? 'rgba(239,68,68,0.06)' : isLow ? 'rgba(245,158,11,0.06)' : 'rgba(99,102,241,0.06)',
+      border: `1px solid ${isEmpty ? 'rgba(239,68,68,0.2)' : isLow ? 'rgba(245,158,11,0.2)' : 'rgba(99,102,241,0.15)'}`,
+      borderRadius:10, padding:'0.7rem 0.85rem' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontSize:'0.72rem', fontWeight:600, color:'var(--text-secondary)',
+          textTransform:'uppercase', letterSpacing:'0.05em', display:'flex', alignItems:'center', gap:5 }}>
+          <Zap size={11} color={accentColor} />
+          Daily Credits
+        </span>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:'0.78rem', fontWeight:700, color:accentColor }}>
+            {creditsRemaining}
+            <span style={{ fontWeight:400, color:'var(--text-secondary)', fontSize:'0.72rem' }}>
+              /{creditsTotal} left
+            </span>
+          </span>
+          <button onClick={handleRefresh}
+            style={{ background:'none', border:'none', cursor:'pointer', padding:2,
+              color:'var(--text-secondary)', opacity: refreshing ? 0.4 : 0.7,
+              display:'flex', alignItems:'center' }}>
+            <motion.div animate={{ rotate: refreshing ? 360 : 0 }}
+              transition={{ duration:0.5, ease:'easeInOut' }}>
+              <RefreshCw size={10} />
+            </motion.div>
+          </button>
+        </div>
+      </div>
+      <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:5, overflow:'hidden' }}>
+        <motion.div
+          key={creditsUsed}
+          initial={{ width:0 }}
+          animate={{ width:`${usedPct}%` }}
+          transition={{ duration:0.6, ease:'easeOut' }}
+          style={{ height:'100%', background:barColor, borderRadius:4 }}
+        />
+      </div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)' }}>
+          {creditsUsed} used today
+        </span>
+        {isEmpty && (
+          <span style={{ fontSize:'0.68rem', color:'#f87171', fontWeight:500 }}>
+            Resets at midnight
+          </span>
+        )}
+        {isLow && !isEmpty && (
+          <span style={{ fontSize:'0.68rem', color:'#f59e0b', fontWeight:500 }}>
+            Running low
+          </span>
+        )}
+      </div>
+    </div>
+  );
+});
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AudioTranscription() {
   const { user, apiFetch } = useAuth();
@@ -589,6 +683,20 @@ export default function AudioTranscription() {
 
   // UI state
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Credits state
+  const [credits, setCredits] = useState(null); // { creditsUsed, creditsRemaining, creditsTotal }
+
+  const fetchCredits = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res  = await apiFetch('/api/transcribe/credits');
+      const json = await res.json();
+      if (json?.data) setCredits(json.data);
+    } catch { /* silent */ }
+  }, [user, apiFetch]);
+
+  useEffect(() => { fetchCredits(); }, [fetchCredits]);
 
   const sessionCache = useRef(new Map());
   const isDone       = pipelineStage === 'done';
@@ -683,6 +791,9 @@ export default function AudioTranscription() {
           fd.append('model', modeConfig.model);
           const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
           rawText = data.text || data.transcription || '';
+          if (data.creditsUsed != null && data.creditsTotal != null) {
+            setCredits({ creditsUsed: data.creditsUsed, creditsRemaining: data.creditsTotal - data.creditsUsed, creditsTotal: data.creditsTotal });
+          }
         }
 
         sessionCache.current.set(cacheKey, rawText);
@@ -760,6 +871,7 @@ export default function AudioTranscription() {
       setPipelineStage('done');
       setProviderNote('');
       if (!qaMode) setActiveTab(needsTranslation ? 'translation' : 'improved');
+      fetchCredits();
       toast.success('Transcription complete!');
 
     } catch (err) {
@@ -774,7 +886,7 @@ export default function AudioTranscription() {
       setProviderNote('');
       toast.error('Processing failed: ' + (err.message || 'Unknown error'));
     }
-  }, [file, user, mode, speakerRecognition, outputLanguage, qaMode, qaParams, totalQAMarks, apiFetch, audioDurMin, needsTranslation]);
+  }, [file, user, mode, speakerRecognition, outputLanguage, qaMode, qaParams, totalQAMarks, apiFetch, audioDurMin, needsTranslation, fetchCredits]);
 
   // ── On-demand improve ──────────────────────────────────────────────────────
   const handleImproveOriginal = async () => {
@@ -836,7 +948,8 @@ export default function AudioTranscription() {
   };
 
   const isPipelineRunning = pipelineStage && pipelineStage !== 'done';
-  const canStart          = file && !isPipelineRunning;
+  const creditsExhausted  = user && credits != null && credits.creditsRemaining === 0;
+  const canStart          = file && !isPipelineRunning && !creditsExhausted;
 
   // ── Tabs config ────────────────────────────────────────────────────────────
   const tabs = useMemo(() => [
@@ -1056,19 +1169,30 @@ export default function AudioTranscription() {
               )}
             </AnimatePresence>
 
+            {/* Credits balance */}
+            {user && <CreditsBar credits={credits} onRefresh={fetchCredits} />}
+
             {/* Start button */}
             <button
               onClick={canStart ? runPipeline : isPipelineRunning ? () => { abortRef.current = true; } : undefined}
-              disabled={!file}
-              style={{ width:'100%', padding:'0.9rem', borderRadius:12, border:'none', cursor: file ? 'pointer' : 'not-allowed',
+              disabled={!file && !isPipelineRunning}
+              title={creditsExhausted ? 'Daily limit reached — resets at midnight' : undefined}
+              style={{ width:'100%', padding:'0.9rem', borderRadius:12, border:'none',
+                cursor: isPipelineRunning ? 'pointer' : canStart ? 'pointer' : 'not-allowed',
                 fontWeight:700, fontSize:'0.95rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
-                background: !file ? 'rgba(255,255,255,0.06)' :
-                           isPipelineRunning ? 'rgba(239,68,68,0.15)' :
+                background: isPipelineRunning ? 'rgba(239,68,68,0.15)' :
+                           creditsExhausted  ? 'rgba(239,68,68,0.08)' :
+                           !file             ? 'rgba(255,255,255,0.06)' :
                            'linear-gradient(135deg,#6366f1,#a78bfa)',
-                color: !file ? 'var(--text-secondary)' : isPipelineRunning ? '#f87171' : '#fff',
-                transition:'all 0.2s', boxShadow: file && !isPipelineRunning ? '0 4px 20px rgba(99,102,241,0.3)' : 'none' }}>
+                color: isPipelineRunning ? '#f87171' :
+                       creditsExhausted  ? '#f87171' :
+                       !file             ? 'var(--text-secondary)' : '#fff',
+                transition:'all 0.2s',
+                boxShadow: canStart && !isPipelineRunning ? '0 4px 20px rgba(99,102,241,0.3)' : 'none' }}>
               {isPipelineRunning ? (
                 <><motion.div animate={{ rotate:360 }} transition={{ repeat:Infinity, duration:1 }}><Loader size={18} /></motion.div> Stop Pipeline</>
+              ) : creditsExhausted ? (
+                <><Lock size={18} /> No Credits Left</>
               ) : (
                 <><Zap size={18} /> {isDone ? 'Re-Transcribe' : 'Start Pipeline'}</>
               )}

@@ -1,17 +1,39 @@
 // ─── AI Enhancement Helpers with Puter + Groq Fallback ─────────────────────
 // Handles text improvement, translation polish, QA analysis, summarization, key points
 
-function extractTextFromResponse(response) {
-  if (typeof response === 'string') return response;
-  if (response?.message?.content) return String(response.message.content).trim();
-  if (response?.text) return String(response.text).trim();
-  if (response?.content && typeof response.content === 'string') return String(response.content).trim();
-  if (Array.isArray(response?.choices) && response.choices[0]?.message?.content) {
-    return String(response.choices[0].message.content).trim();
+function extractContent(value) {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .filter((c) => c?.type === 'text' || typeof c?.text === 'string')
+      .map((c) => c.text ?? '')
+      .join('')
+      .trim();
   }
-  const str = String(response);
-  if (str && str !== '[object Object]') return str.trim();
   return '';
+}
+
+function extractTextFromResponse(response) {
+  if (typeof response === 'string') return response.trim();
+
+  // OpenAI / Groq / Puter choices array
+  if (Array.isArray(response?.choices)) {
+    const content = response.choices[0]?.message?.content;
+    if (content != null) return extractContent(content);
+  }
+
+  // Puter single-choice object  { message: { content } }
+  if (response?.message?.content != null) return extractContent(response.message.content);
+
+  // Flat content field
+  if (response?.content != null) return extractContent(response.content);
+
+  // Plain text field
+  if (response?.text != null) return extractContent(response.text);
+
+  // Last resort — only if it doesn't produce [object Object]
+  const str = String(response ?? '');
+  return str && str !== '[object Object]' && str !== 'undefined' ? str.trim() : '';
 }
 
 export async function callAI(messages, { apiFetch, onProvider }) {
