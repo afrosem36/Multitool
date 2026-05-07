@@ -647,13 +647,29 @@ app.post('/api/auth/google', async (c) => {
     if (!user) {
       const id = nanoid();
       const dummyHash = bcrypt.hashSync(nanoid(), 10);
-      await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash, oauth_provider) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, name, sanitizedEmail, dummyHash, 'google').run();
+      // Try to insert with oauth_provider, fallback to without if column doesn't exist
+      try {
+        await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash, oauth_provider) VALUES (?, ?, ?, ?, ?)')
+          .bind(id, name, sanitizedEmail, dummyHash, 'google').run();
+      } catch (err) {
+        if (err.message.includes('oauth_provider')) {
+          // Column doesn't exist yet, insert without it
+          await c.env.multitool_db.prepare('INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)')
+            .bind(id, name, sanitizedEmail, dummyHash).run();
+        } else {
+          throw err;
+        }
+      }
       user = { id, name, email: sanitizedEmail, oauth_provider: 'google' };
-    } else if (!user.oauth_provider) {
-      // Update existing user to mark as google if not already marked
-      await c.env.multitool_db.prepare('UPDATE users SET oauth_provider = ? WHERE id = ?')
-        .bind('google', user.id).run();
+    } else if (user.oauth_provider === undefined || user.oauth_provider === null) {
+      // Try to update existing user to mark as google
+      try {
+        await c.env.multitool_db.prepare('UPDATE users SET oauth_provider = ? WHERE id = ?')
+          .bind('google', user.id).run();
+      } catch (err) {
+        // Column doesn't exist yet, ignore
+        console.warn('Cannot update oauth_provider - column might not exist yet:', err.message);
+      }
     }
     console.log("✅ User saved");
 
