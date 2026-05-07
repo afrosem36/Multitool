@@ -38,20 +38,35 @@ function extractTextFromResponse(response) {
 
 export async function callAI(messages, { apiFetch, onProvider }) {
   try {
-    // 1. Try Puter AI first
+    // 1. Try Puter AI first (PRIMARY PROVIDER)
     try {
+      console.log('[AI Enhancement] Attempting to use Puter AI...');
       const { puter } = await import('@heyputer/puter.js');
+
+      // Ensure puter.ai exists
+      if (!puter || !puter.ai) {
+        throw new Error('Puter AI module not available');
+      }
+
       const response = await puter.ai.chat(messages, { stream: false });
       const text = extractTextFromResponse(response);
-      onProvider?.('puter');
-      return text;
+
+      if (text && text.trim().length > 0) {
+        console.log('[AI Enhancement] Successfully used Puter AI');
+        onProvider?.('puter');
+        return text;
+      } else {
+        throw new Error('Puter returned empty response');
+      }
     } catch (puterErr) {
-      console.warn('[AI Enhancement] Puter failed, falling back to Groq:', puterErr.message);
+      console.warn('[AI Enhancement] Puter failed:', puterErr.message);
+      console.log('[AI Enhancement] Falling back to Groq...');
       // Fall through to Groq
     }
 
-    // 2. Fallback to Groq
+    // 2. Fallback to Groq (SECONDARY PROVIDER)
     onProvider?.('groq');
+    console.log('[AI Enhancement] Using Groq as fallback');
     const res = await apiFetch('/api/groq/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -66,6 +81,7 @@ export async function callAI(messages, { apiFetch, onProvider }) {
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     const data = await res.json();
     const text = data.choices?.[0]?.message?.content || '';
+    console.log('[AI Enhancement] Groq response received');
     return text.trim();
   } catch (err) {
     console.error('[AI Enhancement] All AI providers failed:', err);
