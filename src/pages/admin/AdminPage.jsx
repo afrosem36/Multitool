@@ -120,12 +120,15 @@ const AdminPage = () => {
     return () => window.removeEventListener('storage', handler);
   }, []);
 
+  // Check if user is admin
+  const isAdmin = user && user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
   useEffect(() => {
-    if (!loading && user && user.email !== ADMIN_EMAIL) {
-      toast.error('Unauthorized access');
+    if (!loading && user && !isAdmin) {
+      toast.error('Admin access required');
       navigate('/');
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, isAdmin, navigate]);
 
   const selectFile = (e, slot) => {
     const file = e.target.files[0];
@@ -203,11 +206,20 @@ const AdminPage = () => {
     try {
       const res = await apiFetch('/api/admin/users');
       const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to fetch users');
+        return;
+      }
+
       if (data.data) {
         setUsers(data.data);
+      } else {
+        setUsers([]);
       }
     } catch (err) {
-      toast.error('Failed to fetch users');
+      toast.error('Failed to fetch users: ' + err.message);
+      console.error('Fetch users error:', err);
     } finally {
       setUsersLoading(false);
     }
@@ -275,16 +287,31 @@ const AdminPage = () => {
   // ── Auth gate ────────────────────────────────────────────────
   if (loading) return <div style={{ textAlign: 'center', padding: '4rem' }}>Loading…</div>;
 
-  if (!user) return (
+  if (!user || !isAdmin) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
       <div className="glass-panel" style={{ padding: '2.5rem', textAlign: 'center', maxWidth: '450px' }}>
         <Shield size={48} style={{ margin: '0 auto 1.5rem', color: 'var(--text-primary)' }} />
-        <h2>Admin Authentication</h2>
-        <p style={{ margin: '1rem 0', color: 'var(--text-secondary)' }}>Access restricted to authorised administrators.</p>
-        <GoogleLoginButton onSuccess={async (t) => {
-          const result = await loginWithGoogle(t);
-          if (!result.success) toast.error(result.error || 'Login failed');
-        }} />
+        <h2>Admin Access Only</h2>
+        <p style={{ margin: '1rem 0', color: 'var(--text-secondary)' }}>
+          {user && !isAdmin
+            ? `Access restricted to admin. You are logged in as ${user.email}`
+            : 'Please login with admin credentials to access this panel.'
+          }
+        </p>
+        {!user && (
+          <GoogleLoginButton onSuccess={async (t) => {
+            const result = await loginWithGoogle(t);
+            if (!result.success) toast.error(result.error || 'Login failed');
+          }} />
+        )}
+        {user && !isAdmin && (
+          <button
+            onClick={() => navigate('/')}
+            style={{ marginTop: '1rem', padding: '0.8rem 1.5rem', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            Go Home
+          </button>
+        )}
       </div>
     </div>
   );
