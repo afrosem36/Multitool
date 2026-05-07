@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Upload, Check, Shield, Trash2, Grid } from 'lucide-react';
+import { Upload, Check, Shield, Trash2, Grid, Users, Loader, AlertTriangle, Mail, Calendar, RotateCcw } from 'lucide-react';
 import { GOOGLE_CLIENT_ID, API_BASE_URL } from '../../config';
 import toast from 'react-hot-toast';
 
@@ -99,13 +99,20 @@ function Preview({ template, pending }) {
 
 // ── Main page ────────────────────────────────────────────────────
 const AdminPage = () => {
-  const { user, token, loginWithGoogle, loading } = useAuth();
+  const { user, token, loginWithGoogle, loading, apiFetch } = useAuth();
   const navigate = useNavigate();
 
   const [templates, setTemplates] = useState(loadTemplates);
   const [activeUrl, setActiveUrl] = useState(activeBgUrl);
   const [pending, setPending] = useState(null);   // {file, previewUrl, type, slot}
   const [uploading, setUploading] = useState(null); // slot number while uploading
+
+  // User management state
+  const [activeTab, setActiveTab] = useState('background'); // 'background' or 'users'
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const [resetting, setResetting] = useState(null);
 
   useEffect(() => {
     const handler = () => setActiveUrl(activeBgUrl());
@@ -190,6 +197,81 @@ const AdminPage = () => {
     toast.success(`Template ${slot} deleted`);
   };
 
+  // Fetch users
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const res = await apiFetch('/api/admin/users');
+      const data = await res.json();
+      if (data.data) {
+        setUsers(data.data);
+      }
+    } catch (err) {
+      toast.error('Failed to fetch users');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [apiFetch]);
+
+  // Delete user
+  const handleDeleteUser = async (userId, userEmail) => {
+    if (!window.confirm(`Are you sure you want to delete all data for ${userEmail}? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(userId);
+    try {
+      const res = await apiFetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setUsers(users.filter(u => u.id !== userId));
+        toast.success(`User ${userEmail} deleted`);
+      } else {
+        toast.error(data.error || 'Failed to delete user');
+      }
+    } catch (err) {
+      toast.error('Failed to delete user');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  // Reset credits
+  const handleResetCredits = async (userId, userEmail) => {
+    if (!window.confirm(`Reset daily credits for ${userEmail}?`)) {
+      return;
+    }
+
+    setResetting(userId);
+    try {
+      const res = await apiFetch(`/api/admin/users/${userId}/reset-credits`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success(`Credits reset for ${userEmail}`);
+        fetchUsers();
+      } else {
+        toast.error(data.error || 'Failed to reset credits');
+      }
+    } catch (err) {
+      toast.error('Failed to reset credits');
+    } finally {
+      setResetting(null);
+    }
+  };
+
+  // Load users when tab changes
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers();
+    }
+  }, [activeTab, fetchUsers]);
+
   // ── Auth gate ────────────────────────────────────────────────
   if (loading) return <div style={{ textAlign: 'center', padding: '4rem' }}>Loading…</div>;
 
@@ -211,12 +293,51 @@ const AdminPage = () => {
   const boxesActive = activeUrl === null;
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '860px', margin: '0 auto' }}>
+    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
       <header style={{ marginBottom: '2rem' }}>
         <h1>Admin Control Panel</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Manage global site background. Changes apply instantly for all visitors.</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Manage site settings and user accounts.</p>
       </header>
 
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <button
+          onClick={() => setActiveTab('background')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            fontWeight: activeTab === 'background' ? 600 : 400,
+            color: activeTab === 'background' ? '#fff' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'background' ? '2px solid #3b82f6' : 'none',
+            transition: 'all 0.2s',
+          }}
+        >
+          Background Templates
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            fontWeight: activeTab === 'users' ? 600 : 400,
+            color: activeTab === 'users' ? '#fff' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'users' ? '2px solid #3b82f6' : 'none',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Users size={16} style={{ display: 'inline-block', marginRight: '0.4rem', marginBottom: '-2px' }} />
+          User Management
+        </button>
+      </div>
+
+      {/* Background Tab */}
+      {activeTab === 'background' && (
       <section className="glass-panel" style={{ padding: '2rem' }}>
         <h2 style={{ marginBottom: '1.5rem' }}>Background Templates</h2>
 
@@ -306,6 +427,110 @@ const AdminPage = () => {
           Images and videos are stored on Cloudflare R2. Max file size is limited by the worker (≈100 MB). For larger videos, compress before uploading.
         </p>
       </section>
+      )}
+
+      {/* Users Tab */}
+      {activeTab === 'users' && (
+      <section className="glass-panel" style={{ padding: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <div>
+            <h2 style={{ margin: 0, marginBottom: '0.5rem' }}>User Management</h2>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Total Users: <strong>{users.length}</strong></p>
+          </div>
+          <button
+            onClick={fetchUsers}
+            disabled={usersLoading}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: 'rgba(59,130,246,0.15)',
+              border: '1px solid rgba(59,130,246,0.3)',
+              borderRadius: 10,
+              cursor: 'pointer',
+              color: '#3b82f6',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            {usersLoading ? <Loader size={16} /> : <RotateCcw size={16} />}
+            Refresh
+          </button>
+        </div>
+
+        {usersLoading ? (
+          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
+            <Loader size={32} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 1rem', display: 'block' }} />
+            Loading users...
+          </div>
+        ) : users.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px dashed rgba(255,255,255,0.1)', color: 'var(--text-secondary)' }}>
+            No users found
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Name</th>
+                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Email</th>
+                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Type</th>
+                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Created</th>
+                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u, idx) => (
+                  <tr key={u.id} style={{ borderBottom: idx !== users.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <td style={{ padding: '1rem', fontWeight: 500 }}>{u.name || 'N/A'}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.9rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Mail size={13} /> {u.email}
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{ padding: '0.25rem 0.6rem', background: u.loginType === 'email' ? 'rgba(99,102,241,0.15)' : 'rgba(52,211,153,0.15)', color: u.loginType === 'email' ? '#818cf8' : '#34d399', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize' }}>
+                        {u.loginType === 'email' ? 'Email' : 'Google'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '1rem', fontSize: '0.9rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Calendar size={13} /> {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          onClick={() => handleResetCredits(u.id, u.email)}
+                          disabled={resetting === u.id}
+                          title="Reset daily credits"
+                          style={{ padding: '0.4rem 0.8rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 6, cursor: 'pointer', color: '#818cf8', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', opacity: resetting === u.id ? 0.6 : 1 }}
+                        >
+                          {resetting === u.id ? <Loader size={12} /> : <RotateCcw size={12} />}
+                          Reset
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(u.id, u.email)}
+                          disabled={deleting === u.id}
+                          title="Delete user and all data"
+                          style={{ padding: '0.4rem 0.8rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, cursor: 'pointer', color: '#f87171', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', opacity: deleting === u.id ? 0.6 : 1 }}
+                        >
+                          {deleting === u.id ? <Loader size={12} /> : <Trash2 size={12} />}
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 12, padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '1.5rem', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+          <AlertTriangle size={16} color="#818cf8" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <strong style={{ color: '#818cf8' }}>Admin Functions:</strong> Use "Reset" to give a user new daily credits. Use "Delete" to permanently remove a user and all their data.
+          </div>
+        </div>
+      </section>
+      )}
     </div>
   );
 };

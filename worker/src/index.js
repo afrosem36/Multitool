@@ -2362,6 +2362,122 @@ app.get('/api/debug', (c) => {
   });
 });
 
+// Admin endpoints
+const ADMIN_EMAILS = new Set(['afrosem36@gmail.com']);
+
+function isAdmin(user) {
+  const email = (user?.email ?? '').toLowerCase().trim();
+  return ADMIN_EMAILS.has(email);
+}
+
+// GET /api/admin/users - List all users
+app.get('/api/admin/users', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+
+  if (!isAdmin(user)) {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+
+  try {
+    const users = await db.prepare(`
+      SELECT u.id, u.name, u.email, u.password_hash, u.created_at, u.oauth_provider
+      FROM users u
+      ORDER BY u.created_at DESC
+    `).all();
+
+    const usersWithQuota = await Promise.all((users.results || []).map(async (u) => {
+      const today = getTodayUtcDate();
+      const quotaData = await db.prepare(`
+        SELECT COUNT(*) as total_quota FROM tool_quotas WHERE user_id = ? AND date = ?
+      `).bind(u.id, today).first();
+
+      return {
+        id: u.id,
+        name: u.name || 'N/A',
+        email: u.email,
+        loginType: u.oauth_provider || 'email',
+        todayQuota: quotaData?.total_quota || 0,
+        createdAt: u.created_at,
+      };
+    }));
+
+    return c.json({ data: usersWithQuota });
+  } catch (err) {
+    console.error('Admin: Failed to fetch users:', err);
+    return c.json({ error: 'Failed to fetch users' }, 500);
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete user and all their data
+app.delete('/api/admin/users/:id', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const userId = c.req.param('id');
+
+  if (!isAdmin(user)) {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+
+  if (!userId) {
+    return c.json({ error: 'User ID required' }, 400);
+  }
+
+  try {
+    // 1. Delete IDE projects
+    await db.prepare('DELETE FROM ide_projects WHERE user_id = ?').bind(userId).run();
+
+    // 2. Delete deployments (HTML IDE projects)
+    await db.prepare('DELETE FROM deployments WHERE user_id = ?').bind(userId).run();
+
+    // 3. Delete tool quotas (credits usage)
+    await db.prepare('DELETE FROM tool_quotas WHERE user_id = ?').bind(userId).run();
+
+    // 4. Delete form submissions
+    await db.prepare('DELETE FROM form_submissions WHERE user_id = ?').bind(userId).run();
+
+    // 5. Delete user record
+    await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+
+    return c.json({
+      ok: true,
+      message: `User ${userId} and all associated data (projects, deployments, submissions, credits history) permanently deleted`
+    });
+  } catch (err) {
+    console.error('Admin: Failed to delete user:', err);
+    return c.json({ error: 'Failed to delete user: ' + err.message }, 500);
+  }
+});
+
+// POST /api/admin/users/:id/reset-credits - Reset user credits (delete today's quota)
+app.post('/api/admin/users/:id/reset-credits', requireAuth, async (c) => {
+  const db = getDb(c.env);
+  const user = c.get('user');
+  const userId = c.req.param('id');
+
+  if (!isAdmin(user)) {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+
+  if (!userId) {
+    return c.json({ error: 'User ID required' }, 400);
+  }
+
+  try {
+    const today = getTodayUtcDate();
+
+    // Delete today's quota for this user (resets their credits)
+    await db.prepare(`
+      DELETE FROM tool_quotas WHERE user_id = ? AND date = ?
+    `).bind(userId, today).run();
+
+    return c.json({ ok: true, message: `Credits reset for user ${userId}` });
+  } catch (err) {
+    console.error('Admin: Failed to reset credits:', err);
+    return c.json({ error: 'Failed to reset credits' }, 500);
+  }
+});
+
 app.all('/api/*', (c) => {
   return c.json({ error: 'API route not found' }, 404);
 });
