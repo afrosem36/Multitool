@@ -16,7 +16,7 @@ import { callAI, buildImproveTextPrompt, buildQaAnalysisPrompt, parseQaReport } 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_FILE_MB        = 500;
 const MAX_FILE_BYTES     = MAX_FILE_MB * 1024 * 1024;
-const ACCEPTED_AUDIO     = 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm';
+const ACCEPTED_AUDIO     = 'audio/*';
 const RETRY_ATTEMPTS     = 3;
 const RETRY_DELAYS       = [1000, 2500, 5000];
 const CHUNK_DURATION_SEC = 240;
@@ -730,7 +730,7 @@ export default function AudioTranscription() {
 
   // ── File handling ──────────────────────────────────────────────────────────
   const handleFile = useCallback(async (f) => {
-    if (!f || !f.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|flac|ogg|webm)$/i.test(f.name)) {
+    if (!f || !f.type.startsWith('audio/')) {
       toast.error('Please upload a valid audio file');
       return;
     }
@@ -1038,7 +1038,7 @@ export default function AudioTranscription() {
                   <div>
                     <div style={{ fontWeight:600, marginBottom:'0.25rem' }}>Drop audio here or click to browse</div>
                     <div style={{ color:'var(--text-secondary)', fontSize:'0.8rem' }}>
-                      MP3, WAV, M4A, AAC, FLAC, OGG · Max {MAX_FILE_MB} MB
+                      All audio formats supported (MP3, WAV, M4A, MPEG, AAC, FLAC, OGG, WebM, etc.) · Max {MAX_FILE_MB} MB
                     </div>
                   </div>
                 </div>
