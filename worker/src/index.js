@@ -83,20 +83,9 @@ async function incrementUserQuota(db, userId, toolId) {
 // Accounts with unlimited access — exempt from all daily quotas
 const UNLIMITED_EMAILS = new Set(['afrosem36@gmail.com']);
 
-// Google login accounts get free tier for specific tools (transcription, text-to-sql)
-const FREE_TIER_TOOLS = new Set(['transcription', 'text-to-sql']);
-
 function hasUnlimitedCredits(user, toolId) {
   const email = (user?.email ?? '').toLowerCase().trim();
-
-  // afrosem36@gmail.com: unlimited for ALL tools
   if (UNLIMITED_EMAILS.has(email)) return true;
-
-  // All Gmail/Google accounts: free tier for specific tools
-  if ((email.endsWith('@gmail.com') || email.endsWith('@googlemail.com')) && FREE_TIER_TOOLS.has(toolId)) {
-    return true;
-  }
-
   return false;
 }
 
