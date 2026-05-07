@@ -670,7 +670,7 @@ export default function AudioTranscription() {
             setProviderNote(`Transcribing chunk ${i+1}/${blobs.length}…`);
             setPipelineProgress(40 + Math.round((i / blobs.length) * 20));
             const fd = new FormData();
-            fd.append('audio', blobs[i], 'chunk.wav');
+            fd.append('file', blobs[i], 'chunk.wav');
             fd.append('model', modeConfig.model);
             const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
             partials.push(data.text || data.transcription || '');
@@ -679,7 +679,7 @@ export default function AudioTranscription() {
         } else {
           setProviderNote('Groq Whisper');
           const fd = new FormData();
-          fd.append('audio', file);
+          fd.append('file', file);
           fd.append('model', modeConfig.model);
           const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
           rawText = data.text || data.transcription || '';
