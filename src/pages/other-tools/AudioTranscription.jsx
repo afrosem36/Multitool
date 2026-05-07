@@ -567,7 +567,27 @@ const CreditsBar = memo(({ credits, onRefresh }) => {
     );
   }
 
-  const { creditsUsed, creditsRemaining, creditsTotal } = credits;
+  const { creditsUsed, creditsRemaining, creditsTotal, unlimited } = credits;
+
+  // Unlimited account — show a special badge
+  if (unlimited) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+        background:'rgba(52,211,153,0.07)', border:'1px solid rgba(52,211,153,0.2)',
+        borderRadius:10, padding:'0.7rem 0.85rem' }}>
+        <span style={{ fontSize:'0.72rem', fontWeight:600, color:'var(--text-secondary)',
+          textTransform:'uppercase', letterSpacing:'0.05em', display:'flex', alignItems:'center', gap:5 }}>
+          <Zap size={11} color="#34d399" />
+          Daily Credits
+        </span>
+        <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#34d399',
+          display:'flex', alignItems:'center', gap:4 }}>
+          ∞ Unlimited
+        </span>
+      </div>
+    );
+  }
+
   const usedPct = Math.round((creditsUsed / creditsTotal) * 100);
   const isLow   = creditsRemaining <= 2 && creditsRemaining > 0;
   const isEmpty = creditsRemaining === 0;
@@ -780,8 +800,9 @@ export default function AudioTranscription() {
             const fd = new FormData();
             fd.append('file', blobs[i], 'chunk.wav');
             fd.append('model', modeConfig.model);
+            fd.append('firstChunk', i === 0 ? 'true' : 'false');
             const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
-            partials.push(data.text || data.transcription || '');
+            partials.push(data.data?.transcript || data.text || data.transcription || '');
           }
           rawText = stitchChunks(partials);
         } else {
@@ -790,7 +811,7 @@ export default function AudioTranscription() {
           fd.append('file', file);
           fd.append('model', modeConfig.model);
           const data = await apiFetchWithRetry(apiFetch, '/api/transcribe', { method:'POST', body:fd });
-          rawText = data.text || data.transcription || '';
+          rawText = data.data?.transcript || data.text || data.transcription || '';
           if (data.creditsUsed != null && data.creditsTotal != null) {
             setCredits({ creditsUsed: data.creditsUsed, creditsRemaining: data.creditsTotal - data.creditsUsed, creditsTotal: data.creditsTotal });
           }
@@ -948,7 +969,7 @@ export default function AudioTranscription() {
   };
 
   const isPipelineRunning = pipelineStage && pipelineStage !== 'done';
-  const creditsExhausted  = user && credits != null && credits.creditsRemaining === 0;
+  const creditsExhausted  = user && credits != null && !credits.unlimited && credits.creditsRemaining === 0;
   const canStart          = file && !isPipelineRunning && !creditsExhausted;
 
   // ── Tabs config ────────────────────────────────────────────────────────────

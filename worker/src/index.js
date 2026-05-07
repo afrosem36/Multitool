@@ -80,6 +80,12 @@ async function incrementUserQuota(db, userId, toolId) {
   }
 }
 
+// Accounts with unlimited access — exempt from all daily quotas
+const UNLIMITED_EMAILS = new Set(['afrosem36@gmail.com']);
+function hasUnlimitedCredits(user) {
+  return UNLIMITED_EMAILS.has((user?.email ?? '').toLowerCase().trim());
+}
+
 function getRequiredEnvValue(env, key) {
   const value = env[key];
   if (typeof value !== 'string') return '';
@@ -2178,8 +2184,11 @@ const TRANSCRIBE_TOOL_ID  = 'transcription';
 const TRANSCRIBE_DAILY_MAX = 10;
 
 app.get('/api/transcribe/credits', requireAuth, async (c) => {
-  const db        = getDb(c.env);
-  const user      = c.get('user');
+  const db   = getDb(c.env);
+  const user = c.get('user');
+  if (hasUnlimitedCredits(user)) {
+    return c.json({ data: { creditsUsed: 0, creditsRemaining: 9999, creditsTotal: 9999, unlimited: true } }, 200);
+  }
   const used      = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
   const remaining = Math.max(0, TRANSCRIBE_DAILY_MAX - used);
   return c.json(
@@ -2217,14 +2226,17 @@ app.post('/api/transcribe', requireAuth, async (c) => {
 
   if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
 
+  // Unlimited accounts skip all quota logic
+  const unlimited = hasUnlimitedCredits(user);
+
   // Quota check only on first chunk (or non-chunked requests)
   let used = 0;
-  if (!usingOwnKey && isFirstChunk) {
+  if (!unlimited && !usingOwnKey && isFirstChunk) {
     used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
     if (used >= TRANSCRIBE_DAILY_MAX) {
       return c.json({ error: 'Daily transcription limit reached. Resets at midnight.' }, 429);
     }
-  } else if (!usingOwnKey) {
+  } else if (!unlimited && !usingOwnKey) {
     // Non-first chunks: fetch current count so the response carries accurate data
     used = await checkUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
   }
@@ -2271,7 +2283,7 @@ app.post('/api/transcribe', requireAuth, async (c) => {
       return c.json({ error: msg }, groqRes.status);
     }
 
-    if (!usingOwnKey && isFirstChunk) {
+    if (!unlimited && !usingOwnKey && isFirstChunk) {
       await incrementUserQuota(db, user.id, TRANSCRIBE_TOOL_ID);
       used += 1;
     }
@@ -2281,8 +2293,8 @@ app.post('/api/transcribe', requireAuth, async (c) => {
         transcript: groqData.text || '',
         ...(wantTimestamps && groqData.segments ? { segments: groqData.segments } : {}),
       },
-      creditsUsed:  usingOwnKey ? null : used,
-      creditsTotal: usingOwnKey ? null : TRANSCRIBE_DAILY_MAX,
+      creditsUsed:  (unlimited || usingOwnKey) ? null : used,
+      creditsTotal: (unlimited || usingOwnKey) ? null : TRANSCRIBE_DAILY_MAX,
       usingOwnKey,
     });
   } catch (err) {
