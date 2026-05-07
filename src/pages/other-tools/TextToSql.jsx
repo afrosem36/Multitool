@@ -331,38 +331,58 @@ export default function TextToSql() {
 
       {/* Credit bar (logged in) */}
       {user && credits && (
-        <div style={{
-          padding: '1rem 1.5rem', borderRadius: '12px', marginBottom: '1.5rem',
-          background: credits.creditsRemaining <= 5 ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.08)',
-          border: `1px solid ${credits.creditsRemaining <= 5 ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.25)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexWrap: 'wrap', gap: '1rem',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Zap size={18} color={credits.creditsRemaining <= 5 ? '#ef4444' : '#22c55e'} />
-            <div>
-              <p style={{ margin: 0, fontWeight: '700', fontSize: '0.95rem' }}>
-                {credits.creditsRemaining} credits remaining today
-              </p>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                {credits.creditsUsed} of {credits.creditsTotal} used · Resets at midnight UTC
-              </p>
+        <>
+          {credits.unlimited ? (
+            <div style={{
+              padding: '1rem 1.5rem', borderRadius: '12px', marginBottom: '1.5rem',
+              background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)',
+                textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Zap size={11} color="#34d399" />
+                Daily Credits
+              </span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#34d399',
+                display: 'flex', alignItems: 'center', gap: 4 }}>
+                ∞ Unlimited
+              </span>
             </div>
-          </div>
-          <div style={{ flex: 1, minWidth: '200px', maxWidth: '300px' }}>
-            <div style={{ height: '6px', borderRadius: '99px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${(credits.creditsUsed / credits.creditsTotal) * 100}%`,
-                borderRadius: '99px',
-                background: credits.creditsRemaining <= 5
-                  ? 'linear-gradient(90deg,#ef4444,#f97316)'
-                  : 'linear-gradient(90deg,#22c55e,#16a34a)',
-                transition: 'width 0.5s ease',
-              }} />
+          ) : (
+            <div style={{
+              padding: '1rem 1.5rem', borderRadius: '12px', marginBottom: '1.5rem',
+              background: credits.creditsRemaining <= 5 ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.08)',
+              border: `1px solid ${credits.creditsRemaining <= 5 ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.25)'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              flexWrap: 'wrap', gap: '1rem',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <Zap size={18} color={credits.creditsRemaining <= 5 ? '#ef4444' : '#22c55e'} />
+                <div>
+                  <p style={{ margin: 0, fontWeight: '700', fontSize: '0.95rem' }}>
+                    {credits.creditsRemaining} credits remaining today
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {credits.creditsUsed} of {credits.creditsTotal} used · Resets at midnight UTC
+                  </p>
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: '200px', maxWidth: '300px' }}>
+                <div style={{ height: '6px', borderRadius: '99px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${(credits.creditsUsed / credits.creditsTotal) * 100}%`,
+                    borderRadius: '99px',
+                    background: credits.creditsRemaining <= 5
+                      ? 'linear-gradient(90deg,#ef4444,#f97316)'
+                      : 'linear-gradient(90deg,#22c55e,#16a34a)',
+                    transition: 'width 0.5s ease',
+                  }} />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {/* Not logged in warning */}
@@ -438,22 +458,22 @@ export default function TextToSql() {
                 !user ||
                 status === 'generating' ||
                 status === 'retrying' ||
-                (credits && credits.creditsRemaining <= 0)
+                (credits && !credits.unlimited && credits.creditsRemaining <= 0)
               }
               className="btn-primary"
               style={{
                 width: '100%', padding: '1rem',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
                 fontSize: '1rem', fontWeight: '700', borderRadius: '10px',
-                opacity: (!user || status === 'generating' || status === 'retrying' || (credits && credits.creditsRemaining <= 0)) ? 0.6 : 1,
-                cursor: (!user || status === 'generating' || status === 'retrying' || (credits && credits.creditsRemaining <= 0)) ? 'not-allowed' : 'pointer',
+                opacity: (!user || status === 'generating' || status === 'retrying' || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 0.6 : 1,
+                cursor: (!user || status === 'generating' || status === 'retrying' || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 'not-allowed' : 'pointer',
               }}
             >
               {(status === 'generating' || status === 'retrying')
                 ? <><RefreshCw size={18} className="spin" /> {status === 'retrying' ? `Retrying (${retryCount}/${MAX_RETRIES})…` : 'Generating…'}</>
                 : !user
                   ? <><AlertCircle size={18} /> Login to Generate</>
-                  : (credits && credits.creditsRemaining <= 0)
+                  : (credits && !credits.unlimited && credits.creditsRemaining <= 0)
                     ? <><AlertCircle size={18} /> No Credits Left Today</>
                     : <><Sparkles size={18} /> Generate SQL  <span style={{ fontSize: '0.8rem', opacity: 0.7, fontWeight: 400 }}>Ctrl+Enter</span></>
               }
