@@ -730,7 +730,15 @@ export default function AudioTranscription() {
 
   // ── File handling ──────────────────────────────────────────────────────────
   const handleFile = useCallback(async (f) => {
-    if (!f || !f.type.startsWith('audio/')) {
+    if (!f) {
+      toast.error('Please upload a valid audio file');
+      return;
+    }
+    const isAudioMime = f.type.startsWith('audio/');
+    const audioExtensions = /\.(mp3|wav|m4a|aac|flac|ogg|webm|mpeg|mp4|m4b|wma|opus|aiff|alac)$/i;
+    const isAudioFile = isAudioMime || audioExtensions.test(f.name);
+
+    if (!isAudioFile) {
       toast.error('Please upload a valid audio file');
       return;
     }
