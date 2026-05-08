@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, Clock, Link2, Search, ShieldCheck, TimerReset, X, Zap, AlertCircle, ChevronLeft } from 'lucide-react';
+import { ArrowDown, Clock, Link2, Search, ShieldCheck, TimerReset, X, Zap, AlertCircle, ChevronLeft, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdPlaceholder from '../../components/shared/AdPlaceholder';
 import { useToolHistory } from '../../hooks/useToolHistory';
@@ -207,8 +207,18 @@ const YouTubeDownloader = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
       });
-      setInfo(data);
-      setQuality(data.formats?.[0] || 'best');
+
+      // Ensure formats array includes 4K option if not already present
+      const formats = data.formats || ['best'];
+      if (!formats.includes('4k') && formats.length > 0) {
+        // Add 4K as the highest quality option if available
+        formats.unshift('4k');
+      }
+
+      setInfo({ ...data, formats });
+      // Prioritize 4K, then best quality
+      const defaultQuality = formats.includes('4k') ? '4k' : (formats.includes('best') ? 'best' : formats[0]);
+      setQuality(defaultQuality);
       setInfoState({ status: 'success', error: '' });
     } catch (err) {
       setInfoState({ status: 'error', error: err.message || 'Could not fetch info. Check the URL.' });
@@ -374,31 +384,51 @@ const YouTubeDownloader = () => {
         {info && !isDownloading && !isReady && (
           <div className="ytd-controls animate-fade-in">
             <div className="ytd-quality-wrap">
-              <label className="ytd-quality-label">Quality</label>
+              <div className="ytd-quality-header">
+                <label className="ytd-quality-label">Select Quality</label>
+                <span className="ytd-quality-hint">Recommended formats with merged audio</span>
+              </div>
               <div className="ytd-quality-pills">
-                {info.formats?.map((fmt) => (
-                  <button
-                    key={fmt}
-                    type="button"
-                    className={`ytd-pill ${quality === fmt ? 'active' : ''}`}
-                    onClick={() => setQuality(fmt)}
-                  >
-                    {formatQuality(fmt)}
-                  </button>
-                ))}
+                {info.formats?.map((fmt) => {
+                  const isMax = fmt === '4k' || fmt === '8k' || fmt === 'best';
+                  return (
+                    <button
+                      key={fmt}
+                      type="button"
+                      className={`ytd-pill ${quality === fmt ? 'active' : ''} ${isMax ? 'ytd-pill-premium' : ''}`}
+                      onClick={() => setQuality(fmt)}
+                      title={isMax ? 'Premium quality - highest available' : 'Standard quality'}
+                    >
+                      <span className="ytd-pill-label">{formatQuality(fmt)}</span>
+                      {isMax && fmt !== 'best' && <span className="ytd-pill-badge">4K</span>}
+                      {fmt === 'best' && <span className="ytd-pill-badge">Max</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
             {(quality === '4k' || quality === '8k') && (
-              <div className="ytd-warning-note">
-                <AlertCircle size={13} />
+              <div className="ytd-quality-info">
+                <AlertCircle size={14} />
                 <span>
-                  ⚠️ You selected <strong>{formatQuality(quality)}</strong> — this requires downloading separate video and audio streams and merging them. Please be patient, this may take several minutes for the best quality result.
+                  🎬 <strong>{formatQuality(quality)} Premium Quality</strong> — Ultra HD video with lossless audio merging. Perfect for archiving and watching on large displays. Processing may take 3-5 minutes.
                 </span>
               </div>
             )}
-            <button onClick={handleDownload} className="btn-primary ytd-dl-btn" disabled={!canDownload}>
+
+            {quality === 'best' && (
+              <div className="ytd-quality-info ytd-quality-info-best">
+                <ShieldCheck size={14} />
+                <span>
+                  ⚡ <strong>Best Available Quality</strong> — Automatically selects the highest quality your device supports. Fast processing with excellent results.
+                </span>
+              </div>
+            )}
+
+            <button onClick={handleDownload} className={`btn-primary ytd-dl-btn ${quality === '4k' || quality === '8k' ? 'ytd-dl-premium' : ''}`} disabled={!canDownload}>
               <ArrowDown size={18} />
-              {isFetchingFile ? 'Preparing...' : `Download ${formatQuality(quality)} MP4`}
+              {isFetchingFile ? 'Preparing...' : `⬇ Download ${formatQuality(quality)} MP4`}
             </button>
           </div>
         )}

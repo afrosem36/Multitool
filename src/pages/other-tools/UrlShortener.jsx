@@ -43,8 +43,27 @@ const UrlShortener = () => {
     }
   }, [user, token]);
 
+  const getFullShortUrl = (shortUrl) => {
+    if (!shortUrl) return '';
+    // If it's already a full URL, return as-is
+    if (shortUrl.startsWith('http://') || shortUrl.startsWith('https://')) {
+      return shortUrl;
+    }
+    // If it's a path, construct full URL
+    if (shortUrl.startsWith('/')) {
+      return `${window.location.origin}${shortUrl}`;
+    }
+    // If it's just a slug, construct full URL
+    return `${window.location.origin}/s/${shortUrl}`;
+  };
+
   const saveToHistory = (newLink) => {
-    const updated = [newLink, ...history];
+    // Ensure shortUrl is always the full URL
+    const fullLink = {
+      ...newLink,
+      shortUrl: getFullShortUrl(newLink.shortUrl)
+    };
+    const updated = [fullLink, ...history];
     setHistory(updated);
     localStorage.setItem('urlShortenerHistory', JSON.stringify(updated));
   };
@@ -65,12 +84,41 @@ const UrlShortener = () => {
     }
   };
 
+  const generateRandomSlug = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_';
+    let slug = '';
+    for (let i = 0; i < 8; i++) {
+      slug += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return slug;
+  };
+
+  const isSlugAvailable = (slug) => {
+    return !history.some(item => item.slug === slug);
+  };
+
   const handleShorten = async (e) => {
     e.preventDefault();
-    
+
     if (!isValidUrl(longUrl)) {
       toast.error('Please enter a valid URL starting with http:// or https://');
       return;
+    }
+
+    // Validate custom slug if provided
+    if (customSlug) {
+      if (customSlug.length < 3) {
+        toast.error('Custom slug must be at least 3 characters long.');
+        return;
+      }
+      if (!customSlug.match(/^[a-zA-Z0-9-_]+$/)) {
+        toast.error('Custom slug can only contain letters, numbers, hyphens, and underscores.');
+        return;
+      }
+      if (!isSlugAvailable(customSlug)) {
+        toast.error('This custom slug is already in use. Please choose a different one.');
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -90,17 +138,19 @@ const UrlShortener = () => {
         gate_bg_key = bgResult.data.key;
       }
 
+      const finalSlug = customSlug || generateRandomSlug();
+
       const response = await fetch(`${API_BASE_URL}/api/shorten`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ 
-          longUrl, 
-          customSlug: customSlug || undefined, 
+        body: JSON.stringify({
+          longUrl,
+          customSlug: finalSlug,
           formConfig,
-          gate_bg_key 
+          gate_bg_key
         }),
       });
 

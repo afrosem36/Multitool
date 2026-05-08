@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { API_BASE_URL } from '../../config';
 import styled from 'styled-components';
-import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset, ChevronLeft, AlertCircle } from 'lucide-react';
+import { UploadCloud, Link as LinkIcon, Copy, Check, ExternalLink, BarChart2, TimerReset, AlertCircle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import FormBuilder from '../../components/FormBuilder';
 import { useAuth } from '../../context/AuthContext';
@@ -24,28 +24,6 @@ const Container = styled.div`
   flex-direction: column;
   gap: 2rem;
   position: relative;
-`;
-
-const BackButton = styled.button`
-  position: absolute;
-  top: 1.5rem;
-  left: 1.5rem;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-    transform: translateX(-2px);
-  }
 `;
 
 const DevNotice = styled.div`
@@ -437,14 +415,39 @@ export default function FileShare() {
         body: formData,
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Upload failed');
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Upload failed';
+        try {
+          if (contentType?.includes('application/json')) {
+            const data = await response.json();
+            errorMessage = data.error || `Server error: ${response.status}`;
+          } else {
+            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          }
+        } catch (e) {
+          errorMessage = `Server error: ${response.status}`;
+        }
+        throw new Error(errorMessage);
+      }
 
+      const data = await response.json();
       setProgress(100);
-      setShortUrl(data.data.shortUrl);
-      setExpiresAt(data.data.expiresAt || null);
+
+      let url = data.data?.shortUrl || data.shortUrl;
+      // Ensure shortUrl is always a full URL
+      if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+        if (!url.startsWith('/')) {
+          url = `/s/${url}`;
+        }
+        url = `${window.location.origin}${url}`;
+      }
+
+      setShortUrl(url);
+      setExpiresAt(data.data?.expiresAt || data.expiresAt || null);
     } catch (err) {
-      setError(err.message);
+      console.error('File upload error:', err);
+      setError(err.message || 'Failed to upload file. Please check your connection and try again.');
     } finally {
       setUploading(false);
     }
@@ -463,10 +466,6 @@ export default function FileShare() {
 
   return (
     <Container>
-      <BackButton onClick={() => navigate(-1)} title="Go back">
-        <ChevronLeft size={20} />
-      </BackButton>
-
       <Header>
         <h1>File Sharing & URL Shortener</h1>
         <p>Securely upload files and generate a short URL instantly.</p>

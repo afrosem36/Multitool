@@ -164,15 +164,18 @@
 
   .layout-shell {
     width: min(100% - 1rem, 1400px);
-    padding-top: 0.85rem;
+    padding-top: 0.75rem;
+    padding-bottom: 1rem;
     gap: 1rem;
     /* 54px MobileTopBar + small gap */
     margin-top: 54px;
   }
 
   .main-content {
-    /* 68px bottom nav + safe area */
-    padding-bottom: 88px;
+    /* 68px bottom nav + safe area for better spacing */
+    padding-bottom: 100px;
+    width: 100%;
+    min-width: 0;
   }
 
   .sidebar-wrapper {
@@ -181,7 +184,8 @@
 
   .footer {
     width: 100%;
-    margin-top: 1.25rem;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .layout-tool-ad-strip {

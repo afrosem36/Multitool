@@ -51,7 +51,8 @@ import {
   Gamepad2,
   Youtube,
   Download,
-  Car
+  Car,
+  Heart
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -641,6 +642,14 @@ export const aiTools = [
     path: '/ai-chat',
     icon: Bot,
     color: 'rgba(99, 102, 241, 0.15)',
+  },
+  {
+    id: 'report-analyzer',
+    name: 'Medical & Blood Report Analyzer',
+    description: 'AI-powered analysis of medical and blood test reports with insights and health recommendations.',
+    path: '/ai/report-analyzer',
+    icon: Heart,
+    color: 'rgba(239, 68, 68, 0.15)',
   },
 ];
 
