@@ -90,23 +90,12 @@ export default function LeadGate() {
 
       if (!res.ok) throw new Error(json.error || 'Failed to submit details');
 
-      toast.success('Preparing download...');
-
+      toast.success('Redirecting...');
+      // For file downloads, open in new tab/window; for URLs, redirect
       const downloadUrl = json.data.longUrl;
-
-      // Check if this is a file download by trying to fetch with no-cors and checking headers
-      // If it's a file download endpoint (/api/s/:slug/download), trigger download
       if (downloadUrl?.includes('/api/s/') && downloadUrl?.includes('/download')) {
-        // Create a temporary link and click it to trigger download
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.setAttribute('download', '');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success('Download started!');
+        window.open(downloadUrl, '_blank');
       } else {
-        // Otherwise, redirect as normal
         window.location.href = downloadUrl;
       }
     } catch (err) {
