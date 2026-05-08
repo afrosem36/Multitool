@@ -92,7 +92,13 @@ export default function LeadGate() {
 
       toast.success('Redirecting...');
       // For file downloads, open in new tab/window; for URLs, redirect
-      const downloadUrl = json.data.longUrl;
+      let downloadUrl = json.data.longUrl;
+
+      // Ensure downloadUrl is a full URL (not relative)
+      if (downloadUrl && !downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+        downloadUrl = `${API_BASE_URL}${downloadUrl}`;
+      }
+
       if (downloadUrl?.includes('/api/s/') && downloadUrl?.includes('/download')) {
         window.open(downloadUrl, '_blank');
       } else {
