@@ -13,7 +13,14 @@ const ALLOWED_ORIGINS = [
 ];
 
 function getCorsHeaders(origin) {
-  if (!ALLOWED_ORIGINS.includes(origin)) return {};
+  if (!ALLOWED_ORIGINS.includes(origin)) {
+    // Allow public access to downloads from any origin
+    return {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+  }
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
@@ -1634,6 +1641,9 @@ app.get('/api/s/:slug/download', async (c) => {
       'Content-Type': contentType,
       'Content-Disposition': disposition,
       'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
     },
   });
 });
