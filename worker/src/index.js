@@ -1570,11 +1570,17 @@ app.get('/api/s/:slug/config', async (c) => {
     try { formConfig = JSON.parse(link.form_config); } catch { formConfig = null; }
   }
 
+  // Detect if this is a file download or URL redirect
+  const isFileDownload = !!link.r2_key;
+  const type = isFileDownload ? 'file' : 'url';
+
   return c.json({
     data: {
       formConfig,
       requiresDataCollection: !!link.requires_data_collection,
       fileName: link.original_name || null,
+      isFileDownload,
+      type,
     }
   });
 });
@@ -1616,6 +1622,29 @@ app.get('/api/s/:slug/background-file', async (c) => {
 });
 
 app.get('/api/s/:slug/download', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT r2_key, original_name, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  if (!link.r2_key) return c.json({ error: 'File not found' }, 404);
+
+  // Return JSON metadata with download URL instead of streaming the file
+  const downloadUrl = `${getPublicOrigin(c)}/api/s/${slug}/file`;
+  return c.json({
+    success: true,
+    data: {
+      downloadUrl,
+      fileName: link.original_name || 'download',
+      expiresAt: link.expires_at || null,
+    }
+  });
+});
+
+// Actual file download endpoint
+app.get('/api/s/:slug/file', async (c) => {
   const slug = c.req.param('slug');
   const db = getDb(c.env);
   const link = await db.prepare('SELECT r2_key, original_name, expires_at FROM links WHERE slug = ?').bind(slug).first();
