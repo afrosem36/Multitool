@@ -34,7 +34,11 @@ function getCorsHeaders(origin) {
 // ==========================================
 
 function getPublicOrigin(c) {
-  return c.env.SHORT_DOMAIN || 'http://localhost:5000';
+  if (c.env.SHORT_DOMAIN && !c.env.SHORT_DOMAIN.includes('localhost')) {
+    return c.env.SHORT_DOMAIN;
+  }
+  const url = new URL(c.req.url);
+  return `${url.protocol}//${url.host}`;
 }
 
 function getFrontendOrigin(c) {
