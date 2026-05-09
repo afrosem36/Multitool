@@ -19,7 +19,6 @@ const ShortLinkRedirect = () => {
       }
 
       try {
-        // Log for debugging
         console.log(`[ShortLink] Processing redirect for slug: ${slug}`);
         console.log(`[ShortLink] API Base URL: ${API_BASE_URL}`);
 
@@ -46,6 +45,13 @@ const ShortLinkRedirect = () => {
 
         const configData = await configRes.json();
         console.log(`[ShortLink] Config data:`, configData);
+
+        // If it's a file download, redirect to dedicated download page
+        if (configData.data?.isFileDownload || configData.data?.type === 'file') {
+          console.log(`[ShortLink] File download detected, redirecting to download page`);
+          navigate(`/s/${slug}/download`, { replace: true });
+          return;
+        }
 
         // If it requires data collection or has a form, show the lead gate
         if (configData.data?.requiresDataCollection || configData.data?.formConfig) {

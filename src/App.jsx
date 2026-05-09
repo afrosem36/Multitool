@@ -86,6 +86,7 @@ const AiChat    = React.lazy(() => import('./pages/ai/AiChat'));
 const AnimatedAIChatDemo = React.lazy(() => import('./pages/ai/AnimatedAIChatDemo'));
 const ReportAnalyzer = React.lazy(() => import('./pages/ai/ReportAnalyzer'));
 const ShortLinkRedirect = React.lazy(() => import('./pages/misc/ShortLinkRedirect'));
+const DownloadPage = React.lazy(() => import('./pages/misc/DownloadPage'));
 import { Login, Signup } from './pages/auth/AuthPages';
 import GlobalBackground from './components/GlobalBackground';
 
@@ -113,7 +114,8 @@ const ScrollToTop = () => {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Short link redirects — must come before Layout to avoid layout wrapper */}
+      {/* API and file routes — must come before Layout to avoid layout wrapper */}
+      <Route path="/s/:slug/download" element={<DownloadPage />} />
       <Route path="/s/:slug" element={<ShortLinkRedirect />} />
 
       <Route path="/gate/:slug" element={<LeadGate />} />

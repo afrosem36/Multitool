@@ -90,16 +90,18 @@ export default function LeadGate() {
 
       if (!res.ok) throw new Error(json.error || 'Failed to submit details');
 
-      toast.success('Redirecting...');
-      // For file downloads, open in new tab/window; for URLs, redirect
+      toast.success('Processing...');
+
       let downloadUrl = json.data.longUrl;
+      const isFileDownload = json.data.isFileDownload || json.data.type === 'file';
 
       // Ensure downloadUrl is a full URL (not relative)
       if (downloadUrl && !downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
         downloadUrl = `${API_BASE_URL}${downloadUrl}`;
       }
 
-      if (downloadUrl?.includes('/api/s/') && downloadUrl?.includes('/download')) {
+      // File downloads open in new tab; URL redirects stay in same window
+      if (isFileDownload || (downloadUrl?.includes('/api/s/') && downloadUrl?.includes('/download'))) {
         window.open(downloadUrl, '_blank');
       } else {
         window.location.href = downloadUrl;
