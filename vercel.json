@@ -1,16 +1,20 @@
 {
+  "redirects": [
+    {
+      "source": "/s/:slug/download",
+      "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/api/s/:slug/file",
+      "permanent": false
+    },
+    {
+      "source": "/s/:slug",
+      "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/s/:slug",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/p/:username/:project",
       "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/p/:username/:project"
-    },
-    {
-      "source": "/s/:slug/download",
-      "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/s/:slug/download"
-    },
-    {
-      "source": "/s/:slug",
-      "destination": "https://multi-tool-backend.multitoolhub-api.workers.dev/s/:slug"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
