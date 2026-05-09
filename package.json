@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "setup": "npm install && npm install --prefix worker && npm install --prefix youtube-service",
+    "setup": "npm install && npm install --prefix worker && npm install --prefix youtube-service || echo 'YouTube service optional'",
     "dev": "concurrently --kill-others-on-fail --names client,worker,youtube --prefix-colors cyan,yellow,magenta \"npm run dev:client\" \"npm run dev:worker\" \"npm run dev:youtube\"",
     "dev:client": "vite",
     "dev:worker": "npm run dev --prefix worker",
