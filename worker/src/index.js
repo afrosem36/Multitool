@@ -1474,7 +1474,10 @@ app.post('/api/share/upload', async (c) => {
     expiresAt,
   ).run();
 
-  return c.json({ data: { shortUrl: getGatePageUrl(c, slug), expiresAt, slug } });
+  const shortUrl = parsedFormConfig
+    ? getGatePageUrl(c, slug)
+    : `${getFrontendOrigin(c)}/s/${slug}/download`;
+  return c.json({ data: { shortUrl, expiresAt, slug } });
 });
 
 app.post('/api/shorten', async (c) => {
@@ -1550,6 +1553,33 @@ app.get('/api/s/:slug', async (c) => {
     return c.json({ error: 'Link expired' }, 410);
   }
   // If this link has a lead gate, redirect to the gate page instead
+  if (link.requires_data_collection) {
+    return Response.redirect(getGatePageUrl(c, slug), 302);
+  }
+  return Response.redirect(link.long_url, 302);
+});
+
+// Short routes — proxied by Vite dev server from /s/* to this worker
+app.get('/s/:slug/download', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT r2_key, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
+  if (!link.r2_key) return c.json({ error: 'File not found' }, 404);
+  return Response.redirect(`${getPublicOrigin(c)}/api/s/${slug}/file`, 302);
+});
+
+app.get('/s/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const db = getDb(c.env);
+  const link = await db.prepare('SELECT long_url, expires_at, requires_data_collection FROM links WHERE slug = ?').bind(slug).first();
+  if (!link) return c.json({ error: 'Link not found' }, 404);
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: 'Link expired' }, 410);
+  }
   if (link.requires_data_collection) {
     return Response.redirect(getGatePageUrl(c, slug), 302);
   }
@@ -1680,7 +1710,7 @@ app.get('/api/s/:slug/file', async (c) => {
 app.post('/api/s/:slug/submit', async (c) => {
   const slug = c.req.param('slug');
   const db = getDb(c.env);
-  const link = await db.prepare('SELECT long_url, requires_data_collection, expires_at FROM links WHERE slug = ?').bind(slug).first();
+  const link = await db.prepare('SELECT long_url, r2_key, requires_data_collection, expires_at FROM links WHERE slug = ?').bind(slug).first();
   if (!link) return c.json({ error: 'Link not found' }, 404);
   if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) {
     return c.json({ error: 'Link expired' }, 410);
@@ -1704,7 +1734,14 @@ app.post('/api/s/:slug/submit', async (c) => {
     ).run();
   }
 
-  return c.json({ data: { longUrl: link.long_url } });
+  const isFileDownload = !!link.r2_key;
+  return c.json({
+    data: {
+      longUrl: link.long_url,
+      isFileDownload,
+      type: isFileDownload ? 'file' : 'url'
+    }
+  });
 });
 
 // ==========================================

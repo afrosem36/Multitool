@@ -35,7 +35,20 @@ export default function LeadGate() {
           const submitJson = await submitRes.json();
           if (submitRes.ok && submitJson.data?.longUrl) {
             redirected = true;
-            window.location.replace(submitJson.data.longUrl);
+            const isFileDownload = submitJson.data.isFileDownload || submitJson.data.type === 'file';
+            let longUrl = submitJson.data.longUrl;
+            if (longUrl && !longUrl.startsWith('http://') && !longUrl.startsWith('https://')) {
+              longUrl = `${API_BASE_URL}${longUrl}`;
+            }
+            if (isFileDownload) {
+              const fileMetaRes = await fetch(longUrl);
+              const fileMetaJson = await fileMetaRes.json();
+              if (fileMetaRes.ok && fileMetaJson.data?.downloadUrl) {
+                window.open(fileMetaJson.data.downloadUrl, '_blank');
+              }
+            } else {
+              window.location.replace(longUrl);
+            }
             return;
           }
         }
@@ -100,10 +113,16 @@ export default function LeadGate() {
         downloadUrl = `${API_BASE_URL}${downloadUrl}`;
       }
 
-      // File downloads open in new tab; URL redirects stay in same window
-      if (isFileDownload || (downloadUrl?.includes('/api/s/') && downloadUrl?.includes('/download'))) {
-        window.open(downloadUrl, '_blank');
+      // File downloads: fetch metadata first, then open the actual file URL in new tab
+      if (isFileDownload) {
+        const fileMetaRes = await fetch(downloadUrl);
+        const fileMetaJson = await fileMetaRes.json();
+        if (!fileMetaRes.ok || !fileMetaJson.data?.downloadUrl) {
+          throw new Error(fileMetaJson.error || 'Failed to get download URL');
+        }
+        window.open(fileMetaJson.data.downloadUrl, '_blank');
       } else {
+        // URL redirects stay in same window
         window.location.href = downloadUrl;
       }
     } catch (err) {
