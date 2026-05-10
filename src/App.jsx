@@ -87,6 +87,7 @@ const AnimatedAIChatDemo = React.lazy(() => import('./pages/ai/AnimatedAIChatDem
 const ReportAnalyzer = React.lazy(() => import('./pages/ai/ReportAnalyzer'));
 const ShortLinkRedirect = React.lazy(() => import('./pages/misc/ShortLinkRedirect'));
 const DownloadPage = React.lazy(() => import('./pages/misc/DownloadPage'));
+const AiDashboardMaker = React.lazy(() => import('./pages/ai/AiDashboardMaker'));
 import { Login, Signup } from './pages/auth/AuthPages';
 import GlobalBackground from './components/GlobalBackground';
 
@@ -123,6 +124,7 @@ function AppRoutes() {
       <Route path="/ai-chat" element={<AiChat />} />
       <Route path="/ai-chat-demo" element={<AnimatedAIChatDemo />} />
       <Route path="/ai/report-analyzer" element={<ReportAnalyzer />} />
+      <Route path="/ai/dashboard-maker" element={<AiDashboardMaker />} />
 
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />

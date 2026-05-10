@@ -52,7 +52,8 @@ import {
   Youtube,
   Download,
   Car,
-  Heart
+  Heart,
+  LayoutDashboard
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -650,6 +651,14 @@ export const aiTools = [
     path: '/ai/report-analyzer',
     icon: Heart,
     color: 'rgba(239, 68, 68, 0.15)',
+  },
+  {
+    id: 'dashboard-maker',
+    name: 'AI Dashboard Maker',
+    description: 'Upload Excel or CSV files and get instant AI-generated interactive dashboards with KPIs, charts, and insights.',
+    path: '/ai/dashboard-maker',
+    icon: LayoutDashboard,
+    color: 'rgba(16, 185, 129, 0.15)',
   },
 ];
 

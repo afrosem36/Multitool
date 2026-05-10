@@ -2590,6 +2590,382 @@ app.post('/api/admin/users/:id/reset-credits', requireAuth, async (c) => {
   }
 });
 
+// ==========================================
+// AI DASHBOARD PLAN
+// ==========================================
+
+function dashLog(level, tag, ...args) {
+  const prefix = `[dashboard][${tag}]`;
+  if (level === 'error') console.error(prefix, ...args);
+  else console.log(prefix, ...args);
+}
+
+// Robust JSON extractor: handles markdown fences, leading text, truncated output
+function extractDashboardJSON(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+
+  // 1. Direct parse
+  try { return JSON.parse(raw.trim()); } catch {}
+
+  // 2. Strip markdown fences
+  let s = raw
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim();
+  try { return JSON.parse(s); } catch {}
+
+  // 3. Extract outermost { } block
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch {}
+  }
+
+  return null;
+}
+
+// Gemini call with timeout + retry + thinking disabled
+async function callGeminiDashboard(prompt, apiKey, opts = {}) {
+  const { maxRetries = 2, timeoutMs = 20000 } = opts;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const reqBody = JSON.stringify({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingBudget: 0 }, // Disable thinking — prevents 30s+ timeout
+    },
+  });
+
+  let lastErr = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = 1000 * Math.pow(2, attempt - 1); // 1s, 2s
+      dashLog('info', 'retry', `attempt ${attempt + 1}, waiting ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      dashLog('info', 'gemini_call', `attempt=${attempt + 1}, promptLen=${prompt.length}`);
+      const t0 = Date.now();
+
+      const resp = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: reqBody,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      dashLog('info', 'gemini_status', `status=${resp.status}, elapsed=${Date.now() - t0}ms`);
+
+      if (resp.status === 429) {
+        const raw = await resp.text();
+        const retryAfter = parseInt(resp.headers.get('Retry-After') || '10', 10);
+        dashLog('error', 'rate_limit', `429 rate limited, retryAfter=${retryAfter}s`, raw.slice(0, 200));
+        lastErr = { code: 'RATE_LIMITED', status: 429, retryAfter };
+        if (attempt < maxRetries) await new Promise(r => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        dashLog('error', 'gemini_error', `status=${resp.status}`, errText.slice(0, 300));
+        lastErr = { code: 'API_ERROR', status: resp.status, detail: errText.slice(0, 300) };
+        continue;
+      }
+
+      const json = await resp.json();
+      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      dashLog('info', 'gemini_ok', `responseLen=${rawText.length}, preview=${rawText.slice(0, 120)}`);
+
+      if (!rawText) {
+        const reason = json?.candidates?.[0]?.finishReason || 'unknown';
+        dashLog('error', 'empty_response', `finishReason=${reason}`);
+        lastErr = { code: 'EMPTY_RESPONSE', detail: `finishReason=${reason}` };
+        continue;
+      }
+
+      return { ok: true, text: rawText };
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        dashLog('error', 'timeout', `attempt ${attempt + 1} timed out after ${timeoutMs}ms`);
+        lastErr = { code: 'TIMEOUT', message: `Gemini request timed out after ${timeoutMs}ms` };
+      } else {
+        dashLog('error', 'fetch_error', err.message);
+        lastErr = { code: 'FETCH_ERROR', message: err.message };
+      }
+    }
+  }
+
+  return { ok: false, error: lastErr };
+}
+
+// Groq preprocessing: fast title + column label generation (5 s, best-effort)
+async function callGroqPreprocess(colContext, apiKey, opts = {}) {
+  const { timeoutMs = 5000 } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{
+          role: 'user',
+          content: `Given these dataset columns: ${colContext}\n\nReturn ONLY valid JSON (no markdown) with this schema:\n{"dashboardTitle":"string","subtitle":"string","columnLabels":{"colName":"friendly label"}}`,
+        }],
+        temperature: 0.2,
+        max_tokens: 250,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const raw = data?.choices?.[0]?.message?.content || '';
+    return extractDashboardJSON(raw);
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+// Groq full-plan fallback: called only when Gemini fails entirely
+async function callGroqFullPlan(prompt, apiKey, opts = {}) {
+  const { timeoutMs = 15000 } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 1024,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data?.choices?.[0]?.message?.content || null;
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+app.post('/api/ai/dashboard-plan', async (c) => {
+  const t0 = Date.now();
+  dashLog('info', 'request', 'POST /api/ai/dashboard-plan');
+
+  // ── 1. Parse body ─────────────────────────────────────────────────────────
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    dashLog('error', 'parse_body', 'Invalid JSON body');
+    return c.json({ success: false, error: 'Invalid JSON body', code: 'BAD_REQUEST' }, 400);
+  }
+
+  const { headers, sampleRows, columnTypes, columnSemantics, userPrompt, helperText, rowCount } = body || {};
+
+  // ── 2. Validate ───────────────────────────────────────────────────────────
+  if (!headers || !Array.isArray(headers) || headers.length === 0) {
+    return c.json({ success: false, error: 'headers[] is required', code: 'MISSING_HEADERS' }, 400);
+  }
+  if (!sampleRows || !Array.isArray(sampleRows)) {
+    return c.json({ success: false, error: 'sampleRows[] is required', code: 'MISSING_ROWS' }, 400);
+  }
+  if (headers.length > 100) {
+    return c.json({ success: false, error: 'Too many columns (max 100)', code: 'TOO_MANY_COLUMNS' }, 400);
+  }
+
+  const safe = {
+    headers,
+    sampleRows: sampleRows.slice(0, 10),       // hard cap — never send full data
+    columnTypes: columnTypes || {},
+    columnSemantics: columnSemantics || {},
+    userPrompt: (userPrompt || '').slice(0, 500),
+    helperText: (helperText || '').slice(0, 500),
+    rowCount: rowCount || sampleRows.length,
+  };
+
+  const payloadSize = JSON.stringify(safe).length;
+  if (payloadSize > 60000) {
+    dashLog('error', 'payload_size', `${payloadSize} bytes — too large`);
+    return c.json({ success: false, error: 'Payload too large. Send only column metadata.', code: 'PAYLOAD_TOO_LARGE' }, 413);
+  }
+
+  dashLog('info', 'validate', `cols=${safe.headers.length}, rows=${safe.sampleRows.length}, totalRows=${safe.rowCount}, bytes=${payloadSize}`);
+
+  // ── 3. API keys ───────────────────────────────────────────────────────────
+  const geminiKey = c.env.GEMINI_API_KEY;
+  const groqKey   = c.env.GROQ_API_KEY || null;
+
+  if (!geminiKey) {
+    dashLog('error', 'config', 'GEMINI_API_KEY not set');
+    return c.json({ success: false, error: 'AI service not configured', code: 'NO_API_KEY' }, 500);
+  }
+
+  // ── 3.5 Groq preprocessing (non-blocking, 5 s, best-effort) ──────────────
+  let groqMeta = null;
+  if (groqKey) {
+    const colContext = safe.headers
+      .map(h => `${h}(${safe.columnSemantics[h] || safe.columnTypes[h] || 'unknown'})`)
+      .join(', ');
+    groqMeta = await callGroqPreprocess(colContext, groqKey, { timeoutMs: 5000 });
+    dashLog('info', 'groq_preprocess', groqMeta ? 'ok' : 'skipped/failed');
+  }
+
+  // ── 4. Build compact prompt ───────────────────────────────────────────────
+  const colLines = safe.headers.map(h => {
+    const semantic = safe.columnSemantics[h];
+    const type     = safe.columnTypes[h] || 'unknown';
+    const label    = groqMeta?.columnLabels?.[h] ? ` [${groqMeta.columnLabels[h]}]` : '';
+    return `  - "${h}"${label} (${semantic || type})`;
+  }).join('\n');
+
+  const groqCtx = groqMeta
+    ? `\nSUGGESTED_TITLE: "${groqMeta.dashboardTitle || ''}"\nSUGGESTED_SUBTITLE: "${groqMeta.subtitle || ''}"`
+    : '';
+
+  const prompt = `You are a data visualization expert. Design an optimal BI dashboard for this dataset.
+
+DATASET:
+- Total rows: ${safe.rowCount}
+- Columns:\n${colLines}
+- Sample data (first ${safe.sampleRows.length} rows): ${JSON.stringify(safe.sampleRows)}
+USER_REQUEST: ${safe.userPrompt || 'Auto-generate the best dashboard'}
+COLUMN_NOTES: ${safe.helperText || 'None'}${groqCtx}
+
+Return valid JSON only — no markdown, no explanation — using this exact schema:
+{
+  "title": "Dashboard title",
+  "subtitle": "One-line description",
+  "insights": ["data observation 1", "data observation 2", "data observation 3"],
+  "charts": [
+    {
+      "type": "bar|line|area|pie|hbar",
+      "title": "Chart title",
+      "description": "What this chart shows",
+      "xCol": "exact column name",
+      "yCol": "exact numeric column name or null for count charts",
+      "aggregation": "sum|count|avg",
+      "timeSeries": false,
+      "timeGroupBy": "month|week|day",
+      "limit": 15
+    }
+  ]
+}
+
+Rules:
+- Column names must EXACTLY match (case-sensitive) the listed column names
+- Generate 3-5 charts that tell a meaningful business story
+- hbar (horizontal bar) for agent/person rankings
+- pie for status/category distributions with <12 unique values
+- area/line for date-based time series
+- bar for categorical comparisons
+- Set timeSeries:true and timeGroupBy:"month" for date columns
+- insights: concise data-driven observations from the sample
+- yCol can be null for count-based charts`.trim();
+
+  dashLog('info', 'prompt_built', `len=${prompt.length}`);
+
+  // ── 5. Call Gemini ────────────────────────────────────────────────────────
+  const result = await callGeminiDashboard(prompt, geminiKey, { maxRetries: 2, timeoutMs: 20000 });
+
+  // ── 5.5 Groq full-plan fallback if Gemini fails ───────────────────────────
+  if (!result.ok) {
+    const { code, status, message, detail } = result.error || {};
+    dashLog('error', 'gemini_failed', `code=${code}, status=${status}`);
+
+    if (groqKey) {
+      dashLog('info', 'groq_fallback', 'Trying Groq full-plan fallback');
+      const groqText = await callGroqFullPlan(prompt, groqKey, { timeoutMs: 15000 });
+      if (groqText) {
+        const fallbackPlan = extractDashboardJSON(groqText);
+        if (fallbackPlan) {
+          fallbackPlan.title    = (fallbackPlan.title    || groqMeta?.dashboardTitle || 'Data Dashboard').slice(0, 80);
+          fallbackPlan.subtitle = (fallbackPlan.subtitle || `${safe.rowCount} rows · ${safe.headers.length} columns`).slice(0, 120);
+          fallbackPlan.insights = Array.isArray(fallbackPlan.insights) ? fallbackPlan.insights.slice(0, 5) : [];
+          fallbackPlan.charts   = Array.isArray(fallbackPlan.charts)   ? fallbackPlan.charts   : [];
+          fallbackPlan.columnLabels = groqMeta?.columnLabels || {};
+
+          const vh = new Set(safe.headers);
+          fallbackPlan.charts = fallbackPlan.charts.filter(ch => {
+            const ok = vh.has(ch.xCol) && (ch.yCol === null || ch.yCol === undefined || vh.has(ch.yCol));
+            if (!ok) dashLog('info', 'groq_chart_drop', `"${ch.title}" invalid cols`);
+            return ok;
+          });
+
+          dashLog('info', 'groq_fallback_ok', `charts=${fallbackPlan.charts.length}, elapsed=${Date.now()-t0}ms`);
+          return c.json({ success: true, plan: fallbackPlan, source: 'groq_fallback' });
+        }
+      }
+      dashLog('error', 'groq_fallback_failed', 'Groq also failed or returned unparseable response');
+    }
+
+    const httpStatus = code === 'RATE_LIMITED' ? 429 : 502;
+    return c.json({
+      success: false,
+      code,
+      error: code === 'TIMEOUT'       ? 'AI request timed out after 20s'
+           : code === 'RATE_LIMITED'  ? 'AI rate limit reached — please retry in a moment'
+           : code === 'EMPTY_RESPONSE'? 'AI returned an empty response'
+           :                            'AI service temporarily unavailable',
+      detail: detail || message,
+    }, httpStatus);
+  }
+
+  // ── 6. Parse Gemini response ──────────────────────────────────────────────
+  const plan = extractDashboardJSON(result.text);
+  if (!plan) {
+    dashLog('error', 'parse_plan', 'Could not extract JSON', result.text.slice(0, 300));
+    return c.json({
+      success: false,
+      error: 'AI returned unstructured output',
+      code: 'PARSE_ERROR',
+      raw: result.text.slice(0, 500),
+    }, 502);
+  }
+
+  // ── 7. Sanitize & enrich plan ─────────────────────────────────────────────
+  plan.title    = (plan.title    || groqMeta?.dashboardTitle || 'Data Dashboard').slice(0, 80);
+  plan.subtitle = (plan.subtitle || groqMeta?.subtitle || `${safe.rowCount} rows · ${safe.headers.length} columns`).slice(0, 120);
+  plan.insights = Array.isArray(plan.insights) ? plan.insights.slice(0, 5) : [];
+  plan.charts   = Array.isArray(plan.charts)   ? plan.charts : [];
+  plan.columnLabels = groqMeta?.columnLabels || {};
+
+  // Drop charts with invalid column references (yCol may be null for count charts)
+  const validHeaders = new Set(safe.headers);
+  plan.charts = plan.charts.filter(ch => {
+    const xOk = validHeaders.has(ch.xCol);
+    const yOk = ch.yCol === null || ch.yCol === undefined || ch.yCol === '' || validHeaders.has(ch.yCol);
+    if (!xOk || !yOk) dashLog('info', 'chart_drop', `"${ch.title}" — invalid cols xCol=${ch.xCol} yCol=${ch.yCol}`);
+    return xOk && yOk;
+  });
+
+  // Normalise yCol null variants
+  plan.charts = plan.charts.map(ch => ({ ...ch, yCol: ch.yCol || null }));
+
+  const elapsed = Date.now() - t0;
+  dashLog('info', 'complete', `charts=${plan.charts.length}, elapsed=${elapsed}ms, source=gemini`);
+
+  return c.json({ success: true, plan, source: 'gemini' });
+});
+
 app.all('/api/*', (c) => {
   return c.json({ error: 'API route not found' }, 404);
 });
