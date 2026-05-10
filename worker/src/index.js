@@ -2886,36 +2886,10 @@ Rules:
   // ── 5. Call Gemini ────────────────────────────────────────────────────────
   const result = await callGeminiDashboard(prompt, geminiKey, { maxRetries: 2, timeoutMs: 20000 });
 
-  // ── 5.5 Groq full-plan fallback if Gemini fails ───────────────────────────
+  // ── 5.5 Gemini failure → return error (Puter AI handles client-side fallback) ──
   if (!result.ok) {
     const { code, status, message, detail } = result.error || {};
     dashLog('error', 'gemini_failed', `code=${code}, status=${status}`);
-
-    if (groqKey) {
-      dashLog('info', 'groq_fallback', 'Trying Groq full-plan fallback');
-      const groqText = await callGroqFullPlan(prompt, groqKey, { timeoutMs: 15000 });
-      if (groqText) {
-        const fallbackPlan = extractDashboardJSON(groqText);
-        if (fallbackPlan) {
-          fallbackPlan.title    = (fallbackPlan.title    || groqMeta?.dashboardTitle || 'Data Dashboard').slice(0, 80);
-          fallbackPlan.subtitle = (fallbackPlan.subtitle || `${safe.rowCount} rows · ${safe.headers.length} columns`).slice(0, 120);
-          fallbackPlan.insights = Array.isArray(fallbackPlan.insights) ? fallbackPlan.insights.slice(0, 5) : [];
-          fallbackPlan.charts   = Array.isArray(fallbackPlan.charts)   ? fallbackPlan.charts   : [];
-          fallbackPlan.columnLabels = groqMeta?.columnLabels || {};
-
-          const vh = new Set(safe.headers);
-          fallbackPlan.charts = fallbackPlan.charts.filter(ch => {
-            const ok = vh.has(ch.xCol) && (ch.yCol === null || ch.yCol === undefined || vh.has(ch.yCol));
-            if (!ok) dashLog('info', 'groq_chart_drop', `"${ch.title}" invalid cols`);
-            return ok;
-          });
-
-          dashLog('info', 'groq_fallback_ok', `charts=${fallbackPlan.charts.length}, elapsed=${Date.now()-t0}ms`);
-          return c.json({ success: true, plan: fallbackPlan, source: 'groq_fallback' });
-        }
-      }
-      dashLog('error', 'groq_fallback_failed', 'Groq also failed or returned unparseable response');
-    }
 
     const httpStatus = code === 'RATE_LIMITED' ? 429 : 502;
     return c.json({
