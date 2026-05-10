@@ -3,7 +3,9 @@ import crypto from "crypto";
 import { execSync } from 'node:child_process';
 import cors from 'cors';
 import express from 'express';
-import ffmpegPath from 'ffmpeg-static';
+// ffmpeg installed system-wide via Dockerfile (apt-get install ffmpeg)
+let ffmpegPath = '/usr/bin/ffmpeg';
+try { ffmpegPath = execSync('which ffmpeg').toString().trim() || ffmpegPath; } catch {}
 import fs from 'node:fs';
 import os from 'node:os';
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
