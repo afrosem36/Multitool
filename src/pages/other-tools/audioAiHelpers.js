@@ -1,5 +1,6 @@
-// ─── AI Enhancement Helpers with Puter + Groq Fallback ─────────────────────
-// Handles text improvement, translation polish, QA analysis, summarization, key points
+// ─── AI Enhancement Helpers — Fallback: Gemini → OpenAI (backend) → Puter AI ──
+// Groq is reserved exclusively for audio transcription (Whisper).
+// All text analysis / QA / refinement uses the centralized /api/ai/generate endpoint.
 
 function extractContent(value) {
   if (typeof value === 'string') return value.trim();
@@ -36,57 +37,55 @@ function extractTextFromResponse(response) {
   return str && str !== '[object Object]' && str !== 'undefined' ? str.trim() : '';
 }
 
+// Read which providers the admin has disabled via the AI Monitor toggle
+function getDisabledProviders() {
+  try { return JSON.parse(localStorage.getItem('ai_disabled_providers') || '[]'); } catch { return []; }
+}
+
+// Flow: Puter AI (browser) → Gemini Flash → OpenAI gpt-4.1-mini
+// Skips any provider the admin has toggled off in the AI Monitor panel.
 export async function callAI(messages, { apiFetch, onProvider }) {
-  try {
-    // 1. Try Puter AI first (PRIMARY PROVIDER)
+  const disabled = getDisabledProviders();
+
+  // 1. Puter AI — free, browser-based, no backend cost
+  if (!disabled.includes('puter')) {
     try {
-      console.log('[AI Enhancement] Attempting to use Puter AI...');
       const { puter } = await import('@heyputer/puter.js');
-
-      // Ensure puter.ai exists
-      if (!puter || !puter.ai) {
-        throw new Error('Puter AI module not available');
-      }
-
-      const response = await puter.ai.chat(messages, { stream: false });
-      const text = extractTextFromResponse(response);
-
-      if (text && text.trim().length > 0) {
-        console.log('[AI Enhancement] Successfully used Puter AI');
-        onProvider?.('puter');
-        return text;
-      } else {
-        throw new Error('Puter returned empty response');
+      if (puter?.ai) {
+        const response = await puter.ai.chat(messages, { stream: false });
+        const text = extractTextFromResponse(response);
+        if (text?.trim()) {
+          onProvider?.('puter');
+          return text.trim();
+        }
       }
     } catch (puterErr) {
-      console.warn('[AI Enhancement] Puter failed:', puterErr.message);
-      console.log('[AI Enhancement] Falling back to Groq...');
-      // Fall through to Groq
+      console.warn('[AI] Puter failed:', puterErr.message);
     }
-
-    // 2. Fallback to Groq (SECONDARY PROVIDER)
-    onProvider?.('groq');
-    console.log('[AI Enhancement] Using Groq as fallback');
-    const res = await apiFetch('/api/groq/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages,
-        temperature: 0.3,
-        max_tokens: 4096,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content || '';
-    console.log('[AI Enhancement] Groq response received');
-    return text.trim();
-  } catch (err) {
-    console.error('[AI Enhancement] All AI providers failed:', err);
-    throw new Error(`AI enhancement failed: ${err.message}`);
+  } else {
+    console.info('[AI] Puter skipped — disabled by admin');
   }
+
+  // 2. Backend: Gemini Flash → OpenAI gpt-4.1-mini (server-side fallback chain)
+  // Pass disabled list so the backend also skips those providers
+  try {
+    const res = await apiFetch('/api/ai/generate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ messages, disabledProviders: disabled }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.text?.trim()) {
+        onProvider?.(data.source || 'gemini');
+        return data.text.trim();
+      }
+    }
+  } catch (backendErr) {
+    console.warn('[AI] Backend failed:', backendErr.message);
+  }
+
+  throw new Error('All AI providers failed or disabled — please try again later');
 }
 
 // Build prompts for various AI enhancement tasks

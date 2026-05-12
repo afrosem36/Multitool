@@ -1,5 +1,4 @@
 import React from 'react';
-import { triggerAd } from '../../utils/adTrigger';
 import {
   ArrowLeft,
   ArrowRight,
@@ -48,7 +47,7 @@ export default function ProModeWizard() {
     }
     setStep(step - 1);
   };
-  const finish = () => { triggerAd(); setStep(99); };
+  const finish = () => { setStep(99); };
 
   const handleAddDebt = () => {
     updateDebt({ items: [...state.debt.items, { name: '', balance: '', rate: '', emi: '' }] });

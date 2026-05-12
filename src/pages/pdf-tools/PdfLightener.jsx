@@ -4,7 +4,6 @@ import { FileUp, Download, Zap, RefreshCw, ChevronLeft, FileText, AlertTriangle,
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
-import AdSenseUnit from '../../components/shared/AdSenseUnit';
 import RelatedTools from '../../components/shared/RelatedTools';
 
 export default function PdfLightener() {
@@ -180,8 +179,6 @@ export default function PdfLightener() {
             </div>
           )}
         </div>
-
-        <AdSenseUnit slot="9876543210" />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {isProcessing && (

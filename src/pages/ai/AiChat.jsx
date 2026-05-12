@@ -469,8 +469,58 @@ const CreditModal = memo(({ onClose }) => (
   </motion.div>
 ));
 
+// ─── Under-Development Gate ───────────────────────────────────────────────────
+function AiChatUnavailable() {
+  const navigate = useNavigate();
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(135deg,#07070f 0%,#0d0d1a 100%)', padding: '2rem',
+    }}>
+      <div style={{ textAlign: 'center', maxWidth: 480 }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 20, margin: '0 auto 1.5rem',
+          background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 8px 32px rgba(99,102,241,0.4)',
+        }}>
+          <Bot size={32} style={{ color: '#fff' }}/>
+        </div>
+        <h1 style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '1.6rem', marginBottom: '.6rem' }}>
+          AI Chat
+        </h1>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: '.4rem',
+          background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+          borderRadius: 100, padding: '.3rem .85rem', marginBottom: '1.2rem',
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}/>
+          <span style={{ fontSize: '.78rem', fontWeight: 600, color: '#fbbf24' }}>Under Development</span>
+        </div>
+        <p style={{ color: '#64748b', fontSize: '.95rem', lineHeight: 1.65, marginBottom: '1.75rem' }}>
+          AI Chat is currently under development and will be available soon.
+          We're working on making it smarter and more reliable for you.
+        </p>
+        <button onClick={() => navigate(-1)} style={{
+          display: 'inline-flex', alignItems: 'center', gap: '.45rem',
+          background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff',
+          border: 'none', borderRadius: 10, padding: '.65rem 1.4rem',
+          fontWeight: 700, fontSize: '.9rem', cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
+        }}>
+          ← Go Back
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main AiChat Component ────────────────────────────────────────────────────
 export default function AiChat() {
+  return <AiChatUnavailable />;
+}
+
+function AiChatFull() {
   const { user, loading: authLoading, logout } = useAuth();
   const navigate = useNavigate();
 

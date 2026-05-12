@@ -10,5 +10,18 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "multitool_db",
+      "database_name": "multitool-db",
+      "database_id": "4a6dd45c-d5d2-4394-a960-fa2fa13c25c5"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MY_BUCKET",
+      "bucket_name": "multitoolhub-files"
+    }
   ]
 }

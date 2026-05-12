@@ -846,12 +846,12 @@ export default function AudioTranscription() {
       // STEP 3 — Translation
       if (needsTranslation && !abortRef.current) {
         setPipelineStage('translating');
-        setProviderNote('Translating with Puter AI…');
+        setProviderNote('Translating…');
         setPipelineProgress(72);
         try {
           const translated = await callAI(
             buildTranslationPrompt(cleaned, outputLanguage),
-            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
           );
           setTranslatedTranscript(translated);
         } catch (err) {
@@ -864,12 +864,12 @@ export default function AudioTranscription() {
       // STEP 4 — QA Analysis
       if (qaMode && !abortRef.current) {
         setPipelineStage('analyzing');
-        setProviderNote('QA Analysis with Puter AI…');
+        setProviderNote('QA Analysis…');
         setPipelineProgress(84);
         try {
           const qaText = await callAI(
             buildQaAnalysisPrompt(cleaned, qaParams, totalQAMarks),
-            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
           );
           const report = parseQaReport(qaText);
           setQaReport(report);
@@ -888,7 +888,7 @@ export default function AudioTranscription() {
         try {
           const improved = await callAI(
             buildImproveTextPrompt(cleaned),
-            { apiFetch, onProvider: p => setProviderNote(p === 'puter' ? 'Puter AI' : 'Groq (fallback)') }
+            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
           );
           setImprovedTranscript(improved);
         } catch {

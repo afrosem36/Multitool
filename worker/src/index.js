@@ -1941,7 +1941,8 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
       }
     }
 
-    const groqKey = getRequiredEnvValue(c.env, 'GROQ_API_KEY');
+    // Text-to-SQL uses Groq exclusively (llama-3.3-70b-versatile)
+    const groqKey = c.env.GROQ_API_KEY;
     if (!groqKey) return c.json({ error: 'Groq API key not configured' }, 500);
 
     const systemPrompt = `You are an expert SQL query generator. Given a database schema and a natural language question, generate a correct and efficient SQL query.\n\nRules:\n- Return ONLY the SQL query, no explanation, no markdown, no code blocks\n- Use standard SQL syntax compatible with most databases\n- If the question cannot be answered with the given schema, return: SELECT 'Unable to generate query for this question' as error`;
@@ -1950,15 +1951,12 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
     try {
       groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${groqKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Schema:\n${schema}\n\nQuestion: ${question}` },
+            { role: 'user',   content: `Schema:\n${schema}\n\nQuestion: ${question}` },
           ],
           temperature: 0.1,
           max_tokens: 512,
@@ -1968,17 +1966,11 @@ app.post('/api/text-to-sql', requireAuth, async (c) => {
       return c.json({ error: 'Failed to reach Groq API', detail: err.message }, 502);
     }
 
-    let groqData;
-    try {
-      groqData = await groqRes.json();
-    } catch {
-      return c.json({ error: `Groq returned non-JSON response (status ${groqRes.status})` }, 502);
-    }
-
     if (!groqRes.ok) {
-      return c.json({ error: groqData?.error?.message || 'Groq request failed' }, groqRes.status);
+      const errData = await groqRes.json().catch(() => ({}));
+      return c.json({ error: errData?.error?.message || 'Groq request failed' }, groqRes.status);
     }
-
+    const groqData = await groqRes.json();
     const sql = groqData.choices?.[0]?.message?.content?.trim() || '';
     if (!sql) return c.json({ error: 'Groq returned empty response' }, 502);
 
@@ -2591,6 +2583,132 @@ app.post('/api/admin/users/:id/reset-credits', requireAuth, async (c) => {
 });
 
 // ==========================================
+// ADMIN — AI STATUS & CREDIT MONITOR
+// ==========================================
+
+app.get('/api/admin/ai-status', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (!isAdmin(user)) return c.json({ error: 'Admin access required' }, 403);
+
+  const geminiKey = c.env.GEMINI_API_KEY;
+  const groqKey   = c.env.GROQ_API_KEY   || null;
+  const openaiKey = c.env.OPENAI_API_KEY || null;
+
+  const checkedAt = new Date().toISOString();
+
+  // Parallel health pings (7 s timeout each)
+  const pingOne = async (url, headers, body) => {
+    const detail = { checkedAt, latencyMs: null, errorMsg: null };
+    const t0 = Date.now();
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 7000);
+      const resp  = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
+      clearTimeout(timer);
+      detail.latencyMs = Date.now() - t0;
+      if (resp.status === 429) { detail.status = 'rate_limited'; detail.errorMsg = 'Rate limit reached (429)'; }
+      else if (resp.ok)         { detail.status = 'ok'; }
+      else                      { detail.status = 'error'; detail.errorMsg = `HTTP ${resp.status}`; }
+    } catch (err) {
+      detail.latencyMs = Date.now() - t0;
+      detail.status    = 'error';
+      detail.errorMsg  = err.name === 'AbortError' ? 'Timeout (7 s)' : err.message;
+    }
+    return detail;
+  };
+
+  const [groqResult, geminiResult, openaiResult] = await Promise.all([
+    groqKey
+      ? pingOne('https://api.groq.com/openai/v1/chat/completions',
+          { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+          { model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'hi' }], max_tokens: 3 })
+      : { status: 'no_key', checkedAt, latencyMs: null, errorMsg: 'GROQ_API_KEY not set' },
+
+    geminiKey
+      ? pingOne(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+          { 'Content-Type': 'application/json' },
+          { contents: [{ parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 3 } })
+      : { status: 'no_key', checkedAt, latencyMs: null, errorMsg: 'GEMINI_API_KEY not set' },
+
+    openaiKey
+      ? pingOne('https://api.openai.com/v1/chat/completions',
+          { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+          { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 3 })
+      : { status: 'no_key', checkedAt, latencyMs: null, errorMsg: 'OPENAI_API_KEY not set' },
+  ]);
+
+  // Credit usage from D1
+  const db    = getDb(c.env);
+  const today = getTodayUtcDate();
+  const thisMonth = today.slice(0, 7); // "YYYY-MM"
+
+  let todayUsage = [], monthUsage = [];
+  try {
+    const todayRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date = ? GROUP BY tool_id`
+    ).bind(today).all();
+    todayUsage = todayRows.results || [];
+
+    const monthRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date LIKE ? GROUP BY tool_id`
+    ).bind(`${thisMonth}%`).all();
+    monthUsage = monthRows.results || [];
+  } catch (dbErr) {
+    console.error('Admin AI status: DB query failed', dbErr.message);
+  }
+
+  const TOOL_LIMITS = {
+    'text-to-sql':    { daily: 20,  label: 'Text-to-SQL',       provider: 'groq'   },
+    'transcription':  { daily: 10,  label: 'Audio Transcription', provider: 'groq'  },
+  };
+
+  return c.json({
+    success:   true,
+    checkedAt,
+    providers: [
+      {
+        key: 'groq', name: 'Groq', model: 'whisper-large-v3-turbo / llama-3.3-70b',
+        role: 'Audio Transcription + Text-to-SQL',
+        priority: 1,
+        ...groqResult,
+      },
+      {
+        key: 'gemini', name: 'Gemini Flash', model: 'gemini-2.5-flash',
+        role: 'General AI — 2nd fallback',
+        priority: 2,
+        ...geminiResult,
+      },
+      {
+        key: 'openai', name: 'OpenAI', model: 'gpt-4.1-mini',
+        role: 'General AI — 3rd fallback',
+        priority: 3,
+        ...openaiResult,
+      },
+      {
+        key: 'puter', name: 'Puter AI', model: 'gpt-4o-mini',
+        role: 'General AI — 1st (browser-based, free)',
+        priority: 0,
+        status: 'browser_only',
+        checkedAt,
+        latencyMs: null,
+        errorMsg: null,
+      },
+    ],
+    credits: {
+      today:     todayUsage,
+      month:     monthUsage,
+      limits:    TOOL_LIMITS,
+      resetDate: `${today}T00:00:00Z`,
+    },
+    flow: {
+      general:       ['puter', 'gemini', 'openai'],
+      textToSql:     ['groq'],
+      transcription: ['groq'],
+    },
+  });
+});
+
+// ==========================================
 // AI DASHBOARD PLAN
 // ==========================================
 
@@ -2766,6 +2884,277 @@ async function callGroqFullPlan(prompt, apiKey, opts = {}) {
   }
 }
 
+// ─── Centralized AI Provider (Gemini → OpenAI gpt-4.1-mini fallback) ─────────
+
+async function callGeminiChat(messages, apiKey, opts = {}) {
+  const { maxTokens = 2048, temperature = 0.3, timeoutMs = 18000 } = opts;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const systemMsg = messages.find(m => m.role === 'system');
+  const chatMsgs  = messages.filter(m => m.role !== 'system');
+
+  const contents = chatMsgs.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: String(m.content || '') }],
+  }));
+
+  const reqBody = {
+    contents,
+    generationConfig: { temperature, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
+  };
+  if (systemMsg) reqBody.systemInstruction = { parts: [{ text: systemMsg.content }] };
+
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(GEMINI_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqBody), signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (resp.status === 429) return { ok: false, code: 'RATE_LIMITED' };
+    if (!resp.ok)            return { ok: false, code: 'API_ERROR' };
+    const data = await resp.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!text) return { ok: false, code: 'EMPTY_RESPONSE' };
+    return { ok: true, text };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, code: err.name === 'AbortError' ? 'TIMEOUT' : 'FETCH_ERROR' };
+  }
+}
+
+async function callOpenAIChat(messages, apiKey, opts = {}) {
+  const { maxTokens = 2048, temperature = 0.3, timeoutMs = 18000 } = opts;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4.1-mini', messages, temperature, max_tokens: maxTokens }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (resp.status === 429) return { ok: false, code: 'RATE_LIMITED' };
+    if (!resp.ok)            return { ok: false, code: 'API_ERROR' };
+    const data = await resp.json();
+    const text = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!text) return { ok: false, code: 'EMPTY_RESPONSE' };
+    return { ok: true, text };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, code: err.name === 'AbortError' ? 'TIMEOUT' : 'FETCH_ERROR' };
+  }
+}
+
+// Gemini → OpenAI gpt-4.1-mini fallback chain (server-side)
+// disabledProviders: string[] — keys to skip (e.g. ['gemini', 'openai'])
+async function callAIProvider(messages, env, opts = {}) {
+  const geminiKey = env.GEMINI_API_KEY;
+  const openaiKey = env.OPENAI_API_KEY;
+  const disabled  = Array.isArray(opts.disabledProviders) ? opts.disabledProviders : [];
+
+  if (geminiKey && !disabled.includes('gemini')) {
+    const r = await callGeminiChat(messages, geminiKey, opts);
+    if (r.ok) return { text: r.text, source: 'gemini' };
+    dashLog('warn', 'gemini_chat_failed', r.code);
+  } else if (disabled.includes('gemini')) {
+    dashLog('info', 'gemini_skipped', 'disabled by admin');
+  }
+
+  if (openaiKey && !disabled.includes('openai')) {
+    const r = await callOpenAIChat(messages, openaiKey, opts);
+    if (r.ok) return { text: r.text, source: 'openai' };
+    dashLog('warn', 'openai_chat_failed', r.code);
+  } else if (disabled.includes('openai')) {
+    dashLog('info', 'openai_skipped', 'disabled by admin');
+  }
+
+  return { text: null, source: null, error: 'All AI providers exhausted or disabled' };
+}
+
+// ─── AI Health Check ──────────────────────────────────────────────────────────
+app.get('/api/ai/health', async (c) => {
+  const geminiKey = c.env.GEMINI_API_KEY;
+  const groqKey   = c.env.GROQ_API_KEY   || null;
+  const openaiKey = c.env.OPENAI_API_KEY || null;
+
+  const results = { groq: 'no_key', gemini: 'no_key', openai: 'no_key' };
+
+  const ping = async (url, headers, body, timeoutMs = 7000) => {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp  = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
+      clearTimeout(timer);
+      return resp.ok ? 'ok' : (resp.status === 429 ? 'rate_limited' : 'error');
+    } catch { return 'error'; }
+  };
+
+  if (groqKey) results.groq = await ping(
+    'https://api.groq.com/openai/v1/chat/completions',
+    { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    { model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'hi' }], max_tokens: 3 }
+  );
+
+  if (geminiKey) results.gemini = await ping(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+    { 'Content-Type': 'application/json' },
+    { contents: [{ parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 3 } }
+  );
+
+  if (openaiKey) results.openai = await ping(
+    'https://api.openai.com/v1/chat/completions',
+    { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+    { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 3 }
+  );
+
+  return c.json({ success: true, ...results });
+});
+
+// ─── Medical / General Report Analyzer (Gemini vision → OpenAI vision) ───────
+app.post('/api/analyze-report', async (c) => {
+  let body;
+  try { body = await c.req.json(); } catch {
+    return c.json({ success: false, error: 'Invalid JSON' }, 400);
+  }
+
+  const { base64, mimeType, reportType = 'medical', disabledProviders = [] } = body || {};
+  if (!base64 || !mimeType) {
+    return c.json({ success: false, error: 'base64 and mimeType are required' }, 400);
+  }
+
+  const prompt = `You are a medical report analysis expert. Analyze this ${reportType === 'blood' ? 'blood test' : 'medical'} report image and provide a structured analysis.
+
+Return ONLY valid JSON in this exact format:
+{
+  "summary": "2-3 sentence overall health summary",
+  "keyFindings": ["Finding 1 with value", "Finding 2 with value", "...up to 8 findings"],
+  "tips": ["Actionable tip 1", "Actionable tip 2", "...up to 7 tips"]
+}
+
+Focus on:
+- Identifying abnormal values and what they mean
+- Providing clear, patient-friendly explanations
+- Giving practical, actionable health tips
+- Being encouraging but medically accurate`;
+
+  const geminiKey = c.env.GEMINI_API_KEY;
+  const openaiKey = c.env.OPENAI_API_KEY;
+  let analysisText = null;
+  let source = null;
+
+  // ── 1. Try Gemini (supports images + PDFs natively) ───────────────────────
+  if (geminiKey && !disabledProviders.includes('gemini')) {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      const res   = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal:  ctrl.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [
+              { inline_data: { mime_type: mimeType, data: base64 } },
+              { text: prompt }
+            ]}],
+            generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
+          }),
+        }
+      );
+      clearTimeout(timer);
+      if (res.ok) {
+        const d = await res.json();
+        analysisText = d?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        if (analysisText) source = 'gemini';
+      }
+    } catch { /* fall through */ }
+  }
+
+  // ── 2. Fallback: OpenAI vision (images only — PDFs not supported) ──────────
+  if (!analysisText && openaiKey && !disabledProviders.includes('openai') && !mimeType.includes('pdf')) {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      const res   = await fetch('https://api.openai.com/v1/chat/completions', {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+        signal:  ctrl.signal,
+        body: JSON.stringify({
+          model: 'gpt-4.1-mini',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+              { type: 'text', text: prompt },
+            ],
+          }],
+          max_tokens: 1024,
+        }),
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const d = await res.json();
+        analysisText = d?.choices?.[0]?.message?.content || null;
+        if (analysisText) source = 'openai';
+      }
+    } catch { /* fall through */ }
+  }
+
+  if (!analysisText) {
+    return c.json({ success: false, error: 'All AI providers failed or are disabled' }, 502);
+  }
+
+  // Parse the JSON response
+  try {
+    const match = analysisText.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON found');
+    const parsed = JSON.parse(match[0]);
+    return c.json({ success: true, data: parsed, source });
+  } catch {
+    // If JSON parse fails, return raw text shaped into the expected structure
+    return c.json({
+      success: true,
+      source,
+      data: {
+        summary: analysisText.slice(0, 500),
+        keyFindings: [],
+        tips: [],
+      },
+    });
+  }
+});
+
+// ─── General AI Generate (Gemini → OpenAI fallback) ───────────────────────────
+app.post('/api/ai/generate', async (c) => {
+  let body;
+  try { body = await c.req.json(); } catch {
+    return c.json({ success: false, error: 'Invalid JSON' }, 400);
+  }
+
+  const { messages, systemPrompt, disabledProviders } = body || {};
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return c.json({ success: false, error: 'messages[] is required' }, 400);
+  }
+
+  const fullMessages = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...messages]
+    : messages;
+
+  const result = await callAIProvider(fullMessages, c.env, {
+    maxTokens: 4096, temperature: 0.3,
+    disabledProviders: Array.isArray(disabledProviders) ? disabledProviders : [],
+  });
+
+  if (!result.text) {
+    return c.json({ success: false, error: result.error || 'All AI providers failed' }, 502);
+  }
+  return c.json({ success: true, text: result.text, source: result.source });
+});
+
 app.post('/api/ai/dashboard-plan', async (c) => {
   const t0 = Date.now();
   dashLog('info', 'request', 'POST /api/ai/dashboard-plan');
@@ -2779,7 +3168,8 @@ app.post('/api/ai/dashboard-plan', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body', code: 'BAD_REQUEST' }, 400);
   }
 
-  const { headers, sampleRows, columnTypes, columnSemantics, userPrompt, helperText, rowCount } = body || {};
+  const { headers, sampleRows, columnTypes, columnSemantics, userPrompt, helperText, rowCount, disabledProviders } = body || {};
+  const dashDisabled = Array.isArray(disabledProviders) ? disabledProviders : [];
 
   // ── 2. Validate ───────────────────────────────────────────────────────────
   if (!headers || !Array.isArray(headers) || headers.length === 0) {
@@ -2814,8 +3204,9 @@ app.post('/api/ai/dashboard-plan', async (c) => {
   const geminiKey = c.env.GEMINI_API_KEY;
   const groqKey   = c.env.GROQ_API_KEY || null;
 
-  if (!geminiKey) {
-    dashLog('error', 'config', 'GEMINI_API_KEY not set');
+  const openaiKeyAvail = !!c.env.OPENAI_API_KEY;
+  if (!geminiKey && !openaiKeyAvail) {
+    dashLog('error', 'config', 'No AI keys configured');
     return c.json({ success: false, error: 'AI service not configured', code: 'NO_API_KEY' }, 500);
   }
 
@@ -2883,35 +3274,56 @@ Rules:
 
   dashLog('info', 'prompt_built', `len=${prompt.length}`);
 
-  // ── 5. Call Gemini ────────────────────────────────────────────────────────
-  const result = await callGeminiDashboard(prompt, geminiKey, { maxRetries: 2, timeoutMs: 20000 });
+  // ── 5. Call Gemini (skip if disabled) ────────────────────────────────────
+  let planRawText  = null;
+  let planSource   = 'gemini';
+  let geminiResult = null;
 
-  // ── 5.5 Gemini failure → return error (Puter AI handles client-side fallback) ──
-  if (!result.ok) {
-    const { code, status, message, detail } = result.error || {};
-    dashLog('error', 'gemini_failed', `code=${code}, status=${status}`);
-
-    const httpStatus = code === 'RATE_LIMITED' ? 429 : 502;
-    return c.json({
-      success: false,
-      code,
-      error: code === 'TIMEOUT'       ? 'AI request timed out after 20s'
-           : code === 'RATE_LIMITED'  ? 'AI rate limit reached — please retry in a moment'
-           : code === 'EMPTY_RESPONSE'? 'AI returned an empty response'
-           :                            'AI service temporarily unavailable',
-      detail: detail || message,
-    }, httpStatus);
+  if (!dashDisabled.includes('gemini')) {
+    geminiResult = await callGeminiDashboard(prompt, geminiKey, { maxRetries: 2, timeoutMs: 20000 });
+    if (geminiResult.ok) { planRawText = geminiResult.text; }
+    else dashLog('warn', 'gemini_failed', geminiResult.error?.code);
+  } else {
+    dashLog('info', 'gemini_skipped', 'disabled by admin');
   }
 
-  // ── 6. Parse Gemini response ──────────────────────────────────────────────
-  const plan = extractDashboardJSON(result.text);
+  // ── 5.5 Gemini failed/disabled → try OpenAI gpt-4.1-mini ─────────────────
+  if (!planRawText) {
+    const openaiKey = c.env.OPENAI_API_KEY;
+    if (openaiKey && !dashDisabled.includes('openai')) {
+      dashLog('info', 'openai_fallback', 'trying gpt-4.1-mini for dashboard plan');
+      const openaiResult = await callOpenAIChat(
+        [{ role: 'user', content: prompt }],
+        openaiKey,
+        { maxTokens: 2048, temperature: 0.3, timeoutMs: 20000 }
+      );
+      if (openaiResult.ok) { planRawText = openaiResult.text; planSource = 'openai'; }
+      else dashLog('warn', 'openai_failed', openaiResult.code);
+    } else if (dashDisabled.includes('openai')) {
+      dashLog('info', 'openai_skipped', 'disabled by admin');
+    }
+    if (!planRawText) {
+      const { code, message, detail } = geminiResult?.error || {};
+      return c.json({
+        success: false, code,
+        error: code === 'TIMEOUT'        ? 'AI request timed out'
+             : code === 'RATE_LIMITED'   ? 'AI rate limit reached — please retry in a moment'
+             : code === 'EMPTY_RESPONSE' ? 'AI returned an empty response'
+             :                             'All AI providers failed or are disabled',
+        detail: detail || message,
+      }, code === 'RATE_LIMITED' ? 429 : 502);
+    }
+  }
+
+  // ── 6. Parse response ─────────────────────────────────────────────────────
+  const plan = extractDashboardJSON(planRawText);
   if (!plan) {
-    dashLog('error', 'parse_plan', 'Could not extract JSON', result.text.slice(0, 300));
+    dashLog('error', 'parse_plan', 'Could not extract JSON', planRawText?.slice(0, 300));
     return c.json({
       success: false,
       error: 'AI returned unstructured output',
       code: 'PARSE_ERROR',
-      raw: result.text.slice(0, 500),
+      raw: planRawText?.slice(0, 500),
     }, 502);
   }
 
@@ -2935,9 +3347,9 @@ Rules:
   plan.charts = plan.charts.map(ch => ({ ...ch, yCol: ch.yCol || null }));
 
   const elapsed = Date.now() - t0;
-  dashLog('info', 'complete', `charts=${plan.charts.length}, elapsed=${elapsed}ms, source=gemini`);
+  dashLog('info', 'complete', `charts=${plan.charts.length}, elapsed=${elapsed}ms, source=${planSource}`);
 
-  return c.json({ success: true, plan, source: 'gemini' });
+  return c.json({ success: true, plan, source: planSource });
 });
 
 app.all('/api/*', (c) => {

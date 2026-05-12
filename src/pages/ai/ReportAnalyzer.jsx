@@ -152,36 +152,36 @@ const ReportAnalyzer = () => {
     setAnalysis(null);
 
     try {
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Read file as base64
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
-      // Try to fetch from backend first
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('reportType', reportType);
+      let disabled = [];
+      try { disabled = JSON.parse(localStorage.getItem('ai_disabled_providers') || '[]'); } catch {}
 
-        const response = await fetch(`${API_BASE_URL}/api/analyze-report`, {
-          method: 'POST',
-          body: formData,
-        });
+      const response = await fetch(`${API_BASE_URL}/api/analyze-report`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ base64, mimeType: file.type, reportType, disabledProviders: disabled }),
+      });
 
-        if (response.ok) {
-          const data = await response.json();
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
           setAnalysis(data.data);
-          toast.success('Report analyzed successfully!');
-          setIsAnalyzing(false);
+          toast.success(`Report analyzed via ${data.source === 'openai' ? 'OpenAI' : 'Gemini'}!`);
           return;
         }
-      } catch (apiErr) {
-        // API not available, use mock analysis
-        console.log('Using mock analysis - backend not available');
       }
 
-      // Use mock analysis as fallback
+      // Fallback to mock if all AI providers fail
       const mockAnalysis = generateAnalysis(reportType);
       setAnalysis(mockAnalysis);
-      toast.success('Report analyzed! (Demo mode - connect backend for real AI analysis)');
+      toast.success('Report analyzed (demo mode — AI providers unavailable)');
     } catch (err) {
       setError(err.message || 'Failed to analyze the report. Please try again.');
       toast.error(err.message);

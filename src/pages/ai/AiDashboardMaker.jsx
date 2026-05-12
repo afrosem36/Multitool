@@ -8,6 +8,8 @@ import {
   PieChart as PieIcon, LineChart as LineIcon, LogIn, User,
   Lock, Shield, Brain, Cpu, FlaskConical, Link2, ChevronDown,
   Globe, Layers, GitBranch, Lightbulb, TrendingDown, AlertTriangle,
+  ArrowLeft, Wand2, Wifi, WifiOff, ScatterChart as ScatterIcon,
+  Radar as RadarIcon, GitMerge,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -16,6 +18,9 @@ import {
   LineChart as ReLine, Line,
   AreaChart as ReArea, Area,
   PieChart as RePie, Pie, Cell,
+  ScatterChart as ReScatter, Scatter,
+  RadarChart as ReRadar, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  ComposedChart as ReComposed,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts';
@@ -572,47 +577,88 @@ function IntelligenceCommandCenter({
       )}
 
       {/* ── User Configuration ───────────────────────────────────────────────── */}
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:'.9rem 1rem',
-        display:'flex', flexDirection:'column', gap:'.75rem' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'.75rem' }}>
-          <div>
-            <label style={{ fontSize:'.72rem', fontWeight:700, color:T.sub, display:'block', marginBottom:'.3rem', textTransform:'uppercase', letterSpacing:'.04em' }}>
-              Custom prompt <span style={{ opacity:.5, fontWeight:400, textTransform:'none' }}>(optional)</span>
-            </label>
-            <textarea rows={3} value={userPrompt} onChange={e => setUserPrompt(e.target.value)}
-              placeholder="e.g. Focus on agent performance and collection trends"
-              style={{ width:'100%', background:T.input, border:`1px solid ${T.border}`, borderRadius:9,
-                color:T.text, padding:'.5rem .65rem', fontSize:'.8rem', outline:'none', resize:'none',
-                fontFamily:'inherit', boxSizing:'border-box' }}/>
-          </div>
-          <div>
-            <label style={{ fontSize:'.72rem', fontWeight:700, color:T.sub, display:'block', marginBottom:'.3rem', textTransform:'uppercase', letterSpacing:'.04em' }}>
-              Column hints <span style={{ opacity:.5, fontWeight:400, textTransform:'none' }}>(optional)</span>
-            </label>
-            <textarea rows={3} value={columnHelp} onChange={e => setColumnHelp(e.target.value)}
-              placeholder={'e.g.\ncall_status = Answered / Not Answered\namount = payment in rupees'}
-              style={{ width:'100%', background:T.input, border:`1px solid ${T.border}`, borderRadius:9,
-                color:T.text, padding:'.5rem .65rem', fontSize:'.8rem', outline:'none', resize:'none',
-                fontFamily:'inherit', boxSizing:'border-box' }}/>
-          </div>
-        </div>
+      <AISuggestConfig
+        ea={ea} T={T}
+        userPrompt={userPrompt} setUserPrompt={setUserPrompt}
+        columnHelp={columnHelp} setColumnHelp={setColumnHelp}
+        onGenerate={onGenerate} loading={loading} needsAI={needsAI}
+      />
+    </div>
+  );
+}
 
-        <div style={{ display:'flex', alignItems:'center', gap:'.75rem', flexWrap:'wrap' }}>
-          <button onClick={onGenerate} disabled={loading}
-            style={{ display:'inline-flex', alignItems:'center', gap:'.45rem',
-              padding:'.6rem 1.4rem', background: loading ? '#1e293b' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-              color: loading ? '#64748b' : '#fff', border:'none', borderRadius:10, fontWeight:700,
-              fontSize:'.88rem', cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: loading ? 'none' : '0 4px 20px rgba(99,102,241,0.4)', transition:'all .15s' }}>
-            {loading
-              ? <><RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }}/> Generating…</>
-              : <><Zap size={14}/> Generate Dashboard</>}
-          </button>
-          <div style={{ display:'flex', alignItems:'center', gap:'.35rem', fontSize:'.75rem', color:T.sub }}>
-            {needsAI
-              ? <><Brain size={12} style={{ color:'#818cf8' }}/> <span style={{ color:'#818cf8' }}>AI will assist</span> — low confidence detected</>
-              : <><CheckCircle size={12} style={{ color:'#10b981' }}/> <span style={{ color:'#10b981' }}>Intelligence engine confident</span> — AI optional</>}
-          </div>
+// ─── AISuggestConfig ──────────────────────────────────────────────────────────
+function AISuggestConfig({ ea, T, userPrompt, setUserPrompt, columnHelp, setColumnHelp, onGenerate, loading, needsAI }) {
+
+  const buildChatGPTPrompt = () => {
+    const hdrs = (ea?.headers || []).join(', ');
+    return `I have an Excel/CSV file with these column headers:\n${hdrs}\n\nPlease reply in this exact format so I can paste it into an AI Dashboard tool:\n\nCustom prompt:\n[Write a 1-2 sentence instruction for the dashboard AI, e.g. "Focus on agent performance and revenue trends. Highlight top performers and monthly growth."]\n\nColumn hints:\n[Write one line per column explaining its meaning, e.g.:\nAgent_Name = name of the sales agent\nCollection_Amount = payment collected in rupees\ncall_status = Answered / Not Answered / Busy]`;
+  };
+
+  const handleAISuggest = () => {
+    const prompt = buildChatGPTPrompt();
+    const url = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast('ChatGPT opened with your prompt — paste its reply into the fields below', { icon:'✦', duration:5000 });
+  };
+
+  return (
+    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:'.9rem 1rem',
+      display:'flex', flexDirection:'column', gap:'.75rem' }}>
+
+      {/* Header row with AI Suggest button */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'.5rem' }}>
+        <span style={{ fontSize:'.72rem', fontWeight:700, color:T.sub, textTransform:'uppercase', letterSpacing:'.04em' }}>
+          AI Configuration
+        </span>
+        <button onClick={handleAISuggest}
+          style={{ display:'inline-flex', alignItems:'center', gap:'.35rem',
+            padding:'.32rem .75rem', fontSize:'.74rem', fontWeight:600, cursor:'pointer',
+            background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.3)',
+            color:'#818cf8', borderRadius:8, transition:'all .2s' }}
+          title="Opens ChatGPT with your column headers pre-filled — paste the reply back here">
+          <Wand2 size={11}/> Ask ChatGPT
+        </button>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'.75rem' }}>
+        <div>
+          <label style={{ fontSize:'.72rem', fontWeight:700, color:T.sub, display:'block', marginBottom:'.3rem', textTransform:'uppercase', letterSpacing:'.04em' }}>
+            Custom prompt <span style={{ opacity:.5, fontWeight:400, textTransform:'none' }}>(optional)</span>
+          </label>
+          <textarea rows={3} value={userPrompt} onChange={e => setUserPrompt(e.target.value)}
+            placeholder="e.g. Focus on agent performance and collection trends"
+            style={{ width:'100%', background:T.input, border:`1px solid ${T.border}`, borderRadius:9,
+              color:T.text, padding:'.5rem .65rem', fontSize:'.8rem', outline:'none', resize:'none',
+              fontFamily:'inherit', boxSizing:'border-box' }}/>
+        </div>
+        <div>
+          <label style={{ fontSize:'.72rem', fontWeight:700, color:T.sub, display:'block', marginBottom:'.3rem', textTransform:'uppercase', letterSpacing:'.04em' }}>
+            Column hints <span style={{ opacity:.5, fontWeight:400, textTransform:'none' }}>(optional)</span>
+          </label>
+          <textarea rows={3} value={columnHelp} onChange={e => setColumnHelp(e.target.value)}
+            placeholder={'e.g.\ncall_status = Answered / Not Answered\namount = payment in rupees'}
+            style={{ width:'100%', background:T.input, border:`1px solid ${T.border}`, borderRadius:9,
+              color:T.text, padding:'.5rem .65rem', fontSize:'.8rem', outline:'none', resize:'none',
+              fontFamily:'inherit', boxSizing:'border-box' }}/>
+        </div>
+      </div>
+
+      <div style={{ display:'flex', alignItems:'center', gap:'.75rem', flexWrap:'wrap' }}>
+        <button onClick={onGenerate} disabled={loading}
+          style={{ display:'inline-flex', alignItems:'center', gap:'.45rem',
+            padding:'.6rem 1.4rem', background: loading ? '#1e293b' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+            color: loading ? '#64748b' : '#fff', border:'none', borderRadius:10, fontWeight:700,
+            fontSize:'.88rem', cursor: loading ? 'not-allowed' : 'pointer',
+            boxShadow: loading ? 'none' : '0 4px 20px rgba(99,102,241,0.4)', transition:'all .15s' }}>
+          {loading
+            ? <><RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }}/> Generating…</>
+            : <><Zap size={14}/> Generate Dashboard</>}
+        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:'.35rem', fontSize:'.75rem', color:T.sub }}>
+          {needsAI
+            ? <><Brain size={12} style={{ color:'#818cf8' }}/> <span style={{ color:'#818cf8' }}>AI will assist</span> — low confidence detected</>
+            : <><CheckCircle size={12} style={{ color:'#10b981' }}/> <span style={{ color:'#10b981' }}>Intelligence engine confident</span> — AI optional</>}
         </div>
       </div>
     </div>
@@ -699,12 +745,48 @@ function KpiCard({ kpi, T }) {
   );
 }
 
+// ─── AIHealthBadge ─────────────────────────────────────────────────────────────
+function AIHealthBadge({ health, T }) {
+  if (!health) return null;
+  const services = [
+    { key: 'gemini', label: 'Gemini',   model: 'gemini-2.5-flash' },
+    { key: 'openai', label: 'ChatGPT',  model: 'gpt-4.1-mini'     },
+    { key: 'puter',  label: 'Puter',    model: 'gpt-4o-mini'      },
+    { key: 'groq',   label: 'Groq STT', model: 'whisper'          },
+  ];
+  const color = s => s === 'ok' ? '#10b981' : s === 'rate_limited' ? '#f59e0b' : s === 'no_key' ? '#64748b' : '#ef4444';
+  const dot   = s => s === 'ok' ? '●' : s === 'rate_limited' ? '◑' : '○';
+  const label = s => s === 'ok' ? 'Ready' : s === 'rate_limited' ? 'Limited' : s === 'no_key' ? 'No key' : s === 'checking' ? '…' : 'Error';
+
+  return (
+    <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap', alignItems:'center' }}>
+      {services.map(({ key, label: name, model }) => {
+        const status = health[key] || 'checking';
+        const c = color(status);
+        return (
+          <div key={key} title={`${name} (${model}): ${label(status)}`}
+            style={{ display:'flex', alignItems:'center', gap:'.28rem', padding:'.2rem .55rem',
+              background: status === 'ok' ? 'rgba(16,185,129,0.08)' : status === 'rate_limited' ? 'rgba(245,158,11,0.08)' : 'rgba(100,116,139,0.08)',
+              border: `1px solid ${c}30`, borderRadius:100 }}>
+            <span style={{ fontSize:'.65rem', color: c }}>{dot(status)}</span>
+            <span style={{ fontSize:'.68rem', fontWeight:600, color: c }}>{name}</span>
+            <span style={{ fontSize:'.62rem', color: T.sub }}>{label(status)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── ChartWidget ───────────────────────────────────────────────────────────────
 const TYPE_SWITCHER = [
-  { type:'bar',  Icon: BarChart   },
-  { type:'line', Icon: LineIcon   },
-  { type:'area', Icon: TrendingUp },
-  { type:'pie',  Icon: PieIcon    },
+  { type:'bar',      Icon: BarChart    },
+  { type:'line',     Icon: LineIcon    },
+  { type:'area',     Icon: TrendingUp  },
+  { type:'pie',      Icon: PieIcon     },
+  { type:'scatter',  Icon: ScatterIcon },
+  { type:'radar',    Icon: RadarIcon   },
+  { type:'composed', Icon: GitMerge    },
 ];
 
 function ChartWidget({ spec: initSpec, data, T, onExpand }) {
@@ -783,6 +865,57 @@ function ChartWidget({ spec: initSpec, data, T, onExpand }) {
           <Tooltip contentStyle={ttStyle}/>
         </RePie>
       );
+      case 'scatter': {
+        const xKey = keys[0] || 'value';
+        const yKey = keys[1] || keys[0] || 'value';
+        const scatterPts = chartData.map(d => ({ x: parseFloat(d[xKey])||0, y: parseFloat(d[yKey])||0, name: d.name }));
+        return (
+          <ReScatter margin={{ top:5, right:10, left:-10, bottom:5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+            <XAxis dataKey="x" type="number" name={xKey} tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+            <YAxis dataKey="y" type="number" name={yKey} tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+            <Tooltip contentStyle={ttStyle} cursor={{ strokeDasharray:'3 3' }}
+              content={({ payload }) => payload?.[0] ? (
+                <div style={ttStyle}><div style={{ padding:'.35rem .6rem', fontSize:'.73rem' }}>
+                  <div style={{ fontWeight:600, color:T.text }}>{payload[0].payload.name}</div>
+                  <div>{xKey}: {fmtY(payload[0].payload.x)}</div>
+                  <div>{yKey}: {fmtY(payload[0].payload.y)}</div>
+                </div></div>
+              ) : null}/>
+            <Scatter data={scatterPts} fill={COLORS[0]} fillOpacity={0.75}/>
+          </ReScatter>
+        );
+      }
+      case 'radar': {
+        const metrics = keys.slice(0, 6);
+        return (
+          <ReRadar cx="50%" cy="50%" outerRadius={80} data={chartData.slice(0, 12)}>
+            <PolarGrid stroke={T.border}/>
+            <PolarAngleAxis dataKey="name" tick={{ fill:T.sub, fontSize:9 }}/>
+            <PolarRadiusAxis tick={false} axisLine={false}/>
+            <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+            {metrics.map((k, i) => (
+              <Radar key={k} name={k} dataKey={k} stroke={COLORS[i%COLORS.length]} fill={COLORS[i%COLORS.length]} fillOpacity={0.18}/>
+            ))}
+            <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          </ReRadar>
+        );
+      }
+      case 'composed': {
+        const barKey  = keys[0] || 'value';
+        const lineKey = keys[1] || null;
+        return (
+          <ReComposed {...common}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+            <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+            <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+            <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+            <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+            <Bar dataKey={barKey} fill={COLORS[0]} radius={[4,4,0,0]} fillOpacity={0.85}/>
+            {lineKey && <Line type="monotone" dataKey={lineKey} stroke={COLORS[1]} strokeWidth={2.5} dot={false}/>}
+          </ReComposed>
+        );
+      }
       default: return null;
     }
   })();
@@ -935,9 +1068,25 @@ export default function AiDashboardMaker() {
   // Local state
   const [dataSource, setDataSource]   = useState('file');   // 'file' | 'url'
   const [dataQuality, setDataQuality] = useState(null);
+  const [aiHealth, setAiHealth]       = useState(null);     // health check results
 
   // Init per-user storage when user changes
   useEffect(() => { store.initUser(user?.id || null); }, [user?.id]);
+
+  // AI health check on mount
+  useEffect(() => {
+    const hasPuter = typeof window !== 'undefined' && !!(window.puter?.ai?.chat);
+    setAiHealth({ gemini: 'checking', openai: 'checking', groq: 'checking', puter: hasPuter ? 'ok' : 'no_key' });
+    fetch(`${API_BASE_URL}/api/ai/health`)
+      .then(r => r.json())
+      .then(d => setAiHealth(prev => ({
+        ...prev,
+        gemini: d.gemini || 'error',
+        openai: d.openai || 'error',
+        groq:   d.groq   || 'error',
+      })))
+      .catch(() => setAiHealth(prev => ({ ...prev, gemini: 'error', openai: 'error', groq: 'error' })));
+  }, []);
 
   // Close col override dropdown on outside click
   useEffect(() => {
@@ -1192,6 +1341,14 @@ export default function AiDashboardMaker() {
         </div>
 
         <div style={{ display:'flex', alignItems:'center', gap:'.4rem' }}>
+          {step === 'schema' && (
+            <button onClick={() => { store.resetAll(); setDataQuality(null); }}
+              style={{ display:'inline-flex', alignItems:'center', gap:'.3rem', background:T.input,
+                border:`1px solid ${T.border}`, borderRadius:8, padding:'.36rem .7rem',
+                cursor:'pointer', color:T.text, fontSize:'.74rem' }}>
+              <ArrowLeft size={11}/> Back
+            </button>
+          )}
           {step === 'dashboard' && (
             <>
               <button onClick={downloadCSV}
@@ -1199,6 +1356,12 @@ export default function AiDashboardMaker() {
                   border:`1px solid ${T.border}`, borderRadius:8, padding:'.36rem .7rem',
                   cursor:'pointer', color:T.text, fontSize:'.74rem' }}>
                 <Download size={11}/> Export
+              </button>
+              <button onClick={() => store.setStep('schema')}
+                style={{ display:'inline-flex', alignItems:'center', gap:'.3rem', background:T.input,
+                  border:`1px solid ${T.border}`, borderRadius:8, padding:'.36rem .7rem',
+                  cursor:'pointer', color:T.text, fontSize:'.74rem' }}>
+                <ArrowLeft size={11}/> Back
               </button>
               <button onClick={() => store.setStep('schema')}
                 style={{ display:'inline-flex', alignItems:'center', gap:'.3rem', background:T.input,
@@ -1298,6 +1461,19 @@ export default function AiDashboardMaker() {
                 ))}
               </div>
             </div>
+
+            {/* AI Status */}
+            {aiHealth && (
+              <div style={{ marginBottom:'.75rem', padding:'.65rem .9rem',
+                background:T.input, border:`1px solid ${T.border}`, borderRadius:10,
+                display:'flex', gap:'.65rem', alignItems:'center', flexWrap:'wrap' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'.35rem' }}>
+                  <Wifi size={11} style={{ color:'#6366f1' }}/>
+                  <span style={{ fontSize:'.7rem', fontWeight:700, color:T.sub, textTransform:'uppercase', letterSpacing:'.04em' }}>AI Services</span>
+                </div>
+                <AIHealthBadge health={aiHealth} T={T}/>
+              </div>
+            )}
 
             {/* Privacy note */}
             <div style={{ marginBottom:'.75rem', padding:'.65rem .9rem',

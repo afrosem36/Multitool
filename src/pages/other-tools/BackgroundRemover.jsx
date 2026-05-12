@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import RelatedTools from '../../components/shared/RelatedTools';
-import AdSenseUnit from '../../components/shared/AdSenseUnit';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../config';
 
@@ -207,8 +206,6 @@ export default function BackgroundRemover() {
             </div>
           )}
         </div>
-
-        <AdSenseUnit slot="9876543210" />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {resultUrl ? (

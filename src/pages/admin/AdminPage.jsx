@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Upload, Check, Shield, Trash2, Grid, Users, Loader, AlertTriangle, Mail, Calendar, RotateCcw } from 'lucide-react';
+import { Upload, Check, Shield, Trash2, Grid, Users, Loader, AlertTriangle, Mail, Calendar, RotateCcw, Brain } from 'lucide-react';
 import { GOOGLE_CLIENT_ID, API_BASE_URL } from '../../config';
 import toast from 'react-hot-toast';
+import AiMonitorPanel from './AiMonitorPanel';
 
 const ADMIN_EMAIL = 'afrosem36@gmail.com';
 const TEMPLATES_KEY = 'site_bg_templates';
@@ -361,6 +362,23 @@ const AdminPage = () => {
           <Users size={16} style={{ display: 'inline-block', marginRight: '0.4rem', marginBottom: '-2px' }} />
           User Management
         </button>
+        <button
+          onClick={() => setActiveTab('ai')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            fontWeight: activeTab === 'ai' ? 600 : 400,
+            color: activeTab === 'ai' ? '#fff' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'ai' ? '2px solid #3b82f6' : 'none',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Brain size={16} style={{ display: 'inline-block', marginRight: '0.4rem', marginBottom: '-2px' }} />
+          AI Monitor
+        </button>
       </div>
 
       {/* Background Tab */}
@@ -558,6 +576,9 @@ const AdminPage = () => {
         </div>
       </section>
       )}
+
+      {/* AI Monitor Tab */}
+      {activeTab === 'ai' && <AiMonitorPanel />}
     </div>
   );
 };
