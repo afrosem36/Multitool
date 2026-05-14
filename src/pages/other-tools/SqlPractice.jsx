@@ -4,7 +4,7 @@ import {
   Database, Play, Upload, Trash2, Table, AlertCircle, Clock,
   BarChart2, TrendingUp, Download, Sparkles, Hash, Calendar,
   MapPin, DollarSign, Percent, Tag, Info, Eye, History,
-  ChevronLeft, ChevronRight, X, Search, Copy, Check,
+  ChevronLeft, ChevronRight, X, Search, Copy, Check, Code,
   Zap, Filter, Layers, FileText, RefreshCw, MessageSquare,
 } from 'lucide-react';
 import {
