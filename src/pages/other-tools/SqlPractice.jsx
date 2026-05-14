@@ -348,8 +348,10 @@ export default function SqlPractice() {
   const editorViewRef = useRef(null);
   const tablesRef = useRef(tables);
   const runQueryRef = useRef(null);
+  const queryRef = useRef(query);
 
   useEffect(() => { tablesRef.current = tables; }, [tables]);
+  useEffect(() => { queryRef.current = query; }, [query]);
 
   const activeTableInfo = useMemo(() => tables.find(t => t.name === activeTable), [tables, activeTable]);
   const suggestions = useMemo(() => generateSuggestions(activeTableInfo), [activeTableInfo]);
@@ -440,6 +442,7 @@ export default function SqlPractice() {
   // ── CodeMirror setup ──
   useEffect(() => {
     if (!editorContainerRef.current) return;
+    if (editorViewRef.current) return; // already initialized
 
     // Context-aware completion: suggest columns after SELECT/WHERE/GROUP BY, tables after FROM/JOIN
     const customCompletion = (ctx) => {
@@ -489,7 +492,7 @@ export default function SqlPractice() {
 
     const view = new EditorView({
       state: EditorState.create({
-        doc: query,
+        doc: queryRef.current,
         extensions: [
           sqlLang(),
           oneDark,
@@ -523,9 +526,10 @@ export default function SqlPractice() {
     });
 
     editorViewRef.current = view;
-    return () => view.destroy();
+    return () => { view.destroy(); editorViewRef.current = null; };
+  // Re-run when tables first appear so editorContainerRef.current is guaranteed to be in the DOM
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [!!tables.length]);
 
   // Sync external query → editor (when suggestion clicked)
   useEffect(() => {
@@ -734,48 +738,46 @@ export default function SqlPractice() {
               </div>
             </div>
 
-            <AnimatePresence mode="wait">
-              {mode === 'sql' ? (
-                <motion.div key="sql" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <div ref={editorContainerRef} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 160, overflow: 'hidden' }} />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.85rem', background: 'rgba(0,0,0,0.15)' }}>
-                    <button className="btn-primary" onClick={runQuery} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
-                      {loading ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</> : <><Play size={13} />Run Query</>}
-                    </button>
-                    {execTime && !error && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={11} />{execTime}ms</span>}
-                    {results && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>{results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}</span>}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div key="ai" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ padding: '1rem' }}>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Describe what you want to see — no SQL needed.</p>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input
-                      value={nlQuery}
-                      onChange={e => setNlQuery(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && runNl()}
-                      placeholder={`e.g. "top 10 customers by revenue" or "monthly trend"`}
-                      style={{ flex: 1, padding: '0.6rem 0.9rem', borderRadius: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none' }}
-                    />
-                    <button className="btn-primary" onClick={runNl} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                      <Zap size={13} />Generate
-                    </button>
-                  </div>
-                  <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    {[
-                      activeTableInfo?.insights?.numericColumns?.[0] && `top 10 by ${activeTableInfo.insights.numericColumns[0]}`,
-                      activeTableInfo?.insights?.dateColumns?.[0] && 'monthly trend',
-                      activeTableInfo?.insights?.categoricalColumns?.[0] && `breakdown by ${activeTableInfo.insights.categoricalColumns[0]}`,
-                      'find missing values',
-                    ].filter(Boolean).map(hint => (
-                      <button key={hint} onClick={() => { setNlQuery(hint); }} style={{ padding: '0.25rem 0.65rem', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.75rem', color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.15s' }}>
-                        {hint}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* SQL editor — always in DOM so CodeMirror never loses its mount point */}
+            <div style={{ display: mode === 'sql' ? 'block' : 'none' }}>
+              <div ref={editorContainerRef} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 160, overflow: 'hidden' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.85rem', background: 'rgba(0,0,0,0.15)' }}>
+                <button className="btn-primary" onClick={runQuery} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
+                  {loading ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</> : <><Play size={13} />Run Query</>}
+                </button>
+                {execTime && !error && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={11} />{execTime}ms</span>}
+                {results && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>{results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}</span>}
+              </div>
+            </div>
+
+            {/* AI mode — always in DOM too, just hidden */}
+            <div style={{ display: mode === 'ai' ? 'block' : 'none', padding: '1rem' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Describe what you want to see — no SQL needed.</p>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  value={nlQuery}
+                  onChange={e => setNlQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runNl()}
+                  placeholder={`e.g. "top 10 customers by revenue" or "monthly trend"`}
+                  style={{ flex: 1, padding: '0.6rem 0.9rem', borderRadius: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none' }}
+                />
+                <button className="btn-primary" onClick={runNl} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                  <Zap size={13} />Generate
+                </button>
+              </div>
+              <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {[
+                  activeTableInfo?.insights?.numericColumns?.[0] && `top 10 by ${activeTableInfo.insights.numericColumns[0]}`,
+                  activeTableInfo?.insights?.dateColumns?.[0] && 'monthly trend',
+                  activeTableInfo?.insights?.categoricalColumns?.[0] && `breakdown by ${activeTableInfo.insights.categoricalColumns[0]}`,
+                  'find missing values',
+                ].filter(Boolean).map(hint => (
+                  <button key={hint} onClick={() => setNlQuery(hint)} style={{ padding: '0.25rem 0.65rem', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.75rem', color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.15s' }}>
+                    {hint}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Suggestion cards */}
