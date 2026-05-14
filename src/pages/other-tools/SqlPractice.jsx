@@ -12,7 +12,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, ViewPlugin, WidgetType, Decoration } from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { sql as sqlLang } from '@codemirror/lang-sql';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -230,7 +230,7 @@ async function parseFile(file) {
 
 async function initDb(tables) {
   const SQL = (await import('sql.js')).default;
-  const engine = await SQL({ locateFile: f => `https://sql.js.org/dist/${f}` });
+  const engine = await SQL({ locateFile: () => '/sql-wasm.wasm' });
   const db = new engine.Database();
   for (const t of tables) {
     db.run(`CREATE TABLE IF NOT EXISTS "${t.name}" (${t.columns.map(c => `"${c}" TEXT`).join(', ')})`);
@@ -253,6 +253,74 @@ function exportCSV(results) {
 
 const TYPE_ICON = { numeric: Hash, currency: DollarSign, percentage: Percent, date: Calendar, location: MapPin, categorical: Tag, id: Hash, unknown: Info };
 const TYPE_COLOR = { numeric: '#10b981', currency: '#f59e0b', percentage: '#8b5cf6', date: '#06b6d4', location: '#ec4899', categorical: '#6366f1', id: '#94a3b8', unknown: '#475569' };
+
+// ─── Ghost Text (inline autocomplete) ─────────────────────────────────────────
+class GhostWidget extends WidgetType {
+  constructor(text) { super(); this.text = text; }
+  eq(other) { return other.text === this.text; }
+  toDOM() {
+    const span = document.createElement('span');
+    span.textContent = this.text;
+    span.setAttribute('aria-hidden', 'true');
+    span.style.cssText = 'color:rgba(148,163,184,0.38);pointer-events:none;font-style:italic;';
+    return span;
+  }
+  ignoreEvent() { return true; }
+}
+
+function buildGhostExtension(tablesRef) {
+  const resolveHint = (partial, tables) => {
+    const upper = partial.toUpperCase();
+    const kwMatch = SQL_KW.find(k => k.startsWith(upper) && k.length > upper.length);
+    if (kwMatch) return kwMatch.slice(upper.length);
+    const lower = partial.toLowerCase();
+    for (const t of tables) {
+      if (t.name.toLowerCase().startsWith(lower) && t.name.length > lower.length)
+        return t.name.slice(lower.length);
+      for (const col of t.columns) {
+        if (col.toLowerCase().startsWith(lower) && col.length > lower.length)
+          return col.slice(lower.length);
+      }
+    }
+    return null;
+  };
+
+  const ghostPlugin = ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this._compute(view); }
+    update(u) { if (u.docChanged || u.selectionSet) this.decorations = this._compute(u.view); }
+    _compute(view) {
+      const sel = view.state.selection.main;
+      if (!sel.empty) return Decoration.none;
+      const pos = sel.from;
+      const line = view.state.doc.lineAt(pos);
+      const before = line.text.slice(0, pos - line.from);
+      const m = before.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (!m || m[1].length < 2) return Decoration.none;
+      const hint = resolveHint(m[1], tablesRef.current);
+      if (!hint) return Decoration.none;
+      return Decoration.set([Decoration.widget({ widget: new GhostWidget(hint), side: 1 }).range(pos)]);
+    }
+  }, { decorations: v => v.decorations });
+
+  const ghostAccept = keymap.of([{
+    key: 'Tab',
+    run: (view) => {
+      const sel = view.state.selection.main;
+      if (!sel.empty) return false;
+      const pos = sel.from;
+      const line = view.state.doc.lineAt(pos);
+      const before = line.text.slice(0, pos - line.from);
+      const m = before.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (!m || m[1].length < 2) return false;
+      const hint = resolveHint(m[1], tablesRef.current);
+      if (!hint) return false;
+      view.dispatch({ changes: { from: pos, insert: hint }, selection: { anchor: pos + hint.length } });
+      return true;
+    },
+  }]);
+
+  return [ghostPlugin, ghostAccept];
+}
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function SqlPractice() {
@@ -373,18 +441,51 @@ export default function SqlPractice() {
   useEffect(() => {
     if (!editorContainerRef.current) return;
 
+    // Context-aware completion: suggest columns after SELECT/WHERE/GROUP BY, tables after FROM/JOIN
     const customCompletion = (ctx) => {
       const word = ctx.matchBefore(/[\w.]*/);
       if (!word || (word.from === word.to && !ctx.explicit)) return null;
-      const options = [
-        ...SQL_KW.map(kw => ({ label: kw, type: 'keyword', boost: 1 })),
-        ...tablesRef.current.flatMap(t => [
-          { label: t.name, type: 'variable', detail: 'table', boost: 3 },
-          ...t.columns.map(col => ({ label: col, type: 'property', detail: t.name, boost: 2 })),
-        ]),
-      ];
-      return { from: word.from, options };
+
+      const textBefore = ctx.state.doc.sliceString(0, word.from).toUpperCase().trimEnd();
+      const lastKw = textBefore.match(/\b(SELECT|FROM|JOIN|WHERE|AND|OR|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET)\s*[\w\s,"`.]*?$/)
+        ?.[1]?.replace(/\s+/g, ' ');
+
+      const isAfterFrom = lastKw === 'FROM' || lastKw === 'JOIN';
+      const isAfterSelect = ['SELECT', 'WHERE', 'AND', 'OR', 'GROUP BY', 'ORDER BY', 'HAVING', 'ON', 'SET'].includes(lastKw);
+
+      const options = [];
+
+      // High-priority context-aware suggestions
+      if (isAfterFrom) {
+        for (const t of tablesRef.current) {
+          options.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
+        }
+      } else if (isAfterSelect) {
+        for (const t of tablesRef.current) {
+          for (const col of t.columns) {
+            const st = t.insights?.columnStats?.[col];
+            options.push({ label: col, type: 'property', detail: `${t.name} · ${st?.type ?? ''}`, boost: 15 });
+          }
+        }
+      }
+
+      // Always available: keywords
+      for (const kw of SQL_KW) options.push({ label: kw, type: 'keyword', boost: 1 });
+
+      // Always available: tables + columns
+      for (const t of tablesRef.current) {
+        if (!isAfterFrom) options.push({ label: t.name, type: 'class', detail: 'table', boost: 5 });
+        if (!isAfterSelect) {
+          for (const col of t.columns) {
+            options.push({ label: col, type: 'property', detail: t.name, boost: 3 });
+          }
+        }
+      }
+
+      return { from: word.from, options, validFor: /^\w*$/ };
     };
+
+    const ghostExt = buildGhostExtension(tablesRef);
 
     const view = new EditorView({
       state: EditorState.create({
@@ -394,7 +495,9 @@ export default function SqlPractice() {
           oneDark,
           lineNumbers(),
           highlightActiveLine(),
-          autocompletion({ override: [customCompletion] }),
+          // Ghost text (inline) must come before completionKeymap so Tab is handled first
+          ...ghostExt,
+          autocompletion({ override: [customCompletion], activateOnTyping: true, maxRenderedOptions: 12 }),
           keymap.of([
             ...defaultKeymap,
             ...completionKeymap,
@@ -403,13 +506,16 @@ export default function SqlPractice() {
           ]),
           EditorView.updateListener.of(u => { if (u.docChanged) setQuery(u.state.doc.toString()); }),
           EditorView.theme({
-            '&': { background: 'rgba(10,10,20,0.85)', minHeight: '130px' },
+            '&': { background: 'rgba(10,10,20,0.9)', minHeight: '160px' },
             '.cm-scroller': { fontFamily: "'Fira Code','JetBrains Mono','Consolas',monospace", overflow: 'auto' },
-            '.cm-content': { padding: '0.85rem 0', minHeight: '130px' },
+            '.cm-content': { padding: '1rem 0', minHeight: '160px' },
             '.cm-focused': { outline: 'none !important' },
-            '.cm-line': { padding: '0 1rem' },
-            '.cm-gutters': { background: 'rgba(0,0,0,0.4)', borderRight: '1px solid rgba(255,255,255,0.06)', color: '#475569', paddingRight: '4px' },
-            '.cm-activeLineGutter': { background: 'rgba(99,102,241,0.1)' },
+            '.cm-line': { padding: '0 1rem', lineHeight: '1.75' },
+            '.cm-gutters': { background: 'rgba(0,0,0,0.5)', borderRight: '1px solid rgba(255,255,255,0.06)', color: '#475569', paddingRight: '6px' },
+            '.cm-activeLineGutter': { background: 'rgba(99,102,241,0.12)' },
+            '.cm-tooltip-autocomplete': { background: '#1a1a2e !important', border: '1px solid rgba(99,102,241,0.3) !important', borderRadius: '8px !important', boxShadow: '0 8px 32px rgba(0,0,0,0.5) !important' },
+            '.cm-tooltip-autocomplete ul li': { padding: '4px 10px !important', fontSize: '0.8rem !important' },
+            '.cm-tooltip-autocomplete ul li[aria-selected]': { background: 'rgba(99,102,241,0.25) !important', color: '#a5b4fc !important' },
           }),
         ],
       }),
@@ -631,7 +737,7 @@ export default function SqlPractice() {
             <AnimatePresence mode="wait">
               {mode === 'sql' ? (
                 <motion.div key="sql" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <div ref={editorContainerRef} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }} />
+                  <div ref={editorContainerRef} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 160, overflow: 'hidden' }} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.85rem', background: 'rgba(0,0,0,0.15)' }}>
                     <button className="btn-primary" onClick={runQuery} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
                       {loading ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</> : <><Play size={13} />Run Query</>}
