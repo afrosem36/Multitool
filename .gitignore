@@ -28,3 +28,8 @@ pnpm-debug.log*
 !.env.example
 
 .vercel
+
+# WhatsApp Web.js session auth — contains credentials, never commit
+.wwebjs_auth/
+.wwebjs_cache/
+whatsapp-service/.env

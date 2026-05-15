@@ -472,10 +472,10 @@ export const textTools = [
 
 export const linkTools = [
   {
-    id: 'whatsapp-link-creator',
-    name: 'WhatsApp Link Creator',
-    description: 'Create a WhatsApp chat link with a prefilled message for sharing and marketing.',
-    path: '/whatsapp-link-creator',
+    id: 'whatsapp-tools',
+    name: 'WhatsApp Tools',
+    description: 'Link creator, QA monitoring, analytics, lead management, team tracking, and downloadable reports.',
+    path: '/whatsapp-tools',
     icon: MessageCircle,
     color: 'rgba(34, 197, 94, 0.12)'
   }
@@ -697,9 +697,9 @@ export const toolSections = [
   },
   {
     id: 'whatsapp',
-    label: 'WhatsApp Link Creator',
-    path: '/whatsapp-link-creator',
-    description: 'Create a WhatsApp chat link with a prefilled message.',
+    label: 'WhatsApp Tools',
+    path: '/whatsapp-tools',
+    description: 'WhatsApp link creator, QA monitor, analytics, lead management, team tracking, and reports.',
     icon: MessageCircle,
     tools: linkTools
   },

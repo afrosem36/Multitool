@@ -7,26 +7,25 @@ import * as cheerio from 'cheerio';
 const app = new Hono();
 
 const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
   "https://www.multitoolhub.space",
   "https://multitoolhub.space",
 ];
 
 function getCorsHeaders(origin) {
-  if (!ALLOWED_ORIGINS.includes(origin)) {
-    // Allow public access to downloads from any origin
+  const isLocalhost = origin && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  if (!origin || isLocalhost || ALLOWED_ORIGINS.includes(origin)) {
     return {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Origin": origin || "*",
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400",
     };
   }
   return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Max-Age": "86400",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
   };
 }
 // ==========================================
@@ -3350,6 +3349,643 @@ Rules:
   dashLog('info', 'complete', `charts=${plan.charts.length}, elapsed=${elapsed}ms, source=${planSource}`);
 
   return c.json({ success: true, plan, source: planSource });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WHATSAPP DATA API
+// Routes under /api/wa/* serve the local whatsapp-service Node.js process.
+// All requests must carry x-wa-secret matching env.WA_SHARED_SECRET.
+// ═══════════════════════════════════════════════════════════════════════════
+
+app.use('/api/wa/*', async (c, next) => {
+  const secret = c.req.header('x-wa-secret');
+  if (!c.env.WA_SHARED_SECRET || secret !== c.env.WA_SHARED_SECRET) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  return next();
+});
+
+// ── Internal write routes (called from whatsapp.js on every message) ────────
+
+function waSafeKeyPart(value = '') {
+  return encodeURIComponent(String(value || 'unknown')).replace(/%/g, '~');
+}
+
+function waSessionId(value = '') {
+  return String(value || 'legacy').replace(/[^a-zA-Z0-9_-]/g, '_') || 'legacy';
+}
+
+function scopedWaId(sessionId, value = '') {
+  return `${waSessionId(sessionId)}:${String(value || '')}`;
+}
+
+function normalizeWaMessageForStorage(d, ts) {
+  return {
+    messageId: d.messageId,
+    chatId: d.chatId,
+    chatName: d.chatName || '',
+    from: d.from || '',
+    to: d.to || '',
+    author: d.author || '',
+    senderName: d.senderName || '',
+    body: d.body || '',
+    type: d.type || 'chat',
+    timestamp: new Date(ts * 1000).toISOString(),
+    isFromMe: !!d.isFromMe,
+    hasMedia: !!d.hasMedia,
+    mediaUrl: d.mediaUrl || '',
+    quotedMessage: d.quotedMessage || null,
+    responseTime: d.responseTime ?? null,
+  };
+}
+
+async function persistWaMessageToR2(c, d, ts) {
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket || !d.chatId || !d.messageId) return;
+  const date = new Date(ts * 1000).toISOString().slice(0, 10);
+  const sessionId = waSessionId(d.sessionId);
+  const key = `sessions/${waSafeKeyPart(sessionId)}/messages/${waSafeKeyPart(d.chatId)}/${date}.json`;
+  const nextMessage = normalizeWaMessageForStorage(d, ts);
+  let payload = { sessionId, chatId: d.chatId, date, messages: [] };
+  try {
+    const existing = await bucket.get(key);
+    if (existing) payload = await existing.json();
+  } catch (_) {
+    payload = { sessionId, chatId: d.chatId, date, messages: [] };
+  }
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const idx = messages.findIndex((m) => m.messageId === nextMessage.messageId);
+  if (idx >= 0) messages[idx] = { ...messages[idx], ...nextMessage };
+  else messages.push(nextMessage);
+  messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  await bucket.put(key, JSON.stringify({ ...payload, messages }, null, 2), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+}
+
+function bindWaMessage(stmt, d) {
+  const ts = Math.floor(new Date(d.timestamp).getTime() / 1000);
+  const sessionId = waSessionId(d.sessionId);
+  return stmt.bind(
+    scopedWaId(sessionId, d.messageId), scopedWaId(sessionId, d.chatId), sessionId, d.chatId, d.messageId,
+    d.chatName||'', d.from||'', d.to||'',
+    d.author||'', d.senderName||'', d.body||'', d.type||'chat', ts,
+    d.isFromMe?1:0, d.hasMedia?1:0, d.mediaUrl||'',
+    d.quotedMessage?.messageId || d.quotedMsgId || '',
+    d.quotedMessage?.body || d.quotedBody || '',
+    d.agentId||null, d.responseTime??null,
+  );
+}
+
+app.post('/api/wa/internal/messages/upsert', async (c) => {
+  const db = getDb(c.env);
+  const d = await c.req.json();
+  const ts = Math.floor(new Date(d.timestamp).getTime() / 1000);
+  const stmt = db.prepare(`
+    INSERT INTO wa_messages
+      (message_id,chat_id,session_id,real_chat_id,real_message_id,chat_name,from_jid,to_jid,author_jid,sender_name,body,type,timestamp,is_from_me,has_media,media_url,quoted_msg_id,quoted_body,agent_id,response_time)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(message_id) DO UPDATE SET
+      body=excluded.body,
+      author_jid=excluded.author_jid,
+      sender_name=excluded.sender_name,
+      media_url=excluded.media_url,
+      quoted_msg_id=excluded.quoted_msg_id,
+      quoted_body=excluded.quoted_body,
+      response_time=COALESCE(excluded.response_time,wa_messages.response_time)
+  `);
+  await bindWaMessage(stmt, d).run();
+  await persistWaMessageToR2(c, d, ts);
+  return c.json({ ok: true });
+});
+
+app.post('/api/wa/internal/messages/bulk', async (c) => {
+  const db = getDb(c.env);
+  const { rows = [] } = await c.req.json();
+  if (!rows.length) return c.json({ ok: true, count: 0 });
+  const stmt = db.prepare(`
+    INSERT INTO wa_messages
+      (message_id,chat_id,session_id,real_chat_id,real_message_id,chat_name,from_jid,to_jid,author_jid,sender_name,body,type,timestamp,is_from_me,has_media,media_url,quoted_msg_id,quoted_body,agent_id,response_time)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(message_id) DO UPDATE SET
+      body=excluded.body,
+      author_jid=excluded.author_jid,
+      sender_name=excluded.sender_name,
+      media_url=excluded.media_url,
+      quoted_msg_id=excluded.quoted_msg_id,
+      quoted_body=excluded.quoted_body,
+      response_time=COALESCE(excluded.response_time,wa_messages.response_time)
+  `);
+  await db.batch(rows.map((d) => bindWaMessage(stmt, d)));
+  for (const d of rows) {
+    const ts = Math.floor(new Date(d.timestamp).getTime() / 1000);
+    await persistWaMessageToR2(c, d, ts);
+  }
+  return c.json({ ok: true, count: rows.length });
+});
+
+app.get('/api/wa/internal/messages/last-customer', async (c) => {
+  const db = getDb(c.env);
+  const chatId = c.req.query('chatId');
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  if (!chatId) return c.json(null);
+  const row = await db.prepare(
+    'SELECT timestamp FROM wa_messages WHERE session_id=? AND real_chat_id=? AND is_from_me=0 ORDER BY timestamp DESC LIMIT 1'
+  ).bind(sessionId, chatId).first();
+  return c.json(row ? { timestamp: new Date(row.timestamp * 1000).toISOString() } : null);
+});
+
+app.post('/api/wa/internal/chats/upsert', async (c) => {
+  const db = getDb(c.env);
+  const d = await c.req.json();
+  const sessionId = waSessionId(d.sessionId);
+  const lastTs    = d.lastMessageTime ? Math.floor(new Date(d.lastMessageTime).getTime()/1000) : null;
+  const waitingTs = d.waitingSince    ? Math.floor(new Date(d.waitingSince).getTime()/1000)    : null;
+  await db.prepare(`
+    INSERT INTO wa_chats
+      (chat_id,session_id,real_chat_id,name,phone,is_group,last_message,last_message_time,last_msg_from_me,waiting_since,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,unixepoch())
+    ON CONFLICT(chat_id) DO UPDATE SET
+      name=excluded.name, phone=excluded.phone,
+      last_message=excluded.last_message,
+      last_message_time=excluded.last_message_time,
+      last_msg_from_me=excluded.last_msg_from_me,
+      waiting_since=excluded.waiting_since,
+      updated_at=unixepoch()
+  `).bind(
+    scopedWaId(sessionId, d.chatId), sessionId, d.chatId, d.name||'', d.phone||null, d.isGroup?1:0,
+    d.lastMessage||'', lastTs, d.lastMessageIsFromMe?1:0, waitingTs,
+  ).run();
+  return c.json({ ok: true });
+});
+
+app.post('/api/wa/internal/contacts/upsert', async (c) => {
+  const db = getDb(c.env);
+  const d = await c.req.json();
+  const sessionId = waSessionId(d.sessionId);
+  if (!d.phone) return c.json({ ok: true });
+  await db.prepare(`
+    INSERT INTO wa_contacts (phone,session_id,real_phone,name,pushname,is_group,last_contact)
+    VALUES (?,?,?,?,?,?,unixepoch())
+    ON CONFLICT(phone) DO UPDATE SET
+      name=COALESCE(NULLIF(excluded.name,''),wa_contacts.name),
+      pushname=excluded.pushname,
+      last_contact=unixepoch()
+  `).bind(scopedWaId(sessionId, d.phone), sessionId, d.phone, d.name||d.phone, d.pushname||'', d.isGroup?1:0).run();
+  return c.json({ ok: true });
+});
+
+app.post('/api/wa/internal/chats/bulk', async (c) => {
+  const db = getDb(c.env);
+  const { rows = [] } = await c.req.json();
+  if (!rows.length) return c.json({ ok: true, count: 0 });
+  const stmt = db.prepare(`
+    INSERT INTO wa_chats
+      (chat_id,session_id,real_chat_id,name,phone,is_group,last_message,last_message_time,last_msg_from_me,waiting_since,unread_count,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,unixepoch())
+    ON CONFLICT(chat_id) DO UPDATE SET
+      name=excluded.name, phone=excluded.phone,
+      last_message=excluded.last_message,
+      last_message_time=excluded.last_message_time,
+      last_msg_from_me=excluded.last_msg_from_me,
+      waiting_since=excluded.waiting_since,
+      unread_count=excluded.unread_count,
+      updated_at=unixepoch()
+  `);
+  await db.batch(rows.map(r => stmt.bind(
+    scopedWaId(waSessionId(r.sessionId), r.chatId), waSessionId(r.sessionId), r.chatId,
+    r.name||'', r.phone||null, r.isGroup?1:0,
+    r.lastMessage||'',
+    r.lastMessageTime ? Math.floor(new Date(r.lastMessageTime).getTime()/1000) : null,
+    r.lastMessageIsFromMe?1:0,
+    r.waitingSince    ? Math.floor(new Date(r.waitingSince).getTime()/1000)    : null,
+    r.unreadCount||0,
+  )));
+  return c.json({ ok: true, count: rows.length });
+});
+
+app.post('/api/wa/internal/contacts/bulk', async (c) => {
+  const db = getDb(c.env);
+  const { rows = [] } = await c.req.json();
+  if (!rows.length) return c.json({ ok: true, count: 0 });
+  const stmt = db.prepare(`
+    INSERT INTO wa_contacts (phone,session_id,real_phone,name,pushname,is_group)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(phone) DO UPDATE SET
+      name=COALESCE(NULLIF(excluded.name,''),wa_contacts.name),
+      pushname=excluded.pushname
+  `);
+  await db.batch(rows.map(r => stmt.bind(
+    scopedWaId(waSessionId(r.sessionId), r.phone), waSessionId(r.sessionId), r.phone,
+    r.name||r.phone, r.pushname||'', r.isGroup?1:0
+  )));
+  return c.json({ ok: true, count: rows.length });
+});
+
+// ── Data read/write routes (proxied through whatsapp-service/routes/api.js) ─
+
+app.get('/api/wa/chats', async (c) => {
+  const db = getDb(c.env);
+  const SLA = parseInt(c.env.SLA_THRESHOLD_SECONDS||'900', 10);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const { search='', status='all', page='1', limit='50' } = c.req.query();
+  const skip = (parseInt(page)-1) * parseInt(limit);
+  const now = Math.floor(Date.now()/1000);
+
+  const conds = ['session_id=?'];
+  const params = [sessionId];
+  if (search) { conds.push('name LIKE ?'); params.push(`%${search}%`); }
+  if (status === 'pending')  { conds.push('waiting_since IS NOT NULL'); }
+  if (status === 'breached') { conds.push('waiting_since IS NOT NULL AND waiting_since < ?'); params.push(now - SLA); }
+  params.push(parseInt(limit), skip);
+
+  const rows = await db.prepare(
+    `SELECT * FROM wa_chats WHERE ${conds.join(' AND ')} ORDER BY last_message_time DESC LIMIT ? OFFSET ?`
+  ).bind(...params).all();
+
+  return c.json(rows.results.map(r => {
+    const waitSecs = r.waiting_since ? (now - r.waiting_since) : 0;
+    return {
+      chatId: r.real_chat_id || r.chat_id, name: r.name, phone: r.phone,
+      isGroup: !!r.is_group, lastMessage: r.last_message,
+      lastMessageTime: r.last_message_time ? new Date(r.last_message_time*1000) : null,
+      lastMessageIsFromMe: !!r.last_msg_from_me,
+      waitingMinutes: Math.round(waitSecs/60),
+      slaStatus: waitSecs > SLA ? 'breached' : waitSecs > SLA*0.7 ? 'warning' : 'ok',
+      agentAssigned: r.agent_assigned||'Unassigned',
+    };
+  }));
+});
+
+app.get('/api/wa/chats/:chatId/messages', async (c) => {
+  const db = getDb(c.env);
+  const { before='', limit='200' } = c.req.query();
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const safeLimit = Math.min(parseInt(limit, 10) || 200, 500);
+  const conds = ['session_id=?', 'real_chat_id=?'];
+  const params = [sessionId, c.req.param('chatId')];
+  if (before) {
+    conds.push('timestamp<?');
+    params.push(Math.floor(new Date(before).getTime() / 1000));
+  }
+  params.push(safeLimit);
+  const rows = await db.prepare(
+    `SELECT * FROM wa_messages WHERE ${conds.join(' AND ')} ORDER BY timestamp DESC LIMIT ?`
+  ).bind(...params).all();
+  return c.json(rows.results.reverse().map(m => ({
+    messageId: m.real_message_id || m.message_id, chatId: m.real_chat_id || m.chat_id, body: m.body,
+    timestamp: new Date(m.timestamp*1000), isFromMe: !!m.is_from_me,
+    type: m.type, hasMedia: !!m.has_media, mediaUrl: m.media_url || '',
+    author: m.author_jid || '', senderName: m.sender_name || '',
+    quotedMessage: m.quoted_msg_id || m.quoted_body ? { messageId:m.quoted_msg_id, body:m.quoted_body } : null,
+    responseTime: m.response_time,
+  })));
+});
+
+app.get('/api/wa/media/:id', async (c) => {
+  const bucket = c.env.MY_BUCKET;
+  if (!bucket) return c.json({ error: 'R2 bucket is not configured' }, 500);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const object = await bucket.get(`sessions/${waSafeKeyPart(sessionId)}/media/${waSafeKeyPart(c.req.param('id'))}`);
+  if (!object) return c.json({ error: 'Media not found' }, 404);
+  return new Response(object.body, { headers: object.httpMetadata || {} });
+});
+
+app.get('/api/wa/contacts', async (c) => {
+  const db = getDb(c.env);
+  const { search='', status='all', page='1', limit='100' } = c.req.query();
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const skip = (parseInt(page)-1) * parseInt(limit);
+  const conds = ['session_id=?', 'is_group=0'];
+  const params = [sessionId];
+  if (search) { conds.push('(name LIKE ? OR phone LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+  if (status !== 'all') { conds.push('lead_status=?'); params.push(status); }
+  params.push(parseInt(limit), skip);
+  const rows = await db.prepare(
+    `SELECT * FROM wa_contacts WHERE ${conds.join(' AND ')} ORDER BY last_contact DESC LIMIT ? OFFSET ?`
+  ).bind(...params).all();
+  return c.json(rows.results.map(r => ({
+    phone: r.real_phone || r.phone, name: r.name, pushname: r.pushname,
+    leadStatus: r.lead_status, tags: JSON.parse(r.tags||'[]'), notes: r.notes,
+    lastContact: r.last_contact ? new Date(r.last_contact*1000) : null,
+  })));
+});
+
+app.patch('/api/wa/contacts/:phone', async (c) => {
+  const db = getDb(c.env);
+  const phone = decodeURIComponent(c.req.param('phone'));
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const body = await c.req.json();
+  const sets = []; const params = [];
+  if (body.leadStatus !== undefined) { sets.push('lead_status=?'); params.push(body.leadStatus); }
+  if (body.notes      !== undefined) { sets.push('notes=?');       params.push(body.notes); }
+  if (body.tags       !== undefined) { sets.push('tags=?');        params.push(JSON.stringify(body.tags)); }
+  if (sets.length) {
+    params.push(scopedWaId(sessionId, phone));
+    await db.prepare(`UPDATE wa_contacts SET ${sets.join(',')} WHERE phone=?`).bind(...params).run();
+  }
+  const row = await db.prepare('SELECT * FROM wa_contacts WHERE phone=?').bind(scopedWaId(sessionId, phone)).first();
+  return c.json(row ? { ...row, phone: row.real_phone || row.phone, tags: JSON.parse(row.tags||'[]') } : {});
+});
+
+app.get('/api/wa/leads', async (c) => {
+  const db = getDb(c.env);
+  const { status='all', search='' } = c.req.query();
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const conds = ['session_id=?']; const params = [sessionId];
+  if (status !== 'all') { conds.push('status=?'); params.push(status); }
+  if (search) { conds.push('(name LIKE ? OR phone LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+  params.push(200);
+  const rows = await db.prepare(
+    `SELECT * FROM wa_leads WHERE ${conds.join(' AND ')} ORDER BY updated_at DESC LIMIT ?`
+  ).bind(...params).all();
+  return c.json(rows.results.map(r => ({ ...r, _id: r.id, tags: JSON.parse(r.tags||'[]') })));
+});
+
+app.post('/api/wa/leads', async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json();
+  const sessionId = waSessionId(body.sessionId);
+  const id = body.id || nanoid();
+  await db.prepare(`
+    INSERT INTO wa_leads (id,session_id,phone,name,status,priority,notes,tags,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, status=excluded.status, priority=excluded.priority,
+      notes=excluded.notes, tags=excluded.tags, updated_at=unixepoch()
+  `).bind(
+    id, sessionId, body.phone||'', body.name||body.phone||'',
+    body.status||'new', body.priority||'medium',
+    body.notes||'', JSON.stringify(body.tags||[]),
+  ).run();
+  const row = await db.prepare('SELECT * FROM wa_leads WHERE id=?').bind(id).first();
+  return c.json({ ...row, _id: row.id, tags: JSON.parse(row.tags||'[]') });
+});
+
+app.patch('/api/wa/leads/:id', async (c) => {
+  const db = getDb(c.env);
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const sessionId = waSessionId(body.sessionId);
+  const sets = ['updated_at=unixepoch()']; const params = [];
+  if (body.name          !== undefined) { sets.push('name=?');          params.push(body.name); }
+  if (body.status        !== undefined) { sets.push('status=?');        params.push(body.status); }
+  if (body.priority      !== undefined) { sets.push('priority=?');      params.push(body.priority); }
+  if (body.notes         !== undefined) { sets.push('notes=?');         params.push(body.notes); }
+  if (body.tags          !== undefined) { sets.push('tags=?');          params.push(JSON.stringify(body.tags)); }
+  if (body.ticket_status !== undefined) { sets.push('ticket_status=?'); params.push(body.ticket_status); }
+  if (body.follow_up_date!== undefined) { sets.push('follow_up_date=?');params.push(body.follow_up_date); }
+  if (body.follow_up_time!== undefined) { sets.push('follow_up_time=?');params.push(body.follow_up_time); }
+  if (body.assigned_to   !== undefined) { sets.push('assigned_to=?');   params.push(body.assigned_to); }
+  params.push(id, sessionId);
+  await db.prepare(`UPDATE wa_leads SET ${sets.join(',')} WHERE id=? AND session_id=?`).bind(...params).run();
+  const row = await db.prepare('SELECT * FROM wa_leads WHERE id=? AND session_id=?').bind(id, sessionId).first();
+  return c.json(row ? { ...row, _id: row.id, tags: JSON.parse(row.tags||'[]') } : {});
+});
+
+app.delete('/api/wa/leads/:id', async (c) => {
+  const db = getDb(c.env);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  await db.prepare('DELETE FROM wa_leads WHERE id=? AND session_id=?').bind(c.req.param('id'), sessionId).run();
+  return c.json({ ok: true });
+});
+
+// ── Chat ticket-status PATCH ───────────────────────────────────────────────
+app.patch('/api/wa/chats/:chatId/ticket', async (c) => {
+  const db = getDb(c.env);
+  const chatId    = c.req.param('chatId');
+  const body      = await c.req.json();
+  const sessionId = waSessionId(body.sessionId);
+  const sets = ['updated_at=unixepoch()']; const params = [];
+  if (body.ticket_status !== undefined) { sets.push('ticket_status=?'); params.push(body.ticket_status); }
+  if (body.assigned_to   !== undefined) { sets.push('assigned_to=?');   params.push(body.assigned_to); }
+  params.push(chatId, sessionId);
+  await db.prepare(`UPDATE wa_chats SET ${sets.join(',')} WHERE chat_id=? AND session_id=?`).bind(...params).run();
+  const row = await db.prepare('SELECT * FROM wa_chats WHERE chat_id=? AND session_id=?').bind(chatId, sessionId).first();
+  return c.json(row || {});
+});
+
+// ── Internal notes ─────────────────────────────────────────────────────────
+app.get('/api/wa/notes/:chatId', async (c) => {
+  const db = getDb(c.env);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const rows = await db.prepare(
+    'SELECT * FROM wa_notes WHERE session_id=? AND chat_id=? ORDER BY created_at ASC LIMIT 100'
+  ).bind(sessionId, c.req.param('chatId')).all();
+  return c.json(rows.results || []);
+});
+
+app.post('/api/wa/notes/:chatId', async (c) => {
+  const db = getDb(c.env);
+  const body      = await c.req.json();
+  const sessionId = waSessionId(body.sessionId);
+  const id        = nanoid();
+  await db.prepare(
+    'INSERT INTO wa_notes (id,chat_id,session_id,body,agent,created_at) VALUES (?,?,?,?,?,unixepoch())'
+  ).bind(id, c.req.param('chatId'), sessionId, String(body.body||'').trim(), body.agent||'Agent').run();
+  const row = await db.prepare('SELECT * FROM wa_notes WHERE id=?').bind(id).first();
+  return c.json(row || {});
+});
+
+app.get('/api/wa/analytics', async (c) => {
+  const db = getDb(c.env);
+  const SLA = parseInt(c.env.SLA_THRESHOLD_SECONDS||'900', 10);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const range = c.req.query('range')||'7d';
+  const days = range==='30d'?30:range==='1d'?1:7;
+  const now = Math.floor(Date.now()/1000);
+  const sinceTs = now - days*86400;
+  const todayTs = Math.floor(new Date().setUTCHours(0,0,0,0)/1000);
+
+  const [chatStats, rtRows, hourlyRaw, weeklyRaw, leadRows] = await Promise.all([
+    db.prepare(`
+      SELECT COUNT(*) as total,
+        SUM(CASE WHEN waiting_since IS NOT NULL THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN waiting_since IS NOT NULL AND waiting_since < ? THEN 1 ELSE 0 END) as breached
+      FROM wa_chats WHERE session_id=?
+    `).bind(now - SLA, sessionId).first(),
+
+    db.prepare(
+      'SELECT response_time FROM wa_messages WHERE session_id=? AND is_from_me=1 AND response_time IS NOT NULL AND timestamp>=?'
+    ).bind(sessionId, sinceTs).all(),
+
+    db.prepare(`
+      SELECT CAST(strftime('%H',datetime(timestamp,'unixepoch')) AS INTEGER) as h,
+        SUM(CASE WHEN is_from_me=0 THEN 1 ELSE 0 END) as chats,
+        SUM(CASE WHEN is_from_me=1 THEN 1 ELSE 0 END) as replied
+      FROM wa_messages WHERE session_id=? AND timestamp>=? GROUP BY h
+    `).bind(sessionId, todayTs).all(),
+
+    db.prepare(`
+      SELECT date(datetime(timestamp,'unixepoch')) as day,
+        SUM(CASE WHEN is_from_me=0 THEN 1 ELSE 0 END) as chats,
+        SUM(CASE WHEN is_from_me=1 AND response_time IS NOT NULL AND response_time<=? THEN 1 ELSE 0 END) as sla_ok,
+        SUM(CASE WHEN is_from_me=1 AND response_time IS NOT NULL THEN 1 ELSE 0 END) as replies
+      FROM wa_messages WHERE session_id=? AND timestamp>=?
+      GROUP BY day ORDER BY day ASC
+    `).bind(SLA, sessionId, now - 7*86400).all(),
+
+    db.prepare('SELECT status, COUNT(*) as cnt FROM wa_leads WHERE session_id=? GROUP BY status').bind(sessionId).all(),
+  ]);
+
+  const rts = rtRows.results.map(r => r.response_time);
+  const avgResponse  = rts.length ? Math.round(rts.reduce((a,b)=>a+b,0)/rts.length) : 0;
+  const slaCompliant = rts.filter(t => t <= SLA).length;
+  const slaCompliance = rts.length ? Math.round(slaCompliant/rts.length*100) : 100;
+  const total = chatStats.total || 1;
+  const missedRatio = (chatStats.breached||0) / total;
+  const speedScore  = Math.max(0, 100 - Math.round(avgResponse/(SLA*0.6)*100));
+  const qaScore     = Math.min(Math.round(slaCompliance*0.5 + speedScore*0.3 + (1-missedRatio)*100*0.2), 100);
+
+  const hourMap = {};
+  hourlyRaw.results.forEach(r => { hourMap[r.h] = r; });
+  const hourlyData = Array.from({length:12}, (_,i) => {
+    const h = 8+i;
+    return { h:`${h>12?h-12:h}${h>=12?'pm':'am'}`, chats:hourMap[h]?.chats||0, replied:hourMap[h]?.replied||0 };
+  });
+
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dayMap = {};
+  weeklyRaw.results.forEach(r => { dayMap[r.day] = r; });
+  const weeklyData = Array.from({length:7}, (_,i) => {
+    const d2 = new Date((now-(6-i)*86400)*1000);
+    const dayStr = d2.toISOString().split('T')[0];
+    const row = dayMap[dayStr];
+    const score = row?.replies > 0 ? Math.round(row.sla_ok/row.replies*100) : 100;
+    return { d: DAYS[d2.getUTCDay()], score, chats: row?.chats||0 };
+  });
+
+  const lm = {};
+  leadRows.results.forEach(r => { lm[r.status] = r.cnt; });
+
+  return c.json({
+    totalChats: chatStats.total||0, pendingReplies: chatStats.pending||0,
+    avgResponseTime: avgResponse, slaCompliance, qaScore,
+    missedLeads: chatStats.breached||0, breachedCount: chatStats.breached||0,
+    hourlyData, weeklyData,
+    leadFunnel: [
+      { name:'New',       value:lm['new']||0,        color:'#6366f1' },
+      { name:'Hot Lead',  value:lm['hot']||0,        color:'#f59e0b' },
+      { name:'Follow-up', value:lm['follow-up']||0,  color:'#3b82f6' },
+      { name:'VIP',       value:lm['vip']||0,        color:'#8b5cf6' },
+      { name:'Closed',    value:lm['closed']||0,     color:'#10b981' },
+      { name:'Spam',      value:lm['spam']||0,       color:'#ef4444' },
+    ],
+  });
+});
+
+app.get('/api/wa/qa/queue', async (c) => {
+  const db = getDb(c.env);
+  const SLA = parseInt(c.env.SLA_THRESHOLD_SECONDS||'900', 10);
+  const filter = c.req.query('filter')||'all';
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const now = Math.floor(Date.now()/1000);
+  const conds = ['session_id=?', 'waiting_since IS NOT NULL']; const params = [sessionId];
+  if (filter === 'breached') { conds.push('waiting_since<?'); params.push(now-SLA); }
+  if (filter === 'warning')  { conds.push('waiting_since<? AND waiting_since>=?'); params.push(now-Math.floor(SLA*0.7), now-SLA); }
+  const rows = await db.prepare(
+    `SELECT * FROM wa_chats WHERE ${conds.join(' AND ')} ORDER BY waiting_since ASC LIMIT 100`
+  ).bind(...params).all();
+  return c.json(rows.results.map(r => {
+    const waitSecs = now - r.waiting_since;
+    return {
+      chatId: r.real_chat_id || r.chat_id, customer: r.name, phone: r.phone,
+      lastMessage: r.last_message,
+      waitingSeconds: waitSecs,
+      waitingMinutes: Math.round(waitSecs / 60),
+      slaStatus:    waitSecs > SLA ? 'breached' : waitSecs > SLA * 0.7 ? 'warning' : 'ok',
+      agentAssigned: r.agent_assigned || r.assigned_to || 'Unassigned',
+      ticketStatus:  r.ticket_status  || 'open',
+      assignedTo:    r.assigned_to    || '',
+    };
+  }));
+});
+
+app.get('/api/wa/search', async (c) => {
+  const db = getDb(c.env);
+  const { q='', agent='', dateFrom='', dateTo='' } = c.req.query();
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  if (!q) return c.json([]);
+  const conds = ['session_id=?', 'body LIKE ?']; const params = [sessionId, `%${q}%`];
+  if (agent)    { conds.push('agent_id=?');    params.push(agent); }
+  if (dateFrom) { conds.push('timestamp>=?');  params.push(Math.floor(new Date(dateFrom).getTime()/1000)); }
+  if (dateTo)   { conds.push('timestamp<=?');  params.push(Math.floor(new Date(dateTo+'T23:59:59').getTime()/1000)); }
+  params.push(100);
+  const rows = await db.prepare(
+    `SELECT * FROM wa_messages WHERE ${conds.join(' AND ')} ORDER BY timestamp DESC LIMIT ?`
+  ).bind(...params).all();
+  return c.json(rows.results.map(m => ({
+    messageId: m.real_message_id || m.message_id, chatId: m.real_chat_id || m.chat_id, chatName: m.chat_name, body: m.body,
+    timestamp: new Date(m.timestamp*1000), isFromMe: !!m.is_from_me,
+  })));
+});
+
+app.get('/api/wa/reports/summary', async (c) => {
+  const db = getDb(c.env);
+  const SLA = parseInt(c.env.SLA_THRESHOLD_SECONDS||'900', 10);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const range = c.req.query('range')||'7d';
+  const days = range==='30d'?30:range==='1d'?1:7;
+  const sinceTs = Math.floor(Date.now()/1000) - days*86400;
+
+  const [totals, rtRows, leadStats] = await Promise.all([
+    db.prepare(`
+      SELECT (SELECT COUNT(*) FROM wa_chats WHERE session_id=?) as totalChats,
+             (SELECT COUNT(*) FROM wa_messages WHERE session_id=? AND timestamp>=?) as totalMessages
+    `).bind(sessionId, sessionId, sinceTs).first(),
+    db.prepare(
+      'SELECT response_time FROM wa_messages WHERE session_id=? AND is_from_me=1 AND response_time IS NOT NULL AND timestamp>=?'
+    ).bind(sessionId, sinceTs).all(),
+    db.prepare(`
+      SELECT COUNT(*) as total,
+        SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed
+      FROM wa_leads WHERE session_id=?
+    `).bind(sessionId).first(),
+  ]);
+
+  const rts = rtRows.results.map(r => r.response_time);
+  const avgResponse = rts.length ? Math.round(rts.reduce((a,b)=>a+b,0)/rts.length) : 0;
+  const slaOk = rts.filter(t => t<=SLA).length;
+  return c.json({
+    totalChats: totals.totalChats||0, totalMessages: totals.totalMessages||0,
+    totalLeads: leadStats.total||0, closedLeads: leadStats.closed||0,
+    avgResponseTime: avgResponse,
+    slaCompliance: rts.length ? Math.round(slaOk/rts.length*100) : 100,
+    conversionRate: leadStats.total ? Math.round((leadStats.closed/leadStats.total)*100) : 0,
+  });
+});
+
+app.get('/api/wa/notifications', async (c) => {
+  const db = getDb(c.env);
+  const SLA = parseInt(c.env.SLA_THRESHOLD_SECONDS||'900', 10);
+  const sessionId = waSessionId(c.req.query('sessionId'));
+  const now = Math.floor(Date.now()/1000);
+
+  const [breached, warned, hotLeads] = await Promise.all([
+    db.prepare(
+      'SELECT * FROM wa_chats WHERE session_id=? AND waiting_since IS NOT NULL AND waiting_since<? ORDER BY waiting_since ASC LIMIT 10'
+    ).bind(sessionId, now-SLA).all(),
+    db.prepare(
+      'SELECT * FROM wa_chats WHERE session_id=? AND waiting_since IS NOT NULL AND waiting_since<? AND waiting_since>=? LIMIT 5'
+    ).bind(sessionId, now-Math.floor(SLA*0.7), now-SLA).all(),
+    db.prepare(
+      "SELECT * FROM wa_leads WHERE session_id=? AND status='hot' ORDER BY updated_at DESC LIMIT 3"
+    ).bind(sessionId).all(),
+  ]);
+
+  const notifs = [];
+  breached.results.forEach(r => {
+    const mins = Math.round((now-r.waiting_since)/60);
+    notifs.push({ type:'critical', title:'SLA Breached', desc:`${r.name||r.phone} waiting ${mins}m — no agent reply`, time:new Date(r.waiting_since*1000).toISOString() });
+  });
+  warned.results.forEach(r => {
+    const mins = Math.round((now-r.waiting_since)/60);
+    notifs.push({ type:'warning', title:'Response Overdue', desc:`${r.name||r.phone} waiting ${mins}m`, time:new Date(r.waiting_since*1000).toISOString() });
+  });
+  hotLeads.results.forEach(r => {
+    notifs.push({ type:'info', title:'Hot Lead', desc:`${r.name||r.phone} classified as Hot Lead`, time:new Date(r.updated_at*1000).toISOString() });
+  });
+  return c.json(notifs.sort((a,b) => new Date(b.time)-new Date(a.time)));
 });
 
 app.all('/api/*', (c) => {

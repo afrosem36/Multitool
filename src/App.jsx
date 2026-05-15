@@ -26,6 +26,7 @@ const HtmlToImage = React.lazy(() => import('./pages/image-tools/HtmlToImage'));
 const TextToolPage = React.lazy(() => import('./pages/misc/TextToolPage'));
 const ToolHubPage = React.lazy(() => import('./pages/misc/ToolHubPage'));
 const WhatsAppLinkCreator = React.lazy(() => import('./pages/other-tools/WhatsAppLinkCreator'));
+const WhatsAppTools = React.lazy(() => import('./pages/other-tools/WhatsAppTools'));
 const GuidesHubPage = React.lazy(() => import('./pages/misc/GuidesHubPage'));
 const ArticlePage = React.lazy(() => import('./pages/content/ArticlePage'));
 const InfoPage = React.lazy(() => import('./pages/content/InfoPage'));
@@ -142,7 +143,8 @@ function AppRoutes() {
         <Route path="/ai-tools" element={<ToolHubPage sectionId="ai" />} />
         <Route path="/utilities" element={<ToolHubPage sectionId="utilities" />} />
         <Route path="/excel" element={<ToolHubPage sectionId="excel" />} />
-        <Route path="/whatsapp-link-creator" element={<WhatsAppLinkCreator />} />
+        <Route path="/whatsapp-tools" element={<WhatsAppTools />} />
+        <Route path="/whatsapp-link-creator" element={<Navigate to="/whatsapp-tools" replace />} />
         <Route path="/merge" element={<PdfMerger />} />
         <Route path="/split" element={<PdfSplitter />} />
         <Route path="/protect" element={<PdfProtect />} />
