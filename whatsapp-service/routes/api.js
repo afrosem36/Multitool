@@ -1,8 +1,37 @@
 // Thin proxy layer — all data operations are forwarded to the Cloudflare Worker.
 // Session management (QR, connect/disconnect) is handled locally.
+// Notes, tickets, and follow-ups are stored locally in ./data/*.json (Worker doesn't have these endpoints).
 
 const express = require('express');
 const router  = express.Router();
+const fs      = require('fs');
+const path    = require('path');
+const crypto  = require('crypto');
+
+// ── Local JSON file helpers ────────────────────────────────────────────────────
+const DATA_DIR = path.join(__dirname, '..', 'data');
+
+function readJson(file) {
+  const fp = path.join(DATA_DIR, file);
+  try {
+    return JSON.parse(fs.readFileSync(fp, 'utf8'));
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeJson(file, data) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2), 'utf8');
+}
+
+function normalizeWaChatId(chatId) {
+  // WhatsApp Web.js linked-device format uses @lid — try falling back to @s.whatsapp.net
+  if (chatId && chatId.endsWith('@lid')) {
+    return chatId.replace('@lid', '@s.whatsapp.net');
+  }
+  return chatId;
+}
 
 const WORKER_URL = () => `${process.env.WA_WORKER_URL || 'http://localhost:8787'}/api/wa`;
 const WA_SECRET  = () => process.env.WA_SHARED_SECRET || 'dev-local-secret';
@@ -76,9 +105,24 @@ router.get('/chats', handle(req => proxyGet('/chats', withSession(req))));
 
 router.get('/chats/:chatId/messages', async (req, res) => {
   try {
-    const chatId = req.params.chatId;
+    const chatId = req.params.chatId; // Express auto-decodes, e.g. '271695789179010@lid'
     if (req.query.hydrate === '1') {
-      await req.app.get('waService').hydrateChatMessages(chatId, req.query.limit || 50);
+      const waService = req.app.get('waService');
+      // Try original ID first; if it fails (e.g. @lid format), retry with @s.whatsapp.net
+      try {
+        await waService.hydrateChatMessages(chatId, req.query.limit || 50);
+      } catch (hydrateErr) {
+        const normalized = normalizeWaChatId(chatId);
+        if (normalized !== chatId) {
+          try {
+            await waService.hydrateChatMessages(normalized, req.query.limit || 50);
+          } catch (_) {
+            console.warn(`[api] hydrate failed for ${chatId} and ${normalized}: ${hydrateErr.message}`);
+          }
+        } else {
+          console.warn(`[api] hydrate failed for ${chatId}: ${hydrateErr.message}`);
+        }
+      }
     }
     const query = { ...req.query };
     delete query.hydrate;
@@ -132,14 +176,61 @@ router.post('/leads',       handle(req => proxyMutate('POST',   '/leads',       
 router.patch('/leads/:id',  handle(req => proxyMutate('PATCH',  `/leads/${req.params.id}`, { ...req.body, sessionId: withSession(req).sessionId })));
 router.delete('/leads/:id', handle(req => proxyMutate('DELETE', `/leads/${req.params.id}?${new URLSearchParams(withSession(req))}`)));
 
-// Ticket status + internal notes
-router.patch('/chats/:chatId/ticket', handle(req =>
-  proxyMutate('PATCH', `/chats/${encodeURIComponent(req.params.chatId)}/ticket`, { ...req.body, sessionId: withSession(req).sessionId })
-));
-router.get('/notes/:chatId',  handle(req => proxyGet(`/notes/${encodeURIComponent(req.params.chatId)}`, withSession(req))));
-router.post('/notes/:chatId', handle(req =>
-  proxyMutate('POST', `/notes/${encodeURIComponent(req.params.chatId)}`, { ...req.body, sessionId: withSession(req).sessionId })
-));
+// ── Ticket status (local JSON file, Worker doesn't have this endpoint) ────────
+router.patch('/chats/:chatId/ticket', (req, res) => {
+  try {
+    const chatId  = req.params.chatId;
+    const tickets = readJson('tickets.json');
+    tickets[chatId] = { ...(tickets[chatId] || {}), ...req.body, updatedAt: new Date().toISOString() };
+    writeJson('tickets.json', tickets);
+    res.json(tickets[chatId]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Follow-up dates (local JSON file) ─────────────────────────────────────────
+router.patch('/chats/:chatId/followup', (req, res) => {
+  try {
+    const chatId   = req.params.chatId;
+    const followups = readJson('followups.json');
+    followups[chatId] = { ...(followups[chatId] || {}), ...req.body, updatedAt: new Date().toISOString() };
+    writeJson('followups.json', followups);
+    res.json(followups[chatId]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Internal notes (local JSON file, Worker doesn't have this endpoint) ───────
+router.get('/notes/:chatId', (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const notes  = readJson('notes.json');
+    res.json(notes[chatId] || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/notes/:chatId', (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const notes  = readJson('notes.json');
+    const note   = {
+      _id:       crypto.randomUUID(),
+      chatId,
+      body:      req.body?.body || '',
+      agent:     req.body?.agent || 'Agent',
+      createdAt: new Date().toISOString(),
+    };
+    notes[chatId] = [...(notes[chatId] || []), note];
+    writeJson('notes.json', notes);
+    res.status(201).json(note);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.get('/analytics',        handle(req => proxyGet('/analytics',       withSession(req))));
 router.get('/qa/queue',         handle(req => proxyGet('/qa/queue',        withSession(req))));

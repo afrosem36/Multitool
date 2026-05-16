@@ -73,6 +73,27 @@ const PIPELINE_STAGES = [
   { id:'improving',    label:'Improving',     icon:Sparkles },
 ];
 
+// ─── Rule-based QA patterns (Phase 6 — deterministic, no AI) ────────────────
+const QA_RULE_CHECKS = [
+  { id:'greeting',   label:'Greeting',              category:'Opening',    maxScore:10, patterns:[/thank you for (calling|contacting|reaching)/i,/good (morning|afternoon|evening)/i,/how (may|can) (i|we) (help|assist)/i,/my name is\s+\w+/i] },
+  { id:'recording',  label:'Recording Disclosure',  category:'Compliance', maxScore:15, patterns:[/recorded|recording/i,/for quality (purposes|assurance|monitoring)/i,/call may be (recorded|monitored)/i,/on a recorded line/i] },
+  { id:'identity',   label:'Identity Verification', category:'Compliance', maxScore:15, patterns:[/verify|verification/i,/account holder/i,/authorized (to make|person)/i,/may i (speak|know) (who|your name)/i,/confirm (your|the) (name|account|identity)/i] },
+  { id:'empathy',    label:'Empathy Statement',     category:'Soft Skills',maxScore:10, patterns:[/i (understand|can imagine|can see|see that)/i,/i('m| am) (sorry|sincerely sorry)/i,/i (apologize)/i,/that must be (frustrating|difficult)/i] },
+  { id:'hold',       label:'Hold Permission',        category:'Process',    maxScore: 5, patterns:[/can i (put|place) you on hold/i,/may i (put|place) you on hold/i,/would you mind holding/i,/one moment (please|while)/i] },
+  { id:'closing',    label:'Proper Closing',         category:'Closing',    maxScore:10, patterns:[/anything else (i|we) can (help|assist)/i,/is there anything else/i,/thank you for (calling|your time|being)/i,/have a (great|good|wonderful|nice) (day|evening)/i] },
+];
+
+const NEGATIVE_QA_CHECKS = [
+  { id:'abusive',   label:'Abusive Language',    patterns:[/\b(idiot|stupid|shut up|moron|hell with)\b/i], penalty:25 },
+  { id:'dead_air',  label:'Dead Air Markers',     patterns:[/\[blank_audio\]|\[silence\]|\[no audio\]/i],   penalty:10 },
+];
+
+// ─── NLP word lists (Phase 7 — lightweight, no model needed) ────────────────
+const STOP_WORDS = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','by','from','is','are','was','were','be','been','have','has','had','do','does','did','will','would','could','should','may','might','i','you','he','she','it','we','they','me','him','her','us','them','my','your','his','its','our','their','this','that','these','those','what','which','who','when','where','how','not','no','yes','ok','okay','so','just','very','also','then','than','now','even','only','can','get','got','go','well','said','tell','ask','know','one','two','three','four','five','six','seven','eight','nine','ten']);
+
+const POSITIVE_WORDS = new Set(['great','good','excellent','wonderful','happy','pleased','helpful','perfect','thank','appreciate','love','enjoy','satisfied','resolved','absolutely','outstanding','fantastic','amazing','sure','definitely','certainly','glad','delighted']);
+const NEGATIVE_WORDS = new Set(['bad','terrible','awful','horrible','frustrated','angry','upset','disappointed','unacceptable','wrong','problem','issue','complaint','never','hate','worst','useless','ridiculous','absurd','impossible','waste','confusing','unclear','unhappy','dissatisfied','escalate','manager','supervisor','cancel','refund']);
+
 // ─── Audio utilities ──────────────────────────────────────────────────────────
 function audioBufferToWavBlob(buffer) {
   const samples  = buffer.getChannelData(0);
@@ -187,27 +208,61 @@ async function apiFetchWithRetry(apiFetch, url, options = {}, attempts = RETRY_A
   }
 }
 
+function parseDiarizationBlocks(raw) {
+  const clean = raw.replace(/```json|```/gi, '').trim();
+  const parsed = JSON.parse(clean);
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Empty');
+  return parsed.filter(b => typeof b.speaker === 'string' && typeof b.text === 'string' && b.text.trim());
+}
+
 async function runDiarizationEngine(rawTranscript, apiFetch) {
-  const escaped = rawTranscript.replace(/"/g, "'");
-  const prompt = `You are an expert speaker diarization engine. Split the transcript into speaker turns.
+  const wordCount = rawTranscript.split(/\s+/).length;
+  // Truncate for Groq to prevent 413 — use first 600 words as speaker pattern sample
+  const GROQ_MAX_WORDS = 600;
+  const groqInput  = wordCount > GROQ_MAX_WORDS
+    ? rawTranscript.split(/\s+/).slice(0, GROQ_MAX_WORDS).join(' ')
+    : rawTranscript;
+  const escaped    = groqInput.replace(/"/g, "'");
+  const promptText = `You are an expert speaker diarization engine. Split the transcript into speaker turns.
 RULES: Label speakers as "Speaker 1", "Speaker 2", etc. Do NOT change any wording.
 Return ONLY valid JSON: [{"speaker":"Speaker 1","text":"..."},{"speaker":"Speaker 2","text":"..."}]
 If one speaker: [{"speaker":"Speaker 1","text":"${escaped}"}]
-TRANSCRIPT: ${rawTranscript}`;
-  try {
-    const res  = await apiFetch('/api/groq/chat', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model:GROQ_DIARIZE_MODEL, messages:[{role:'user',content:prompt}], temperature:0.1, max_tokens:4096 }),
-    });
-    const data = await parseJsonResponse(res);
-    const raw  = data?.choices?.[0]?.message?.content || data?.data?.content || data?.content || '';
-    const clean = raw.replace(/```json|```/gi,'').trim();
-    const parsed = JSON.parse(clean);
-    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Empty');
-    return parsed.filter(b => typeof b.speaker === 'string' && typeof b.text === 'string' && b.text.trim());
-  } catch {
-    return [{ speaker:'Speaker 1', text:rawTranscript }];
+TRANSCRIPT: ${groqInput}`;
+
+  // 1. Try Groq (fast, cheap) — only for transcripts under limit
+  if (wordCount <= GROQ_MAX_WORDS * 1.5) {
+    try {
+      const res  = await apiFetch('/api/groq/chat', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:GROQ_DIARIZE_MODEL, messages:[{role:'user',content:promptText}], temperature:0.1, max_tokens:4096 }),
+      });
+      const data = await parseJsonResponse(res);
+      const raw  = data?.choices?.[0]?.message?.content || data?.data?.content || data?.content || '';
+      return parseDiarizationBlocks(raw);
+    } catch {
+      // fall through to Gemini → OpenAI
+    }
   }
+
+  // 2. Fallback: Gemini → OpenAI via /api/ai/generate
+  try {
+    const messages = [
+      { role: 'system', content: 'You are a speaker diarization engine. Return ONLY valid JSON array, no extra text.' },
+      { role: 'user',   content: promptText },
+    ];
+    const res = await apiFetch('/api/ai/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.text?.trim()) return parseDiarizationBlocks(data.text);
+    }
+  } catch {
+    // fall through to single-speaker
+  }
+
+  return [{ speaker:'Speaker 1', text:rawTranscript }];
 }
 
 function blocksToPlainText(blocks) {
@@ -239,6 +294,150 @@ function runTextEngine(raw, opts = {}) {
     }).join('\n\n');
   }
   return cleanBlock(raw, opts);
+}
+
+// ─── Timestamp helpers ────────────────────────────────────────────────────────
+function fmtSec(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function parseSpeakerBlocks(text) {
+  if (!text) return [];
+  const hasSpeakers = /^\[Speaker \d+\]:/m.test(text);
+  if (!hasSpeakers) return [{ speaker: null, text: text.trim() }];
+  return text.split(/\n{2,}/).filter(b => b.trim()).map(block => {
+    const m = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
+    return m ? { speaker: m[1], text: m[2].trim() } : { speaker: null, text: block.trim() };
+  });
+}
+
+function estimateTimestamps(blocks, totalDurMin) {
+  if (!totalDurMin || totalDurMin <= 0) return blocks.map(b => ({ ...b, startSec: null, endSec: null }));
+  const totalWords = blocks.reduce((s, b) => s + b.text.split(/\s+/).filter(Boolean).length, 0);
+  const totalSec   = totalDurMin * 60;
+  let elapsed = 0;
+  return blocks.map(block => {
+    const words    = block.text.split(/\s+/).filter(Boolean).length;
+    const fraction = totalWords > 0 ? words / totalWords : 0;
+    const dur      = fraction * totalSec;
+    const start    = elapsed;
+    elapsed += dur;
+    return { ...block, startSec: Math.round(start), endSec: Math.round(elapsed) };
+  });
+}
+
+// ─── Local improvement engine (no AI, no credits) ────────────────────────────
+function improveBlock(text) {
+  if (!text) return '';
+  let t = text
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\[BLANK_AUDIO\]/gi, '').replace(/\[MUSIC\]/gi, '').replace(/\[NOISE\]/gi, '')
+    .replace(/\s([.,!?;:])/g, '$1')
+    .replace(/([.,!?;:])(?=[^\s\d"'])/g, '$1 ')
+    .replace(FILLER_WORDS, '')
+    .replace(/\s{2,}/g, ' ')
+    // Remove Whisper phrase duplications
+    .replace(/(\b(?:\w+\s+){1,4}\w+)\s+\1/gi, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/(\.\s*){4,}/g, '...')
+    .replace(/(^|[.!?]\s+)([a-z])/g, (_, pre, ch) => pre + ch.toUpperCase())
+    .trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+}
+
+function runImproveEngine(raw) {
+  if (!raw) return '';
+  const hasSpeakers = /^\[Speaker \d+\]:/m.test(raw);
+  if (hasSpeakers) {
+    return raw.split(/\n{2,}/).map(block => {
+      const m = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
+      if (!m) return block.trim();
+      const improved = improveBlock(m[2]);
+      return improved ? `[${m[1]}]: ${improved}` : '';
+    }).filter(Boolean).join('\n\n');
+  }
+  return improveBlock(raw);
+}
+
+// ─── Phase 6: Rule-based QA scorer (deterministic, zero AI cost) ─────────────
+function runRuleBasedQA(transcript, blocks) {
+  const checks = [];
+  let totalMax = 0, totalScore = 0;
+  for (const rule of QA_RULE_CHECKS) {
+    const passed = rule.patterns.some(p => p.test(transcript));
+    const score  = passed ? rule.maxScore : 0;
+    totalMax  += rule.maxScore;
+    totalScore += score;
+    checks.push({ ...rule, passed, score });
+  }
+  const penalties = [];
+  for (const neg of NEGATIVE_QA_CHECKS) {
+    if (neg.patterns.some(p => p.test(transcript))) {
+      penalties.push({ label: neg.label, penalty: neg.penalty });
+      totalScore = Math.max(0, totalScore - neg.penalty);
+    }
+  }
+  const shortTurns = blocks.filter(b => b.speaker && b.text.split(/\s+/).length < 4).length;
+  if (shortTurns >= 6) {
+    penalties.push({ label: `Possible interruptions (${shortTurns} very short turns)`, penalty: 5 });
+    totalScore = Math.max(0, totalScore - 5);
+  }
+  const pct = totalMax > 0 ? Math.round((Math.min(totalScore, totalMax) / totalMax) * 100) : 0;
+  return { checks, penalties, score: Math.min(totalScore, totalMax), maxScore: totalMax, pct,
+    grade: pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : pct >= 50 ? 'Average' : 'Below Average' };
+}
+
+// ─── Phase 7: Lightweight NLP (no model, no API) ─────────────────────────────
+function extractKeywords(text, topN = 12) {
+  const plain = text.replace(/^\[Speaker \d+\]:\s*/gm, '').toLowerCase();
+  const words  = plain.match(/\b[a-z]{4,}\b/g) || [];
+  const freq   = {};
+  for (const w of words) { if (!STOP_WORDS.has(w)) freq[w] = (freq[w] || 0) + 1; }
+  return Object.entries(freq).sort((a,b) => b[1]-a[1]).slice(0, topN).map(([word, count]) => ({ word, count }));
+}
+
+function detectSentiment(text) {
+  const words = text.toLowerCase().match(/\b\w+\b/g) || [];
+  let pos = 0, neg = 0;
+  for (const w of words) {
+    if (POSITIVE_WORDS.has(w)) pos++;
+    if (NEGATIVE_WORDS.has(w)) neg++;
+  }
+  const total = pos + neg;
+  if (total === 0) return { label:'Neutral', score:0.5, pos:0, neg:0 };
+  const score = pos / total;
+  return { label: score > 0.6 ? 'Positive' : score < 0.4 ? 'Negative' : 'Neutral', score, pos, neg };
+}
+
+function computeSpeakerStats(blocks, durMin) {
+  const map = {};
+  for (const b of blocks) {
+    if (!b.speaker) continue;
+    if (!map[b.speaker]) map[b.speaker] = { words:0, turns:0 };
+    map[b.speaker].words += b.text.split(/\s+/).filter(Boolean).length;
+    map[b.speaker].turns += 1;
+  }
+  const totalWords = Object.values(map).reduce((s,v) => s+v.words, 0);
+  return Object.entries(map).map(([name, data]) => ({
+    name,
+    words: data.words,
+    turns: data.turns,
+    pct:   totalWords > 0 ? Math.round((data.words / totalWords) * 100) : 0,
+    estDurMin: durMin > 0 ? Math.round((data.words / Math.max(totalWords,1)) * durMin * 10) / 10 : null,
+  }));
+}
+
+function buildAnalytics(transcript, durMin) {
+  if (!transcript) return null;
+  const blocks      = parseSpeakerBlocks(transcript);
+  const keywords    = extractKeywords(transcript);
+  const sentiment   = detectSentiment(transcript);
+  const speakerStats = computeSpeakerStats(blocks, durMin);
+  const ruleQA      = runRuleBasedQA(transcript, blocks);
+  return { keywords, sentiment, speakerStats, ruleQA };
 }
 
 function computeStats(text) {
@@ -292,7 +491,7 @@ RULES:
 }
 
 // ─── SpeakerBlocks renderer ───────────────────────────────────────────────────
-const SpeakerBlocks = memo(({ text }) => {
+const SpeakerBlocks = memo(({ text, durMin }) => {
   if (!text) {
     return (
       <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
@@ -308,34 +507,41 @@ const SpeakerBlocks = memo(({ text }) => {
     return <pre style={{ whiteSpace:'pre-wrap', lineHeight:1.8, margin:0, fontSize:'0.92rem', color:'var(--text-primary)' }}>{text}</pre>;
   }
 
-  const colorMap = {};
-  let nextSlot = 0;
+  const rawBlocks = parseSpeakerBlocks(text);
+  const blocks    = durMin > 0 ? estimateTimestamps(rawBlocks, durMin) : rawBlocks.map(b => ({ ...b, startSec: null, endSec: null }));
+  const colorMap  = {};
+  let nextSlot    = 0;
 
   return (
     <div>
-      {text.split(/\n{2,}/).filter(b=>b.trim()).map((block, idx) => {
-        const match = block.match(/^\[(.+?)\]:\s*([\s\S]*)$/);
-        if (!match) return <p key={idx} style={{ margin:'0 0 0.5rem', whiteSpace:'pre-wrap' }}>{block}</p>;
+      {blocks.map((block, idx) => {
+        if (!block.speaker) return <p key={idx} style={{ margin:'0 0 0.5rem', whiteSpace:'pre-wrap' }}>{block.text}</p>;
 
-        const speaker = match[1];
-        const content = match[2].trim();
-
-        if (colorMap[speaker] === undefined) {
-          colorMap[speaker] = nextSlot % SPEAKER_COLORS.length;
+        if (colorMap[block.speaker] === undefined) {
+          colorMap[block.speaker] = nextSlot % SPEAKER_COLORS.length;
           nextSlot++;
         }
-        const c = SPEAKER_COLORS[colorMap[speaker]];
+        const c = SPEAKER_COLORS[colorMap[block.speaker]];
 
         return (
           <div key={idx} style={{ background:c.bg, border:`1px solid ${c.border}`,
             borderRadius:12, padding:'0.85rem 1rem', marginBottom:'0.75rem' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem' }}>
-              <UserCircle2 size={13} color={c.badge} />
-              <span style={{ fontSize:'0.7rem', fontWeight:700, color:c.badge,
-                letterSpacing:'0.06em', textTransform:'uppercase' }}>{speaker}</span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <UserCircle2 size={13} color={c.badge} />
+                <span style={{ fontSize:'0.7rem', fontWeight:700, color:c.badge,
+                  letterSpacing:'0.06em', textTransform:'uppercase' }}>{block.speaker}</span>
+              </div>
+              {block.startSec != null && (
+                <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)', fontFamily:'monospace',
+                  letterSpacing:'0.03em', background:'rgba(255,255,255,0.05)',
+                  padding:'1px 6px', borderRadius:4 }}>
+                  {fmtSec(block.startSec)} – {fmtSec(block.endSec)}
+                </span>
+              )}
             </div>
             <p style={{ margin:0, lineHeight:1.8, color:'var(--text-primary)', whiteSpace:'pre-wrap', fontSize:'0.92rem' }}>
-              {content}
+              {block.text}
             </p>
           </div>
         );
@@ -656,6 +862,176 @@ const CreditsBar = memo(({ credits, onRefresh }) => {
   );
 });
 
+// ─── Insights Panel (local analytics, zero AI cost) ──────────────────────────
+const InsightsPanel = memo(({ analytics }) => {
+  if (!analytics) return null;
+  const { keywords, sentiment, speakerStats, ruleQA } = analytics;
+  const sentColor  = sentiment.label === 'Positive' ? '#34d399' : sentiment.label === 'Negative' ? '#f87171' : '#94a3b8';
+  const gradeColor = { Excellent:'#34d399', Good:'#60a5fa', Average:'#fbbf24', 'Below Average':'#f87171' }[ruleQA.grade] || '#9ca3af';
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+
+      {/* Top row: Sentiment + QA Pre-Score */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem' }}>
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:'1.25rem' }}>
+          <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'0.75rem' }}>Conversation Sentiment</div>
+          <div style={{ fontSize:'1.8rem', fontWeight:700, color:sentColor, marginBottom:'0.2rem' }}>{sentiment.label}</div>
+          <div style={{ display:'flex', gap:'0.75rem', fontSize:'0.75rem', marginBottom:'0.7rem' }}>
+            <span style={{ color:'#34d399' }}>+{sentiment.pos} positive signals</span>
+            <span style={{ color:'#f87171' }}>-{sentiment.neg} negative</span>
+          </div>
+          <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:5, overflow:'hidden' }}>
+            <div style={{ width:`${Math.round(sentiment.score*100)}%`, height:'100%', background:sentColor, borderRadius:4 }} />
+          </div>
+        </div>
+
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:'1.25rem' }}>
+          <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'0.75rem' }}>
+            QA Pre-Score &nbsp;<span style={{ color:'#34d399', fontWeight:500, fontSize:'0.65rem', textTransform:'none' }}>Rule-Based · Free · No Credits</span>
+          </div>
+          <div style={{ fontSize:'1.8rem', fontWeight:700, color:gradeColor, lineHeight:1 }}>
+            {ruleQA.score}<span style={{ fontSize:'1rem', color:'var(--text-secondary)', fontWeight:400 }}>/{ruleQA.maxScore}</span>
+          </div>
+          <div style={{ fontSize:'0.8rem', color:gradeColor, margin:'0.2rem 0 0.7rem' }}>{ruleQA.grade} · {ruleQA.pct}%</div>
+          <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:5, overflow:'hidden' }}>
+            <div style={{ width:`${ruleQA.pct}%`, height:'100%', background:gradeColor, borderRadius:4 }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Speaker Breakdown */}
+      {speakerStats.length > 0 && (
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:'1.25rem' }}>
+          <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'0.9rem' }}>Speaker Breakdown</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.7rem' }}>
+            {speakerStats.map((sp, i) => {
+              const c = SPEAKER_COLORS[i % SPEAKER_COLORS.length];
+              return (
+                <div key={sp.name}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.3rem' }}>
+                    <span style={{ fontSize:'0.82rem', fontWeight:600, color:c.badge }}>{sp.name}</span>
+                    <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>
+                      {sp.words.toLocaleString()} words · {sp.turns} turns · {sp.pct}%
+                      {sp.estDurMin != null && <> · ~{sp.estDurMin}m</>}
+                    </span>
+                  </div>
+                  <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:3, height:5, overflow:'hidden' }}>
+                    <motion.div initial={{ width:0 }} animate={{ width:`${sp.pct}%` }} transition={{ duration:0.6, delay:i*0.1 }}
+                      style={{ height:'100%', background:c.badge, borderRadius:3 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Automated QA Checklist */}
+      <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:'1.25rem' }}>
+        <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'0.9rem' }}>
+          Automated QA Checklist &nbsp;
+          <span style={{ color:'#6366f1', fontWeight:400, fontSize:'0.65rem', textTransform:'none' }}>Phrase detection · Deterministic · No AI required</span>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.45rem' }}>
+          {ruleQA.checks.map(check => (
+            <div key={check.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+              padding:'0.6rem 0.9rem', borderRadius:9,
+              background: check.passed ? 'rgba(52,211,153,0.06)' : 'rgba(248,113,113,0.04)',
+              border: `1px solid ${check.passed ? 'rgba(52,211,153,0.18)' : 'rgba(248,113,113,0.12)'}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <span style={{ fontSize:'0.78rem', fontWeight:700, color: check.passed ? '#34d399' : '#f87171', minWidth:12 }}>
+                  {check.passed ? '✓' : '✗'}
+                </span>
+                <span style={{ fontSize:'0.82rem', color:'var(--text-primary)' }}>{check.label}</span>
+                <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)', padding:'1px 6px', borderRadius:4, background:'rgba(255,255,255,0.05)' }}>{check.category}</span>
+              </div>
+              <span style={{ fontSize:'0.78rem', fontWeight:700, color: check.passed ? '#34d399' : 'var(--text-secondary)', minWidth:32, textAlign:'right' }}>
+                {check.score}/{check.maxScore}
+              </span>
+            </div>
+          ))}
+          {ruleQA.penalties.map((pen, i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+              padding:'0.6rem 0.9rem', borderRadius:9,
+              background:'rgba(239,68,68,0.05)', border:'1px solid rgba(239,68,68,0.18)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <span style={{ fontSize:'0.78rem', color:'#f87171' }}>⚠</span>
+                <span style={{ fontSize:'0.82rem', color:'var(--text-primary)' }}>{pen.label}</span>
+              </div>
+              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f87171' }}>-{pen.penalty}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Keywords */}
+      {keywords.length > 0 && (
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:'1.25rem' }}>
+          <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'0.9rem' }}>
+            Key Topics &amp; Entities
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'0.45rem' }}>
+            {keywords.map(({ word, count }) => (
+              <span key={word} style={{ padding:'0.3rem 0.75rem', borderRadius:999,
+                background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.22)',
+                fontSize:'0.78rem', color:'#a5b4fc', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+                {word}
+                <span style={{ fontSize:'0.65rem', color:'rgba(165,180,252,0.5)', fontWeight:600 }}>×{count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─── Animated Audio Wave Icon ─────────────────────────────────────────────────
+const BAR_CONFIGS = [
+  { delay: 0,    minH: 5,  maxH: 18, dur: 0.85 },
+  { delay: 0.18, minH: 9,  maxH: 28, dur: 0.95 },
+  { delay: 0.08, minH: 7,  maxH: 22, dur: 0.78 },
+  { delay: 0.28, minH: 10, maxH: 30, dur: 1.0  },
+  { delay: 0.14, minH: 6,  maxH: 20, dur: 0.88 },
+];
+
+const AnimatedAudioWave = ({ size = 48, className }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" className={className} style={{ display:'block', overflow:'visible' }}>
+    <defs>
+      <linearGradient id="audioWaveGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%"   stopColor="#6366f1" />
+        <stop offset="100%" stopColor="#a78bfa" />
+      </linearGradient>
+      <filter id="audioWaveGlow">
+        <feGaussianBlur stdDeviation="0.6" result="blur" />
+        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter>
+    </defs>
+    {BAR_CONFIGS.map((bar, i) => (
+      <motion.rect
+        key={i}
+        x={1.2 + i * 4.4}
+        width={3}
+        rx={1.5}
+        fill="url(#audioWaveGrad)"
+        filter="url(#audioWaveGlow)"
+        animate={{
+          height: [bar.minH, bar.maxH, bar.minH],
+          y:      [(24 - bar.minH) / 2, (24 - bar.maxH) / 2, (24 - bar.minH) / 2],
+          opacity:[0.7, 1, 0.7],
+        }}
+        transition={{
+          duration: bar.dur,
+          repeat:   Infinity,
+          delay:    bar.delay,
+          ease:     'easeInOut',
+        }}
+      />
+    ))}
+  </svg>
+);
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AudioTranscription() {
   const { user, apiFetch } = useAuth();
@@ -706,6 +1082,9 @@ export default function AudioTranscription() {
 
   // Credits state
   const [credits, setCredits] = useState(null); // { creditsUsed, creditsRemaining, creditsTotal }
+
+  // Local analytics (computed from transcript, zero AI cost)
+  const analytics = useMemo(() => buildAnalytics(transcript, audioDurMin), [transcript, audioDurMin]);
 
   const fetchCredits = useCallback(async () => {
     if (!user) return;
@@ -880,20 +1259,12 @@ export default function AudioTranscription() {
         setPipelineProgress(92);
       }
 
-      // STEP 5 — Auto-improve transcript
+      // STEP 5 — Improve transcript locally (no AI, no credits)
       if (!abortRef.current) {
         setPipelineStage('improving');
-        setProviderNote('Improving transcript…');
+        setProviderNote('Local engine');
         setPipelineProgress(94);
-        try {
-          const improved = await callAI(
-            buildImproveTextPrompt(cleaned),
-            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
-          );
-          setImprovedTranscript(improved);
-        } catch {
-          setImprovedTranscript('');
-        }
+        setImprovedTranscript(runImproveEngine(cleaned));
         setPipelineProgress(100);
       }
 
@@ -918,19 +1289,13 @@ export default function AudioTranscription() {
   }, [file, user, mode, speakerRecognition, outputLanguage, qaMode, qaParams, totalQAMarks, apiFetch, audioDurMin, needsTranslation, fetchCredits]);
 
   // ── On-demand improve ──────────────────────────────────────────────────────
-  const handleImproveOriginal = async () => {
+  const handleImproveOriginal = () => {
     if (!transcript || isImprovingOriginal) return;
     setIsImprovingOriginal(true);
-    try {
-      const result = await callAI(
-        buildImproveTextPrompt(transcript),
-        { apiFetch, onProvider: () => {} }
-      );
-      setImprovedTranscript(result);
-      setActiveTab('improved');
-      toast.success('Transcript improved');
-    } catch { toast.error('Improvement failed'); }
-    finally { setIsImprovingOriginal(false); }
+    setImprovedTranscript(runImproveEngine(transcript));
+    setActiveTab('improved');
+    toast.success('Transcript cleaned');
+    setIsImprovingOriginal(false);
   };
 
   const handleImproveTranslation = async () => {
@@ -942,8 +1307,12 @@ export default function AudioTranscription() {
         { apiFetch, onProvider: () => {} }
       );
       setTranslatedTranscript(result);
-      toast.success('Translation improved');
-    } catch { toast.error('Improvement failed'); }
+      toast.success('Translation polished');
+    } catch {
+      // Local fallback — AI polish failed
+      setTranslatedTranscript(runImproveEngine(translatedTranscript));
+      toast.success('Translation cleaned locally');
+    }
     finally { setIsImprovingTranslation(false); }
   };
 
@@ -982,11 +1351,12 @@ export default function AudioTranscription() {
 
   // ── Tabs config ────────────────────────────────────────────────────────────
   const tabs = useMemo(() => [
-    { id:'original',    label:'Original',    show:true,             hasContent:!!transcript },
+    { id:'original',    label:'Original',    show:true,             hasContent:!!rawTranscript },
     { id:'improved',    label:'Improved',    show:true,             hasContent:!!improvedTranscript },
+    { id:'analytics',   label:'Analytics',   show:true,             hasContent:!!analytics },
     { id:'translation', label:'Translation', show:needsTranslation, hasContent:!!translatedTranscript },
     { id:'qa',          label:'QA Analysis', show:qaMode,           hasContent:!!qaReport },
-  ].filter(t => t.show), [transcript, improvedTranscript, translatedTranscript, qaReport, needsTranslation, qaMode]);
+  ].filter(t => t.show), [rawTranscript, improvedTranscript, analytics, translatedTranscript, qaReport, needsTranslation, qaMode]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -994,7 +1364,7 @@ export default function AudioTranscription() {
       <ToolHeader
         title="AI Transcription"
         description="Professional audio transcription with AI pipeline — speaker recognition, translation, and QA analysis"
-        icon={AudioLines}
+        icon={AnimatedAudioWave}
       />
 
       <div style={{ maxWidth:1100, margin:'0 auto', padding:'2rem 1rem', display:'flex', flexDirection:'column', gap:'1.5rem' }}>
@@ -1274,62 +1644,45 @@ export default function AudioTranscription() {
               {/* Tab content */}
               <div style={{ padding:'1.5rem' }}>
 
-                {/* Original tab */}
+                {/* Original tab — raw Whisper output, no formatting */}
                 {activeTab === 'original' && (
                   <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
-                    {/* Stats row */}
-                    {transcriptStats && (
-                      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
-                        <StatBadge label="Words"    value={transcriptStats.wordCount.toLocaleString()} />
-                        <StatBadge label="Sentences" value={transcriptStats.sentenceCount} />
-                        <StatBadge label="Read Time" value={`${transcriptStats.estimatedReadMin}m`} color="#34d399" />
-                        <StatBadge label="Readability" value={transcriptStats.readabilityLabel} color="#fbbf24" />
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
-                      <button onClick={() => handleCopy(transcript)}
+                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'center' }}>
+                      <span style={{ fontSize:'0.72rem', color:'var(--text-secondary)', padding:'2px 8px',
+                        borderRadius:4, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)' }}>
+                        Raw Whisper Output
+                      </span>
+                      <div style={{ flex:1 }} />
+                      <button onClick={() => handleCopy(rawTranscript)}
                         style={{ padding:'0.5rem 0.9rem', background:'rgba(255,255,255,0.06)',
                           border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, cursor:'pointer',
                           fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
                           color:'var(--text-primary)' }}>
                         <Copy size={13} /> Copy
                       </button>
-                      <button onClick={handleImproveOriginal} disabled={isImprovingOriginal}
-                        style={{ padding:'0.5rem 0.9rem', background:'rgba(99,102,241,0.1)',
-                          border:'1px solid rgba(99,102,241,0.25)', borderRadius:9, cursor:'pointer',
-                          fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
-                          color:'#818cf8' }}>
-                        {isImprovingOriginal ? <Loader size={13} /> : <Sparkles size={13} />}
-                        {isImprovingOriginal ? 'Improving…' : 'Improve'}
+                      <button onClick={() => downloadFile(rawTranscript, `${(file?.name||'transcript').replace(/\.[^.]+$/,'')}-raw.txt`, 'text/plain')}
+                        style={{ padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.04)',
+                          border:'1px solid rgba(255,255,255,0.08)', borderRadius:9, cursor:'pointer',
+                          fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.35rem',
+                          color:'var(--text-secondary)' }}>
+                        <Download size={12} /> .txt
                       </button>
-                      {qaMode && (
-                        <button onClick={handleRunQA} disabled={isRunningQA}
-                          style={{ padding:'0.5rem 0.9rem', background:'rgba(167,139,250,0.1)',
-                            border:'1px solid rgba(167,139,250,0.25)', borderRadius:9, cursor:'pointer',
-                            fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.4rem',
-                            color:'#a78bfa' }}>
-                          {isRunningQA ? <Loader size={13} /> : <BarChart3 size={13} />}
-                          {isRunningQA ? 'Analyzing…' : 'Run QA'}
-                        </button>
-                      )}
-                      {['txt','srt','json'].map(fmt => (
-                        <button key={fmt} onClick={() => handleExport(transcript, fmt, 'original')}
-                          style={{ padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.04)',
-                            border:'1px solid rgba(255,255,255,0.08)', borderRadius:9, cursor:'pointer',
-                            fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.35rem',
-                            color:'var(--text-secondary)' }}>
-                          <Download size={12} /> .{fmt}
-                        </button>
-                      ))}
                     </div>
-
-                    {/* Transcript content */}
                     <div style={{ background:'rgba(255,255,255,0.02)', borderRadius:12,
                       border:'1px solid rgba(255,255,255,0.06)', padding:'1.25rem',
                       maxHeight:480, overflowY:'auto' }}>
-                      <SpeakerBlocks text={transcript} />
+                      {rawTranscript ? (
+                        <pre style={{ whiteSpace:'pre-wrap', lineHeight:1.8, margin:0, fontSize:'0.9rem',
+                          color:'var(--text-primary)', fontFamily:"'Inter', system-ui, sans-serif" }}>
+                          {rawTranscript}
+                        </pre>
+                      ) : (
+                        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                          minHeight:160, gap:'0.75rem', color:'var(--text-secondary)', textAlign:'center' }}>
+                          <FileAudio size={32} style={{ opacity:0.2 }} />
+                          <span style={{ fontSize:'0.9rem', opacity:0.6 }}>Transcript will appear here after processing</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1377,7 +1730,7 @@ export default function AudioTranscription() {
                       <div style={{ background:'rgba(255,255,255,0.02)', borderRadius:12,
                         border:'1px solid rgba(255,255,255,0.06)', padding:'1.25rem',
                         maxHeight:480, overflowY:'auto' }}>
-                        <SpeakerBlocks text={improvedTranscript} />
+                        <SpeakerBlocks text={improvedTranscript} durMin={audioDurMin} />
                       </div>
                     ) : (
                       <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-secondary)' }}>
@@ -1389,6 +1742,18 @@ export default function AudioTranscription() {
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* Analytics tab */}
+                {activeTab === 'analytics' && (
+                  analytics ? (
+                    <InsightsPanel analytics={analytics} />
+                  ) : (
+                    <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-secondary)' }}>
+                      <BarChart3 size={32} style={{ opacity:0.2, marginBottom:'0.75rem', display:'block', margin:'0 auto 0.75rem' }} />
+                      <div style={{ fontSize:'0.9rem' }}>Analytics will appear after transcription</div>
+                    </div>
+                  )
                 )}
 
                 {/* Translation tab */}

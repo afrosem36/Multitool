@@ -172,8 +172,6 @@
   }
 
   .main-content {
-    /* 68px bottom nav + safe area for better spacing */
-    padding-bottom: 100px;
     width: 100%;
     min-width: 0;
   }
@@ -185,7 +183,8 @@
   .footer {
     width: 100%;
     margin-top: 1.5rem;
-    margin-bottom: 1rem;
+    /* Clear the 68px fixed bottom nav so the footer isn't hidden behind it */
+    margin-bottom: 72px;
   }
 
   .layout-tool-ad-strip {

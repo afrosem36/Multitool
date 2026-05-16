@@ -2,17 +2,19 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Database, Play, Upload, Trash2, Table, AlertCircle, Clock,
-  BarChart2, TrendingUp, Download, Sparkles, Hash, Calendar,
-  MapPin, DollarSign, Percent, Tag, Info, Eye, History,
-  ChevronLeft, ChevronRight, X, Search, Copy, Check, Code,
-  Zap, Filter, Layers, FileText, RefreshCw, MessageSquare,
+  BarChart2, Download, ChevronLeft, ChevronRight, X, Copy,
+  Check, RefreshCw, History, ExternalLink, Zap, Eye, Hash,
+  Filter, TrendingUp, Search,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, ViewPlugin, WidgetType, Decoration } from '@codemirror/view';
+import {
+  EditorView, keymap, lineNumbers, highlightActiveLine,
+  ViewPlugin, WidgetType, Decoration,
+} from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { sql as sqlLang } from '@codemirror/lang-sql';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -22,181 +24,164 @@ import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import RelatedTools from '../../components/shared/RelatedTools';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
 const CHART_COLORS = ['#6366f1','#8b5cf6','#d946ef','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
-const SQL_KW = [
-  'SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP',
-  'HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','OUTER','FULL',
-  'CROSS','ON','INSERT','INTO','VALUES','UPDATE','SET','DELETE','CREATE','TABLE','DROP',
-  'ALTER','ADD','COLUMN','PRIMARY','KEY','COUNT','SUM','AVG','MIN','MAX','COALESCE',
-  'IFNULL','CASE','WHEN','THEN','ELSE','END','BETWEEN','EXISTS','UNION','ALL','ASC',
-  'DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','SUBSTR','REPLACE','CAST',
-];
+const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM'];
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// ─── sql.js singleton — try npm package, fall back to CDN ─────────────────────
+const CDN_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
+const CDN_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.wasm';
+
+async function _loadEngine() {
+  // Attempt 1 — npm package (handles multiple Vite/esbuild export shapes)
+  try {
+    const mod = await import('sql.js');
+    const candidate = mod.default ?? mod;
+    const fn = typeof candidate === 'function' ? candidate
+             : typeof candidate?.default === 'function' ? candidate.default
+             : null;
+    if (fn) {
+      const engine = await fn({ locateFile: () => '/sql-wasm.wasm' });
+      if (typeof engine?.Database === 'function') return engine; // sanity-check
+    }
+  } catch { /* fall through to CDN */ }
+
+  // Attempt 2 — CDN script tag (bypasses all bundler interop issues)
+  await new Promise((resolve, reject) => {
+    if (typeof window.initSqlJs === 'function') return resolve();
+    const s = document.createElement('script');
+    s.src = CDN_JS;
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error('Could not load SQL engine. Check your internet connection.'));
+    document.head.appendChild(s);
+  });
+  return window.initSqlJs({ locateFile: () => CDN_WASM });
+}
+
+let _enginePromise = null;
+function getSqlEngine() {
+  if (!_enginePromise) {
+    _enginePromise = _loadEngine().catch(err => { _enginePromise = null; throw err; });
+  }
+  return _enginePromise;
+}
+
+async function buildDb(tables) {
+  const SQL = await getSqlEngine();
+  const db = new SQL.Database();
+  for (const t of tables) {
+    db.run(`CREATE TABLE IF NOT EXISTS "${t.name}" (${t.columns.map(c => `"${c}" TEXT`).join(', ')})`);
+    if (t.rows.length > 0) {
+      const ph = t.columns.map(() => '?').join(', ');
+      const stmt = db.prepare(`INSERT INTO "${t.name}" VALUES (${ph})`);
+      for (const row of t.rows) stmt.run(t.columns.map(c => String(row[c] ?? '')));
+      stmt.free();
+    }
+  }
+  return db;
+}
+
+// ─── File parsing ───────────────────────────────────────────────────────────────
 function toTableName(filename) {
   return filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_')
     .replace(/^(\d)/, '_$1').toLowerCase().slice(0, 60) || 'data';
 }
 
-function detectColumnType(colName, values) {
-  const lower = colName.toLowerCase();
-  const sample = values.filter(v => v !== null && v !== undefined && v !== '').slice(0, 100);
+async function parseFile(file) {
+  const buf = await file.arrayBuffer();
+  const wb  = XLSX.read(buf, { type: 'array' });
+  const ws  = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  if (raw.length < 2) throw new Error('File appears empty or has only a header row.');
+  const columns = raw[0].map((c, i) => (String(c || `col${i}`).replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1') || `col${i}`));
+  const rows    = raw.slice(1).map(row => { const o = {}; columns.forEach((col, i) => { o[col] = row[i] ?? ''; }); return o; });
+  return { name: toTableName(file.name), columns, rows };
+}
+
+// ─── Column type detection (for schema display) ─────────────────────────────────
+const TYPE_COLOR = {
+  numeric: '#10b981', currency: '#f59e0b', percentage: '#8b5cf6',
+  date: '#06b6d4', location: '#ec4899', categorical: '#6366f1',
+  id: '#94a3b8',
+};
+const TYPE_LABEL = {
+  numeric: '123', currency: '$', percentage: '%',
+  date: '📅', location: '📍', categorical: '◈', id: '#',
+};
+
+function detectType(col, values) {
+  const lower = col.toLowerCase();
+  const sample = values.filter(v => v !== null && v !== undefined && v !== '').slice(0, 80);
   if (!sample.length) return 'categorical';
-
-  if (/\b(uuid|guid)\b/.test(lower)) return 'id';
-  if (/(?:^|_)(id)$/.test(lower) && new Set(sample.slice(0,20).map(String)).size === Math.min(sample.slice(0,20).length, 20)) return 'id';
-  if (/date|time|year|month|day|created|updated|timestamp|period/.test(lower)) return 'date';
-  if (/price|cost|revenue|salary|income|pay|wage|amount|fee|charge|sales|profit|budget/.test(lower)) return 'currency';
-  if (/rate|percent|ratio|pct|score/.test(lower)) return 'percentage';
-  if (/city|state|country|region|address|zip|postal|location|area|district/.test(lower)) return 'location';
-
-  const strs = sample.map(v => String(v).trim());
-  const numericCount = strs.filter(v => !isNaN(parseFloat(v.replace(/[$,€£%\s]/g, '')))).length;
-  if (numericCount / strs.length > 0.8) return 'numeric';
-
-  const datePattern = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}|^\d{1,2}[-/]\d{1,2}[-/]\d{4}|^\d{4}$/;
-  if (strs.filter(v => datePattern.test(v)).length / strs.length > 0.6) return 'date';
-
+  if (/(?:^|_)(id)$/.test(lower)) return 'id';
+  if (/date|time|year|month|day|created|updated|timestamp/.test(lower)) return 'date';
+  if (/price|cost|revenue|salary|income|amount|sales|profit/.test(lower)) return 'currency';
+  if (/rate|percent|ratio|score/.test(lower)) return 'percentage';
+  if (/city|state|country|region|location/.test(lower)) return 'location';
+  const numCount = sample.map(v => String(v).replace(/[$,€£%\s]/g, '')).filter(v => !isNaN(parseFloat(v))).length;
+  if (numCount / sample.length > 0.8) return 'numeric';
   return 'categorical';
 }
 
-function analyzeDataset(table) {
-  const { columns, rows } = table;
-  const numericColumns = [], categoricalColumns = [], dateColumns = [];
-  const columnStats = {};
-
-  for (const col of columns) {
-    const values = rows.map(r => r[col]);
-    const type = detectColumnType(col, values);
-    const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
-    const nullCount = values.length - nonNull.length;
-    const unique = new Set(nonNull.map(String)).size;
-    columnStats[col] = { type, nullCount, nullPct: Math.round(nullCount / Math.max(values.length, 1) * 100), unique };
-
-    if (['numeric','currency','percentage'].includes(type)) {
-      numericColumns.push(col);
-      const nums = nonNull.map(v => parseFloat(String(v).replace(/[$,€£%\s]/g, ''))).filter(n => !isNaN(n));
-      if (nums.length) {
-        columnStats[col].min = Math.min(...nums);
-        columnStats[col].max = Math.max(...nums);
-        columnStats[col].avg = nums.reduce((a, b) => a + b, 0) / nums.length;
-        columnStats[col].sum = nums.reduce((a, b) => a + b, 0);
-      }
-    } else if (type === 'date') {
-      dateColumns.push(col);
-    } else if (type !== 'id') {
-      categoricalColumns.push(col);
-      const freq = {};
-      nonNull.slice(0, 1000).forEach(v => { const k = String(v); freq[k] = (freq[k] || 0) + 1; });
-      columnStats[col].topCategories = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    }
+function getColumnTypes(table) {
+  const types = {};
+  for (const col of table.columns) {
+    types[col] = detectType(col, table.rows.map(r => r[col]));
   }
-
-  const totalCells = rows.length * columns.length;
-  const totalNull = Object.values(columnStats).reduce((s, c) => s + c.nullCount, 0);
-  return { rowCount: rows.length, columnCount: columns.length, numericColumns, categoricalColumns, dateColumns, columnStats, completeness: totalCells ? Math.round((1 - totalNull / totalCells) * 100) : 100 };
+  return types;
 }
 
-function generateSuggestions(table) {
-  if (!table?.insights) return [];
-  const { name, insights, columns } = table;
-  const { numericColumns: nc = [], categoricalColumns: cc = [], dateColumns: dc = [] } = insights;
-  const tn = `"${name}"`;
-  const suggs = [];
+// ─── Starter query suggestions based on actual table columns ───────────────────
+function buildStarters(table) {
+  if (!table) return [];
+  const tn   = `"${table.name}"`;
+  const cols  = table.columns;
+  const types  = getColumnTypes(table);
 
-  suggs.push({ id: 'preview', title: 'Preview data', desc: 'First 10 rows', sql: `SELECT * FROM ${tn} LIMIT 10;`, Icon: Eye, color: '#6366f1', cat: 'Explore' });
-  suggs.push({ id: 'count', title: 'Row count', desc: 'Total records', sql: `SELECT COUNT(*) as total_rows FROM ${tn};`, Icon: Hash, color: '#8b5cf6', cat: 'Explore' });
+  const numCols = cols.filter(c => ['numeric','currency','percentage'].includes(types[c]));
+  const catCols = cols.filter(c => types[c] === 'categorical');
+  const dateCols = cols.filter(c => types[c] === 'date');
 
-  const nullExpr = columns.slice(0, 5).map(c => `SUM(CASE WHEN "${c}" IS NULL OR "${c}" = '' THEN 1 ELSE 0 END) as ${c.slice(0,18)}_nulls`).join(',\n  ');
-  suggs.push({ id: 'nulls', title: 'Missing values', desc: 'Null count per column', sql: `SELECT\n  ${nullExpr}\nFROM ${tn};`, Icon: Search, color: '#f59e0b', cat: 'Quality' });
+  const starters = [
+    { icon: Eye,       label: 'Preview',       sql: `SELECT *\nFROM ${tn}\nLIMIT 10;` },
+    { icon: Hash,      label: 'Count rows',    sql: `SELECT COUNT(*) AS total_rows\nFROM ${tn};` },
+  ];
 
-  if (nc.length > 0) {
-    const col = nc[0];
-    suggs.push({ id: `stats-${col}`, title: `${col} stats`, desc: 'Min, max, avg, sum', sql: `SELECT\n  ROUND(MIN("${col}"), 2) as min_val,\n  ROUND(MAX("${col}"), 2) as max_val,\n  ROUND(AVG("${col}"), 2) as avg_val,\n  ROUND(SUM("${col}"), 2) as total\nFROM ${tn};`, Icon: TrendingUp, color: '#10b981', cat: 'Analytics' });
-    if (cc.length > 0) {
-      suggs.push({ id: `top-by-${col}`, title: `Top ${cc[0]} by ${col}`, desc: 'Ranked breakdown', sql: `SELECT "${cc[0]}",\n  ROUND(SUM("${col}"), 2) as total_${col.slice(0,12)},\n  COUNT(*) as records\nFROM ${tn}\nGROUP BY "${cc[0]}"\nORDER BY total_${col.slice(0,12)} DESC\nLIMIT 10;`, Icon: BarChart2, color: '#3b82f6', cat: 'Analytics' });
-    }
-  }
+  if (numCols[0]) starters.push({
+    icon: TrendingUp, label: `Stats on ${numCols[0]}`,
+    sql: `SELECT\n  MIN("${numCols[0]}") AS min_val,\n  MAX("${numCols[0]}") AS max_val,\n  ROUND(AVG("${numCols[0]}"), 2) AS avg_val,\n  ROUND(SUM("${numCols[0]}"), 2) AS total\nFROM ${tn};`,
+  });
 
-  if (cc.length > 0) {
-    suggs.push({ id: `dist-${cc[0]}`, title: `${cc[0]} breakdown`, desc: 'Distribution by category', sql: `SELECT "${cc[0]}",\n  COUNT(*) as count,\n  ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM ${tn}), 1) as pct\nFROM ${tn}\nGROUP BY "${cc[0]}"\nORDER BY count DESC\nLIMIT 15;`, Icon: Filter, color: '#ec4899', cat: 'Analytics' });
-    suggs.push({ id: `dup-${cc[0]}`, title: 'Duplicate check', desc: `Repeated ${cc[0]} values`, sql: `SELECT "${cc[0]}",\n  COUNT(*) as occurrences\nFROM ${tn}\nGROUP BY "${cc[0]}"\nHAVING occurrences > 1\nORDER BY occurrences DESC;`, Icon: Layers, color: '#ef4444', cat: 'Quality' });
-  }
+  if (catCols[0]) starters.push({
+    icon: Filter, label: `Group by ${catCols[0]}`,
+    sql: `SELECT "${catCols[0]}",\n  COUNT(*) AS count\nFROM ${tn}\nGROUP BY "${catCols[0]}"\nORDER BY count DESC\nLIMIT 15;`,
+  });
 
-  if (dc.length > 0 && nc.length > 0) {
-    suggs.push({ id: 'monthly', title: 'Monthly trend', desc: `${nc[0]} over time`, sql: `SELECT strftime('%Y-%m', "${dc[0]}") as month,\n  ROUND(SUM("${nc[0]}"), 2) as total,\n  COUNT(*) as records\nFROM ${tn}\nGROUP BY month\nORDER BY month ASC;`, Icon: TrendingUp, color: '#06b6d4', cat: 'Trends' });
-  }
+  if (numCols[0] && catCols[0]) starters.push({
+    icon: BarChart2, label: `Top by ${numCols[0]}`,
+    sql: `SELECT "${catCols[0]}",\n  ROUND(SUM("${numCols[0]}"), 2) AS total\nFROM ${tn}\nGROUP BY "${catCols[0]}"\nORDER BY total DESC\nLIMIT 10;`,
+  });
 
-  if (nc.length > 1) {
-    suggs.push({ id: 'compare', title: 'Compare metrics', desc: `${nc[0]} vs ${nc[1]}`, sql: `SELECT\n  ROUND(AVG("${nc[0]}"), 2) as avg_${nc[0].slice(0,12)},\n  ROUND(AVG("${nc[1]}"), 2) as avg_${nc[1].slice(0,12)}\nFROM ${tn};`, Icon: Zap, color: '#f59e0b', cat: 'Analytics' });
-  }
+  if (dateCols[0] && numCols[0]) starters.push({
+    icon: TrendingUp, label: 'Monthly trend',
+    sql: `SELECT\n  STRFTIME('%Y-%m', "${dateCols[0]}") AS month,\n  ROUND(SUM("${numCols[0]}"), 2) AS total,\n  COUNT(*) AS records\nFROM ${tn}\nGROUP BY month\nORDER BY month ASC;`,
+  });
 
-  return suggs;
+  starters.push({
+    icon: Search, label: 'Missing values',
+    sql: `SELECT ${cols.slice(0, 5).map(c => `\n  SUM(CASE WHEN "${c}" IS NULL OR "${c}" = '' THEN 1 ELSE 0 END) AS ${c.slice(0,14)}_nulls`).join(',')}\nFROM ${tn};`,
+  });
+
+  return starters;
 }
 
-function parseNaturalLanguage(text, table) {
-  if (!table) return 'SELECT * FROM data LIMIT 10;';
-  const lower = text.toLowerCase().trim();
-  const { name, insights = {}, columns } = table;
-  const tn = `"${name}"`;
-  const nc = insights.numericColumns || [];
-  const cc = insights.categoricalColumns || [];
-  const dc = insights.dateColumns || [];
-
-  const findCol = (pool) => {
-    for (const c of pool) {
-      if (lower.includes(c.toLowerCase().replace(/_/g, ' ')) || lower.includes(c.toLowerCase())) return c;
-    }
-    return pool[0];
-  };
-
-  const numCol = findCol(nc);
-  const catCol = findCol(cc);
-  const dateCol = findCol(dc);
-  const topM = lower.match(/top\s+(\d+)|first\s+(\d+)/);
-  const limit = topM ? (topM[1] || topM[2] || '10') : '10';
-
-  if (/null|missing|empty|blank/.test(lower)) {
-    const checks = columns.slice(0, 5).map(c => `"${c}" IS NULL OR "${c}" = ''`).join(' OR ');
-    return `SELECT *\nFROM ${tn}\nWHERE ${checks}\nLIMIT 100;`;
-  }
-  if (/duplicate|repeated/.test(lower) && catCol) {
-    return `SELECT "${catCol}", COUNT(*) as count\nFROM ${tn}\nGROUP BY "${catCol}"\nHAVING count > 1\nORDER BY count DESC;`;
-  }
-  if (/month|week|year|trend|over time/.test(lower) && dateCol) {
-    const period = /week/.test(lower) ? `strftime('%Y-%W', "${dateCol}")` : /year/.test(lower) ? `strftime('%Y', "${dateCol}")` : `strftime('%Y-%m', "${dateCol}")`;
-    const agg = numCol ? `ROUND(SUM("${numCol}"), 2) as total` : `COUNT(*) as count`;
-    return `SELECT ${period} as period, ${agg}\nFROM ${tn}\nGROUP BY period\nORDER BY period ASC;`;
-  }
-  if (/average|avg|mean/.test(lower) && numCol) {
-    if (catCol) return `SELECT "${catCol}",\n  ROUND(AVG("${numCol}"), 2) as avg_value\nFROM ${tn}\nGROUP BY "${catCol}"\nORDER BY avg_value DESC\nLIMIT ${limit};`;
-    return `SELECT ROUND(AVG("${numCol}"), 2) as average FROM ${tn};`;
-  }
-  if (/total|sum/.test(lower) && numCol) {
-    if (catCol) return `SELECT "${catCol}",\n  ROUND(SUM("${numCol}"), 2) as total\nFROM ${tn}\nGROUP BY "${catCol}"\nORDER BY total DESC\nLIMIT ${limit};`;
-    return `SELECT ROUND(SUM("${numCol}"), 2) as total FROM ${tn};`;
-  }
-  if (/count|how many|number of/.test(lower)) {
-    if (catCol) return `SELECT "${catCol}", COUNT(*) as count\nFROM ${tn}\nGROUP BY "${catCol}"\nORDER BY count DESC\nLIMIT ${limit};`;
-    return `SELECT COUNT(*) as total_rows FROM ${tn};`;
-  }
-  if (/top|best|highest|most|largest/.test(lower) && numCol) {
-    return `SELECT *\nFROM ${tn}\nORDER BY "${numCol}" DESC\nLIMIT ${limit};`;
-  }
-  if (catCol && numCol) {
-    return `SELECT "${catCol}", ROUND(SUM("${numCol}"), 2) as total\nFROM ${tn}\nGROUP BY "${catCol}"\nORDER BY total DESC\nLIMIT ${limit};`;
-  }
-  return `SELECT * FROM ${tn} LIMIT ${limit};`;
-}
-
+// ─── Chart helpers ──────────────────────────────────────────────────────────────
 function detectChartType(results) {
   if (!results || results.columns.length !== 2 || results.values.length < 2) return null;
-  const vals2 = results.values.map(r => parseFloat(r[1]));
-  if (vals2.filter(v => !isNaN(v)).length / vals2.length < 0.8) return null;
-  const vals1 = results.values.map(r => String(r[0] ?? ''));
-  if (vals1.some(v => /^\d{4}-\d{2}/.test(v))) return 'line';
+  const vals = results.values.map(r => parseFloat(r[1]));
+  if (vals.filter(v => !isNaN(v)).length / vals.length < 0.8) return null;
+  if (results.values.map(r => String(r[0] ?? '')).some(v => /^\d{4}-\d{2}/.test(v))) return 'line';
   if (results.values.length <= 8) return 'pie';
   return 'bar';
 }
@@ -217,480 +202,499 @@ function fmtNum(n) {
   return Number.isInteger(n) ? n.toString() : n.toFixed(2);
 }
 
-async function parseFile(file) {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-  if (raw.length < 2) throw new Error('File appears empty or has only headers.');
-  const columns = raw[0].map((c, i) => (String(c || `col${i}`).replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1') || `col${i}`));
-  const rows = raw.slice(1).map(row => { const o = {}; columns.forEach((col, i) => { o[col] = row[i] ?? ''; }); return o; });
-  return { name: toTableName(file.name), columns, rows };
-}
-
-async function initDb(tables) {
-  const SQL = (await import('sql.js')).default;
-  const engine = await SQL({ locateFile: () => '/sql-wasm.wasm' });
-  const db = new engine.Database();
-  for (const t of tables) {
-    db.run(`CREATE TABLE IF NOT EXISTS "${t.name}" (${t.columns.map(c => `"${c}" TEXT`).join(', ')})`);
-    if (t.rows.length > 0) {
-      const ph = t.columns.map(() => '?').join(', ');
-      const stmt = db.prepare(`INSERT INTO "${t.name}" VALUES (${ph})`);
-      for (const row of t.rows) stmt.run(t.columns.map(c => String(row[c] ?? '')));
-      stmt.free();
-    }
-  }
-  return db;
-}
-
 function exportCSV(results) {
-  if (!results?.columns?.length) return;
   const csv = [results.columns.join(','), ...results.values.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'results.csv' });
   a.click();
 }
 
-const TYPE_ICON = { numeric: Hash, currency: DollarSign, percentage: Percent, date: Calendar, location: MapPin, categorical: Tag, id: Hash, unknown: Info };
-const TYPE_COLOR = { numeric: '#10b981', currency: '#f59e0b', percentage: '#8b5cf6', date: '#06b6d4', location: '#ec4899', categorical: '#6366f1', id: '#94a3b8', unknown: '#475569' };
-
-// ─── Ghost Text (inline autocomplete) ─────────────────────────────────────────
+// ─── Ghost text (inline autocomplete) ──────────────────────────────────────────
 class GhostWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
-  eq(other) { return other.text === this.text; }
+  eq(o) { return o.text === this.text; }
   toDOM() {
-    const span = document.createElement('span');
-    span.textContent = this.text;
-    span.setAttribute('aria-hidden', 'true');
-    span.style.cssText = 'color:rgba(148,163,184,0.38);pointer-events:none;font-style:italic;';
-    return span;
+    const s = document.createElement('span');
+    s.textContent = this.text;
+    s.setAttribute('aria-hidden', 'true');
+    s.style.cssText = 'color:rgba(148,163,184,0.35);pointer-events:none;font-style:italic;';
+    return s;
   }
   ignoreEvent() { return true; }
 }
 
-function buildGhostExtension(tablesRef) {
-  const resolveHint = (partial, tables) => {
-    const upper = partial.toUpperCase();
-    const kwMatch = SQL_KW.find(k => k.startsWith(upper) && k.length > upper.length);
-    if (kwMatch) return kwMatch.slice(upper.length);
-    const lower = partial.toLowerCase();
+function buildGhostExt(tablesRef) {
+  const hint = (partial, tables) => {
+    const up = partial.toUpperCase();
+    const kw = SQL_KW.find(k => k.startsWith(up) && k.length > up.length);
+    if (kw) return kw.slice(up.length);
+    const lo = partial.toLowerCase();
     for (const t of tables) {
-      if (t.name.toLowerCase().startsWith(lower) && t.name.length > lower.length)
-        return t.name.slice(lower.length);
-      for (const col of t.columns) {
-        if (col.toLowerCase().startsWith(lower) && col.length > lower.length)
-          return col.slice(lower.length);
-      }
+      if (t.name.toLowerCase().startsWith(lo) && t.name.length > lo.length) return t.name.slice(lo.length);
+      for (const c of t.columns) if (c.toLowerCase().startsWith(lo) && c.length > lo.length) return c.slice(lo.length);
     }
     return null;
   };
 
-  const ghostPlugin = ViewPlugin.fromClass(class {
-    constructor(view) { this.decorations = this._compute(view); }
-    update(u) { if (u.docChanged || u.selectionSet) this.decorations = this._compute(u.view); }
-    _compute(view) {
+  const plugin = ViewPlugin.fromClass(class {
+    constructor(v) { this.decorations = this._c(v); }
+    update(u) { if (u.docChanged || u.selectionSet) this.decorations = this._c(u.view); }
+    _c(view) {
       const sel = view.state.selection.main;
       if (!sel.empty) return Decoration.none;
-      const pos = sel.from;
-      const line = view.state.doc.lineAt(pos);
-      const before = line.text.slice(0, pos - line.from);
+      const line = view.state.doc.lineAt(sel.from);
+      const before = line.text.slice(0, sel.from - line.from);
       const m = before.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
       if (!m || m[1].length < 2) return Decoration.none;
-      const hint = resolveHint(m[1], tablesRef.current);
-      if (!hint) return Decoration.none;
-      return Decoration.set([Decoration.widget({ widget: new GhostWidget(hint), side: 1 }).range(pos)]);
+      const h = hint(m[1], tablesRef.current);
+      if (!h) return Decoration.none;
+      return Decoration.set([Decoration.widget({ widget: new GhostWidget(h), side: 1 }).range(sel.from)]);
     }
   }, { decorations: v => v.decorations });
 
-  const ghostAccept = keymap.of([{
-    key: 'Tab',
-    run: (view) => {
+  const accept = keymap.of([{
+    key: 'Tab', run: view => {
       const sel = view.state.selection.main;
       if (!sel.empty) return false;
-      const pos = sel.from;
-      const line = view.state.doc.lineAt(pos);
-      const before = line.text.slice(0, pos - line.from);
+      const line = view.state.doc.lineAt(sel.from);
+      const before = line.text.slice(0, sel.from - line.from);
       const m = before.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
       if (!m || m[1].length < 2) return false;
-      const hint = resolveHint(m[1], tablesRef.current);
-      if (!hint) return false;
-      view.dispatch({ changes: { from: pos, insert: hint }, selection: { anchor: pos + hint.length } });
+      const h = hint(m[1], tablesRef.current);
+      if (!h) return false;
+      view.dispatch({ changes: { from: sel.from, insert: h }, selection: { anchor: sel.from + h.length } });
       return true;
     },
   }]);
-
-  return [ghostPlugin, ghostAccept];
+  return [plugin, accept];
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
-export default function SqlPractice() {
-  const [tables, setTables] = useState([]);
-  const [query, setQuery] = useState('SELECT * FROM data LIMIT 10;');
-  const [mode, setMode] = useState('sql');
-  const [nlQuery, setNlQuery] = useState('');
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [execTime, setExecTime] = useState(null);
-  const [activeTable, setActiveTable] = useState('');
-  const [showChart, setShowChart] = useState(false);
-  const [chartType, setChartType] = useState('bar');
-  const [page, setPage] = useState(1);
-  const [queryHistory, setQueryHistory] = useState([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [sideTab, setSideTab] = useState('tables');
+// ─── Simple SQL formatter ───────────────────────────────────────────────────────
+function formatSQL(raw) {
+  const KWS = ['SELECT','FROM','WHERE','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET',
+    'LEFT JOIN','RIGHT JOIN','INNER JOIN','FULL JOIN','CROSS JOIN','JOIN','ON',
+    'UNION ALL','UNION','AND','OR','CASE','WHEN','THEN','ELSE','END'];
+  let s = raw.replace(/\s+/g, ' ').trim();
+  for (const kw of KWS) {
+    s = s.replace(new RegExp(`(?<=[^\\w]|^)${kw}(?=[^\\w]|$)`, 'gi'), `\n${kw.toUpperCase()}`);
+  }
+  return s.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+}
 
-  const dbRef = useRef(null);
-  const fileInputRef = useRef(null);
+// ─── CSS ────────────────────────────────────────────────────────────────────────
+const CSS = `
+  .sp-wrap { display:grid; grid-template-columns:220px 1fr; gap:0.75rem; align-items:flex-start; }
+  .sp-panel { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:12px; overflow:hidden; }
+  .sp-hdr { padding:0.48rem 0.85rem; background:rgba(0,0,0,0.28); border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.69rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.07em; display:flex; align-items:center; gap:0.35rem; }
+  .sp-tbl-row { display:flex; align-items:center; justify-content:space-between; padding:0.48rem 0.75rem; cursor:pointer; font-size:0.79rem; transition:background 0.12s; }
+  .sp-tbl-row:hover { background:rgba(255,255,255,0.04); }
+  .sp-tbl-row.active { background:rgba(99,102,241,0.13); color:#a5b4fc; }
+  .sp-col-row { padding:0.24rem 0.75rem; font-size:0.73rem; color:var(--text-secondary); border-bottom:1px solid rgba(255,255,255,0.03); font-family:monospace; display:flex; align-items:center; gap:0.35rem; }
+  .sp-rt { width:100%; border-collapse:collapse; font-size:0.79rem; table-layout:auto; }
+  .sp-rt th { padding:0.46rem 0.7rem; background:#1a1a2e; color:#a5b4fc; text-align:left; font-weight:700; border-bottom:2px solid rgba(99,102,241,0.3); white-space:nowrap; position:sticky; top:0; z-index:2; font-size:0.73rem; box-shadow:0 1px 0 rgba(99,102,241,0.2); }
+  .sp-rt th.sp-rn { color:#475569; font-weight:400; width:36px; min-width:36px; }
+  .sp-rt td { padding:0.36rem 0.7rem; border-bottom:1px solid rgba(255,255,255,0.04); color:var(--text-primary); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sp-rt td.sp-rn { color:#475569; font-size:0.7rem; text-align:right; user-select:none; }
+  .sp-rt tbody tr:nth-child(even) td { background:rgba(255,255,255,0.012); }
+  .sp-rt tbody tr:hover td { background:rgba(99,102,241,0.06) !important; }
+  .sp-rw { overflow:auto; max-height:440px; }
+  .sp-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); border-radius:8px; padding:0.34rem 0.65rem; font-size:0.76rem; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; gap:0.3rem; transition:all 0.13s; white-space:nowrap; }
+  .sp-btn:hover { border-color:rgba(99,102,241,0.4); color:#a5b4fc; background:rgba(99,102,241,0.07); }
+  .sp-btn:disabled { opacity:0.35; cursor:not-allowed; }
+  .sp-starter { display:flex; align-items:center; gap:0.35rem; padding:0.3rem 0.65rem; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); font-size:0.74rem; color:var(--text-secondary); cursor:pointer; transition:all 0.13s; white-space:nowrap; }
+  .sp-starter:hover { background:rgba(99,102,241,0.1); border-color:rgba(99,102,241,0.35); color:#a5b4fc; }
+  .sp-htab { flex:1; padding:0.28rem 0; border-radius:6px; font-size:0.72rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:0.3rem; border:none; cursor:pointer; transition:all 0.13s; }
+  .sp-hist-row { padding:0.42rem 0.75rem; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.04); font-size:0.72rem; font-family:monospace; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:background 0.12s; display:flex; align-items:center; gap:0.35rem; }
+  .sp-hist-row:hover { background:rgba(255,255,255,0.04); color:var(--text-primary); }
+  .sp-col-click:hover { background:rgba(255,255,255,0.03); cursor:pointer; }
+  .cm-editor { border-radius:0 !important; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media(max-width:768px) { .sp-wrap { grid-template-columns:1fr; } }
+`;
+
+// ─── Main Component ─────────────────────────────────────────────────────────────
+export default function SqlPractice() {
+  const [tables,       setTables]       = useState([]);
+  const [query,        setQuery]        = useState('');
+  const [results,      setResults]      = useState(null);
+  const [error,        setError]        = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [uploading,    setUploading]    = useState(false);
+  const [execTime,     setExecTime]     = useState(null);
+  const [activeTable,  setActiveTable]  = useState('');
+  const [showChart,    setShowChart]    = useState(false);
+  const [chartType,    setChartType]    = useState('bar');
+  const [page,         setPage]         = useState(1);
+  const [history,      setHistory]      = useState([]);
+  const [isDragging,   setIsDragging]   = useState(false);
+  const [copied,       setCopied]       = useState(false);
+  const [sideTab,      setSideTab]      = useState('tables');
+
+  const dbRef              = useRef(null);
+  const fileInputRef       = useRef(null);
   const editorContainerRef = useRef(null);
-  const editorViewRef = useRef(null);
-  const tablesRef = useRef(tables);
-  const runQueryRef = useRef(null);
-  const queryRef = useRef(query);
+  const editorViewRef      = useRef(null);
+  const tablesRef          = useRef(tables);
+  const runQueryRef        = useRef(null);
+  const queryRef           = useRef(query);
 
   useEffect(() => { tablesRef.current = tables; }, [tables]);
-  useEffect(() => { queryRef.current = query; }, [query]);
+  useEffect(() => { queryRef.current  = query;  }, [query]);
 
-  const activeTableInfo = useMemo(() => tables.find(t => t.name === activeTable), [tables, activeTable]);
-  const suggestions = useMemo(() => generateSuggestions(activeTableInfo), [activeTableInfo]);
-  const autoChartType = useMemo(() => detectChartType(results), [results]);
-  const cData = useMemo(() => chartData(results), [results]);
-  const pagedValues = useMemo(() => results ? results.values.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : [], [results, page]);
-  const totalPages = useMemo(() => results ? Math.ceil(results.rowCount / PAGE_SIZE) : 1, [results]);
+  const activeInfo   = useMemo(() => tables.find(t => t.name === activeTable), [tables, activeTable]);
+  const starters     = useMemo(() => buildStarters(activeInfo),                [activeInfo]);
+  const autoChart    = useMemo(() => detectChartType(results),                 [results]);
+  const cData        = useMemo(() => chartData(results),                       [results]);
+  const pagedValues  = useMemo(() => results ? results.values.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : [], [results, page]);
+  const totalPages   = useMemo(() => results ? Math.ceil(results.rowCount / PAGE_SIZE) : 1, [results]);
+  const colTypes     = useMemo(() => activeInfo ? getColumnTypes(activeInfo) : {}, [activeInfo]);
 
-  // ── File handling ──
+  // Warm up WASM engine early so first Run is instant
+  useEffect(() => { getSqlEngine().catch(() => {}); }, []);
+
+  // ── File handling ──────────────────────────────────────────────────────────────
   const handleFiles = useCallback(async (files) => {
     if (!files?.length) return;
     setUploading(true);
     try {
-      const parsed = await Promise.all(Array.from(files).map(parseFile));
-      const merged = [...tablesRef.current];
+      const parsed  = await Promise.all(Array.from(files).map(parseFile));
+      const merged  = [...tablesRef.current];
       for (const t of parsed) {
-        t.insights = analyzeDataset(t);
         const idx = merged.findIndex(x => x.name === t.name);
         if (idx >= 0) merged[idx] = t; else merged.push(t);
       }
       setTables(merged);
       setActiveTable(merged[0].name);
-      dbRef.current = null;
-      setQuery(`SELECT * FROM "${parsed[0].name}" LIMIT 10;`);
-      toast.success(`Loaded ${parsed.map(t => t.name).join(', ')}`);
+      dbRef.current = null; // will be rebuilt on first run
+      const first = parsed[0];
+      setQuery(`SELECT *\nFROM "${first.name}"\nLIMIT 10;`);
+      toast.success(`Loaded ${parsed.map(t => t.name).join(', ')} — ready to query!`);
     } catch (e) {
-      toast.error(e.message || 'Failed to parse file');
+      toast.error(e.message || 'Could not parse file');
     } finally {
       setUploading(false);
     }
   }, []);
 
-  // ── Run SQL query ──
-  const runQuery = useCallback(async () => {
-    if (!query.trim()) return;
+  // ── Run SQL ────────────────────────────────────────────────────────────────────
+  const runQuery = useCallback(async (sqlOverride) => {
+    const sql = sqlOverride ?? queryRef.current;
+    if (!sql?.trim()) return;
     if (!tablesRef.current.length) { toast.error('Upload a file first'); return; }
     setLoading(true); setError(''); setResults(null); setPage(1);
     const t0 = performance.now();
     try {
-      if (!dbRef.current) dbRef.current = await initDb(tablesRef.current);
-      const res = dbRef.current.exec(query);
+      if (!dbRef.current) dbRef.current = await buildDb(tablesRef.current);
+      const res     = dbRef.current.exec(sql);
       const elapsed = (performance.now() - t0).toFixed(1);
       setExecTime(elapsed);
       if (!res?.length) {
         setResults({ columns: [], values: [], rowCount: 0 });
-        toast.success('Query executed — no rows returned');
+        toast.success('Query ran — no rows returned');
       } else {
         const { columns, values } = res[0];
+        const ct = detectChartType({ columns, values, rowCount: values.length });
         setResults({ columns, values, rowCount: values.length });
-        setShowChart(!!detectChartType({ columns, values, rowCount: values.length }));
-        setChartType(detectChartType({ columns, values, rowCount: values.length }) || 'bar');
+        setShowChart(!!ct);
+        setChartType(ct || 'bar');
       }
-      setQueryHistory(h => [{ sql: query, time: elapsed, ts: Date.now() }, ...h].slice(0, 20));
+      setHistory(h => [{ sql, time: elapsed, ts: Date.now() }, ...h].slice(0, 30));
     } catch (e) {
-      setError(e.message || 'Query error');
+      // Give the user an actionable error message
+      let msg = e.message || 'Unknown error';
+      if (msg.includes('no such table')) {
+        const available = tablesRef.current.map(t => t.name).join(', ');
+        msg = `${msg}. Available tables: ${available}`;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, []);
 
   useEffect(() => { runQueryRef.current = runQuery; }, [runQuery]);
 
-  // ── AI mode run ──
-  const runNl = useCallback(() => {
-    if (!nlQuery.trim() || !activeTableInfo) return;
-    const generated = parseNaturalLanguage(nlQuery, activeTableInfo);
-    setQuery(generated);
-    setMode('sql');
-    setTimeout(() => runQueryRef.current?.(), 50);
-  }, [nlQuery, activeTableInfo]);
-
-  // ── Remove table ──
+  // ── Remove table ──────────────────────────────────────────────────────────────
   const removeTable = useCallback((name) => {
     const updated = tablesRef.current.filter(t => t.name !== name);
     setTables(updated);
     dbRef.current = null;
-    if (activeTable === name) setActiveTable(updated[0]?.name || '');
-    if (!updated.length) { setResults(null); setQuery('SELECT * FROM data LIMIT 10;'); }
+    if (activeTable === name) {
+      setActiveTable(updated[0]?.name || '');
+      setQuery(updated[0] ? `SELECT *\nFROM "${updated[0].name}"\nLIMIT 10;` : '');
+    }
+    if (!updated.length) setResults(null);
   }, [activeTable]);
 
-  // ── Copy query ──
+  // ── Copy ──────────────────────────────────────────────────────────────────────
   const copyQuery = useCallback(() => {
-    navigator.clipboard.writeText(query);
+    navigator.clipboard.writeText(queryRef.current);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [query]);
+  }, []);
 
-  // ── CodeMirror setup ──
+  // ── Starter click ─────────────────────────────────────────────────────────────
+  const runStarter = useCallback((sql) => {
+    setQuery(sql);
+    setTimeout(() => runQueryRef.current?.(sql), 30);
+  }, []);
+
+  // ── ChatGPT ───────────────────────────────────────────────────────────────────
+  const openChatGPT = useCallback(() => {
+    const table = activeInfo || tablesRef.current[0];
+    if (!table) { toast.error('Upload a file first'); return; }
+    const types  = getColumnTypes(table);
+    const numC   = table.columns.filter(c => ['numeric','currency','percentage'].includes(types[c]));
+    const catC   = table.columns.filter(c => types[c] === 'categorical');
+    const dateC  = table.columns.filter(c => types[c] === 'date');
+    const prompt =
+`I have a SQLite table called "${table.name}" with ${table.rows.length.toLocaleString()} rows.
+
+All columns: ${table.columns.join(', ')}
+${numC.length  ? `Numeric columns: ${numC.join(', ')}` : ''}
+${catC.length  ? `Category columns: ${catC.join(', ')}` : ''}
+${dateC.length ? `Date columns: ${dateC.join(', ')}` : ''}
+
+I want to practise SQL using this real dataset. Please give me a list of SQL queries from beginner to advanced level, covering:
+1. Basic SELECT, WHERE, ORDER BY, LIMIT
+2. Aggregations: COUNT, SUM, AVG, MIN, MAX
+3. GROUP BY and HAVING
+4. Subqueries
+5. CTEs (WITH clause)
+6. Window functions: ROW_NUMBER, RANK, LEAD, LAG
+7. Complex analytical queries
+
+For each query, write the exact SQL using the real column and table names above, and add a short one-line comment explaining what the query does.`;
+    window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener,noreferrer');
+  }, [activeInfo]);
+
+  // ── CodeMirror setup ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!editorContainerRef.current) return;
-    if (editorViewRef.current) return; // already initialized
+    if (!editorContainerRef.current || editorViewRef.current) return;
 
-    // Context-aware completion: suggest columns after SELECT/WHERE/GROUP BY, tables after FROM/JOIN
-    const customCompletion = (ctx) => {
+    const customCompletion = ctx => {
       const word = ctx.matchBefore(/[\w.]*/);
       if (!word || (word.from === word.to && !ctx.explicit)) return null;
-
-      const textBefore = ctx.state.doc.sliceString(0, word.from).toUpperCase().trimEnd();
-      const lastKw = textBefore.match(/\b(SELECT|FROM|JOIN|WHERE|AND|OR|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET)\s*[\w\s,"`.]*?$/)
-        ?.[1]?.replace(/\s+/g, ' ');
-
-      const isAfterFrom = lastKw === 'FROM' || lastKw === 'JOIN';
-      const isAfterSelect = ['SELECT', 'WHERE', 'AND', 'OR', 'GROUP BY', 'ORDER BY', 'HAVING', 'ON', 'SET'].includes(lastKw);
-
-      const options = [];
-
-      // High-priority context-aware suggestions
-      if (isAfterFrom) {
-        for (const t of tablesRef.current) {
-          options.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
-        }
-      } else if (isAfterSelect) {
-        for (const t of tablesRef.current) {
-          for (const col of t.columns) {
-            const st = t.insights?.columnStats?.[col];
-            options.push({ label: col, type: 'property', detail: `${t.name} · ${st?.type ?? ''}`, boost: 15 });
-          }
-        }
+      const before  = ctx.state.doc.sliceString(0, word.from).toUpperCase().trimEnd();
+      const lastKw  = before.match(/\b(SELECT|FROM|JOIN|WHERE|AND|OR|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET)\s*[\w\s,"`.]*?$/)?.[1]?.replace(/\s+/g, ' ');
+      const fromCtx = lastKw === 'FROM' || lastKw === 'JOIN';
+      const selCtx  = ['SELECT','WHERE','AND','OR','GROUP BY','ORDER BY','HAVING','ON','SET'].includes(lastKw);
+      const opts    = [];
+      if (fromCtx) {
+        for (const t of tablesRef.current) opts.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
+      } else if (selCtx) {
+        for (const t of tablesRef.current)
+          for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 15 });
       }
-
-      // Always available: keywords
-      for (const kw of SQL_KW) options.push({ label: kw, type: 'keyword', boost: 1 });
-
-      // Always available: tables + columns
+      for (const kw of SQL_KW) opts.push({ label: kw, type: 'keyword', boost: 1 });
       for (const t of tablesRef.current) {
-        if (!isAfterFrom) options.push({ label: t.name, type: 'class', detail: 'table', boost: 5 });
-        if (!isAfterSelect) {
-          for (const col of t.columns) {
-            options.push({ label: col, type: 'property', detail: t.name, boost: 3 });
-          }
-        }
+        if (!fromCtx) opts.push({ label: t.name, type: 'class', detail: 'table', boost: 5 });
+        if (!selCtx) for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 3 });
       }
-
-      return { from: word.from, options, validFor: /^\w*$/ };
+      return { from: word.from, options: opts, validFor: /^\w*$/ };
     };
-
-    const ghostExt = buildGhostExtension(tablesRef);
 
     const view = new EditorView({
       state: EditorState.create({
         doc: queryRef.current,
         extensions: [
-          sqlLang(),
-          oneDark,
-          lineNumbers(),
-          highlightActiveLine(),
-          // Ghost text (inline) must come before completionKeymap so Tab is handled first
-          ...ghostExt,
-          autocompletion({ override: [customCompletion], activateOnTyping: true, maxRenderedOptions: 12 }),
+          sqlLang(), oneDark, lineNumbers(), highlightActiveLine(),
+          ...buildGhostExt(tablesRef),
+          autocompletion({ override: [customCompletion], activateOnTyping: true, maxRenderedOptions: 14 }),
           keymap.of([
-            ...defaultKeymap,
-            ...completionKeymap,
+            ...defaultKeymap, ...completionKeymap,
             { key: 'Ctrl-Enter', run: () => { runQueryRef.current?.(); return true; } },
-            { key: 'Mod-Enter', run: () => { runQueryRef.current?.(); return true; } },
+            { key: 'Mod-Enter',  run: () => { runQueryRef.current?.(); return true; } },
           ]),
           EditorView.updateListener.of(u => { if (u.docChanged) setQuery(u.state.doc.toString()); }),
           EditorView.theme({
-            '&': { background: 'rgba(10,10,20,0.9)', minHeight: '160px' },
-            '.cm-scroller': { fontFamily: "'Fira Code','JetBrains Mono','Consolas',monospace", overflow: 'auto' },
-            '.cm-content': { padding: '1rem 0', minHeight: '160px' },
-            '.cm-focused': { outline: 'none !important' },
-            '.cm-line': { padding: '0 1rem', lineHeight: '1.75' },
-            '.cm-gutters': { background: 'rgba(0,0,0,0.5)', borderRight: '1px solid rgba(255,255,255,0.06)', color: '#475569', paddingRight: '6px' },
-            '.cm-activeLineGutter': { background: 'rgba(99,102,241,0.12)' },
-            '.cm-tooltip-autocomplete': { background: '#1a1a2e !important', border: '1px solid rgba(99,102,241,0.3) !important', borderRadius: '8px !important', boxShadow: '0 8px 32px rgba(0,0,0,0.5) !important' },
-            '.cm-tooltip-autocomplete ul li': { padding: '4px 10px !important', fontSize: '0.8rem !important' },
-            '.cm-tooltip-autocomplete ul li[aria-selected]': { background: 'rgba(99,102,241,0.25) !important', color: '#a5b4fc !important' },
+            '&':                            { background: 'rgba(8,8,18,0.97)', minHeight: '200px' },
+            '.cm-scroller':                 { fontFamily: "'Fira Code','JetBrains Mono',monospace", overflow: 'auto' },
+            '.cm-content':                  { padding: '1rem 0', minHeight: '200px' },
+            '.cm-focused':                  { outline: 'none !important' },
+            '.cm-line':                     { padding: '0 1rem', lineHeight: '1.85' },
+            '.cm-gutters':                  { background: 'rgba(0,0,0,0.45)', borderRight: '1px solid rgba(255,255,255,0.06)', color: '#475569', paddingRight: '6px' },
+            '.cm-activeLineGutter':         { background: 'rgba(99,102,241,0.12)' },
+            '.cm-tooltip-autocomplete':     { background: '#0d0d1a !important', border: '1px solid rgba(99,102,241,0.35) !important', borderRadius: '10px !important', boxShadow: '0 8px 32px rgba(0,0,0,0.7) !important' },
+            '.cm-tooltip-autocomplete ul li':                { padding: '4px 10px !important', fontSize: '0.8rem !important' },
+            '.cm-tooltip-autocomplete ul li[aria-selected]': { background: 'rgba(99,102,241,0.28) !important', color: '#a5b4fc !important' },
           }),
         ],
       }),
       parent: editorContainerRef.current,
     });
-
     editorViewRef.current = view;
     return () => { view.destroy(); editorViewRef.current = null; };
-  // Re-run when tables first appear so editorContainerRef.current is guaranteed to be in the DOM
+  // Re-run when first table appears so editorContainerRef is guaranteed in DOM
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!tables.length]);
 
-  // Sync external query → editor (when suggestion clicked)
+  // Sync external query state → editor (when starter is clicked)
   useEffect(() => {
     const view = editorViewRef.current;
     if (!view) return;
-    if (view.state.doc.toString() !== query) {
+    if (view.state.doc.toString() !== query)
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: query } });
-    }
   }, [query]);
 
-  // ── Empty state ──
+  // ─── Empty / upload state ──────────────────────────────────────────────────────
   if (!tables.length) {
     return (
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 1rem' }}>
-        <ToolHeader title="SQL Practice" description="Upload CSV or Excel and query your data instantly — fully in-browser, no server." icon={Database} toolId="sql-practice" />
-        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ maxWidth: 560, margin: '2.5rem auto' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
+        <ToolHeader
+          title="SQL Practice"
+          description="Upload any CSV or Excel file and start querying instantly — 100% in your browser, nothing uploaded to a server."
+          icon={Database}
+          toolId="sql-practice"
+        />
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+          style={{ maxWidth: 540, margin: '2.5rem auto' }}>
+          {/* Drop zone */}
           <div
             onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={e => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: `2px dashed ${isDragging ? '#6366f1' : 'rgba(99,102,241,0.35)'}`,
-              borderRadius: 20,
-              padding: '3.5rem 2rem',
-              textAlign: 'center',
-              cursor: 'pointer',
-              background: isDragging ? 'rgba(99,102,241,0.07)' : 'rgba(255,255,255,0.02)',
-              transition: 'all 0.2s ease',
-              backdropFilter: 'blur(12px)',
-            }}
-          >
-            <motion.div animate={{ y: isDragging ? -6 : 0 }} transition={{ type: 'spring', stiffness: 300 }}>
-              <div style={{ width: 72, height: 72, borderRadius: 20, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', boxShadow: '0 8px 32px rgba(99,102,241,0.4)' }}>
-                <Upload size={32} color="#fff" />
+              border: `2px dashed ${isDragging ? '#6366f1' : 'rgba(99,102,241,0.4)'}`,
+              borderRadius: 20, padding: '3.5rem 2rem', textAlign: 'center', cursor: 'pointer',
+              background: isDragging ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.02)',
+              transition: 'all 0.2s',
+            }}>
+            <motion.div animate={{ y: isDragging ? -6 : 0 }} transition={{ type: 'spring', stiffness: 260 }}>
+              <div style={{ width: 68, height: 68, borderRadius: 18, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', boxShadow: '0 8px 32px rgba(99,102,241,0.4)' }}>
+                <Upload size={30} color="#fff" />
               </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-                {uploading ? 'Analyzing your data…' : 'Drop your file here'}
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                {uploading ? 'Analyzing your data…' : 'Drop your CSV or Excel file here'}
               </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
-                CSV or Excel — your data stays in the browser, 100% private
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '1.25rem' }}>
+                Or click to browse · your data never leaves this browser
               </p>
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-                {['Sales data', 'Customer list', 'Inventory', 'Survey results'].map(t => (
-                  <span key={t} style={{ padding: '0.3rem 0.75rem', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.78rem', color: '#a5b4fc' }}>{t}</span>
+                {['.csv', '.xlsx', '.xls'].map(ext => (
+                  <span key={ext} style={{ padding: '0.28rem 0.7rem', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.28)', fontSize: '0.76rem', color: '#a5b4fc' }}>{ext}</span>
                 ))}
               </div>
             </motion.div>
           </div>
           <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginTop: '1.5rem' }}>
+          {/* Feature hints */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.65rem', marginTop: '1.25rem' }}>
             {[
-              { Icon: Sparkles, label: 'Smart insights', desc: 'Auto-detect column types & stats' },
-              { Icon: MessageSquare, label: 'AI suggestions', desc: 'One-click query cards' },
-              { Icon: BarChart2, label: 'Live charts', desc: 'Visualize results instantly' },
-            ].map(({ Icon, label, desc }) => (
-              <div key={label} style={{ padding: '1rem', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center' }}>
-                <Icon size={20} style={{ color: '#6366f1', marginBottom: '0.5rem' }} />
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>{label}</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{desc}</div>
+              { icon: Zap,       title: 'Instant queries', desc: 'Run SQL right in your browser — no server' },
+              { icon: BarChart2, title: 'Auto charts',     desc: 'Results visualised automatically' },
+              { icon: ExternalLink, title: 'AI help',      desc: 'Ask ChatGPT for practice queries' },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} style={{ padding: '0.9rem 0.75rem', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center' }}>
+                <Icon size={18} style={{ color: '#6366f1', marginBottom: '0.4rem' }} />
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>{title}</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{desc}</div>
               </div>
             ))}
           </div>
         </motion.div>
+
         <RelatedTools currentToolId="sql-practice" category="utilities" />
       </div>
     );
   }
 
-  // ── Main layout ──
+  // ─── Main IDE layout ───────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 1380, margin: '0 auto', padding: '1.5rem 1rem' }}>
-      <style>{`
-        .sp-layout { display: grid; grid-template-columns: 230px 1fr 270px; gap: 0.875rem; align-items: flex-start; }
-        .sp-panel { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; overflow: hidden; }
-        .sp-panel-hdr { padding: 0.55rem 0.9rem; background: rgba(0,0,0,0.25); border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.72rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; justify-content: space-between; }
-        .sp-tbl-item { display: flex; align-items: center; justify-content: space-between; padding: 0.55rem 0.8rem; cursor: pointer; transition: background 0.15s; font-size: 0.82rem; }
-        .sp-tbl-item:hover { background: rgba(255,255,255,0.04); }
-        .sp-tbl-item.active { background: rgba(99,102,241,0.12); color: #a5b4fc; }
-        .sp-col-item { padding: 0.28rem 0.8rem; font-size: 0.75rem; color: var(--text-secondary); border-bottom: 1px solid rgba(255,255,255,0.03); font-family: monospace; display: flex; align-items: center; gap: 0.4rem; }
-        .sp-results-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-        .sp-results-table th { padding: 0.5rem 0.7rem; background: rgba(99,102,241,0.1); color: #a5b4fc; text-align: left; font-weight: 700; border-bottom: 2px solid rgba(99,102,241,0.2); white-space: nowrap; position: sticky; top: 0; z-index: 1; font-size: 0.75rem; }
-        .sp-results-table td { padding: 0.4rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text-primary); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .sp-results-table tr:hover td { background: rgba(255,255,255,0.025); }
-        .sp-results-wrap { overflow: auto; max-height: 380px; }
-        .sp-card { padding: 0.6rem 0.85rem; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); cursor: pointer; transition: all 0.18s; }
-        .sp-card:hover { border-color: rgba(99,102,241,0.4); background: rgba(99,102,241,0.06); transform: translateY(-1px); }
-        .sp-btn-ghost { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.35rem; }
-        .sp-btn-ghost:hover { border-color: rgba(99,102,241,0.4); color: #a5b4fc; background: rgba(99,102,241,0.06); }
-        .sp-mode-btn { padding: 0.4rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
-        .sp-mode-btn.active { background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; box-shadow: 0 2px 12px rgba(99,102,241,0.4); }
-        .sp-mode-btn.inactive { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
-        .sp-mode-btn.inactive:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
-        .sp-stat-card { padding: 0.75rem; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
-        .sp-history-item { padding: 0.5rem 0.8rem; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.75rem; font-family: monospace; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.15s; }
-        .sp-history-item:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
-        @media (max-width: 900px) { .sp-layout { grid-template-columns: 1fr; } }
-        @media (max-width: 600px) { .sp-layout { gap: 0.5rem; } }
-        .cm-editor { border-radius: 0; }
-      `}</style>
+    <div style={{ maxWidth: 1300, margin: '0 auto', padding: '1.25rem 1rem' }}>
+      <style>{CSS}</style>
 
-      <ToolHeader title="SQL Practice" description="AI-powered data exploration — upload, query, and visualize in seconds." icon={Database} toolId="sql-practice" />
+      {/* Top toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+        <button className="sp-btn" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          <Upload size={13} />{uploading ? 'Loading…' : 'Add File'}
+        </button>
+        <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)} />
 
-      {/* Mode toggle + top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '0.25rem' }}>
-          <button className={`sp-mode-btn ${mode === 'sql' ? 'active' : 'inactive'}`} onClick={() => setMode('sql')}><Code size={13} style={{ display: 'inline', marginRight: 5 }} />SQL Mode</button>
-          <button className={`sp-mode-btn ${mode === 'ai' ? 'active' : 'inactive'}`} onClick={() => setMode('ai')}><Sparkles size={13} style={{ display: 'inline', marginRight: 5 }} />AI Mode</button>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="sp-btn-ghost" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-            <Upload size={13} />{uploading ? 'Loading…' : 'Add File'}
+        <button className="sp-btn" onClick={copyQuery}>
+          {copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy SQL</>}
+        </button>
+
+        {results && (
+          <button className="sp-btn" onClick={() => exportCSV(results)}>
+            <Download size={13} /> Export CSV
           </button>
-          {results && <button className="sp-btn-ghost" onClick={() => exportCSV(results)}><Download size={13} />Export CSV</button>}
-          <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)} />
-        </div>
+        )}
+
+        {/* ChatGPT — right-aligned */}
+        <button
+          onClick={openChatGPT}
+          style={{
+            marginLeft: 'auto',
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+            padding: '0.38rem 0.9rem',
+            background: 'linear-gradient(135deg,rgba(16,163,127,0.15),rgba(16,163,127,0.07))',
+            border: '1px solid rgba(16,163,127,0.4)',
+            borderRadius: 8, cursor: 'pointer',
+            fontSize: '0.78rem', fontWeight: 600, color: '#34d399',
+            transition: 'all 0.14s',
+          }}
+          onMouseOver={e => { e.currentTarget.style.background='rgba(16,163,127,0.22)'; e.currentTarget.style.borderColor='rgba(16,163,127,0.65)'; }}
+          onMouseOut={e => { e.currentTarget.style.background='linear-gradient(135deg,rgba(16,163,127,0.15),rgba(16,163,127,0.07))'; e.currentTarget.style.borderColor='rgba(16,163,127,0.4)'; }}
+          title="Opens ChatGPT with a prompt tailored to your table columns — get queries from beginner to advanced"
+        >
+          <ExternalLink size={13} /> Ask ChatGPT for practice queries
+        </button>
       </div>
 
-      <div className="sp-layout">
-        {/* ── LEFT SIDEBAR ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {/* Tab switcher */}
-          <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '0.2rem' }}>
-            {[['tables','Tables',Table],['history','History',History]].map(([k, label, Icon]) => (
-              <button key={k} onClick={() => setSideTab(k)} style={{ flex: 1, padding: '0.3rem 0', borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', border: 'none', cursor: 'pointer', background: sideTab === k ? 'rgba(99,102,241,0.2)' : 'none', color: sideTab === k ? '#a5b4fc' : 'var(--text-secondary)', transition: 'all 0.15s' }}>
-                <Icon size={12} />{label}
+      <div className="sp-wrap">
+        {/* ── LEFT SIDEBAR ──────────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+          {/* Tab toggle */}
+          <div style={{ display: 'flex', gap: '0.2rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: '0.17rem' }}>
+            {[['tables','Tables',<Table size={11}/>],['history','History',<History size={11}/>]].map(([k,label,icon]) => (
+              <button key={k} className="sp-htab"
+                style={{ background: sideTab===k ? 'rgba(99,102,241,0.2)' : 'none', color: sideTab===k ? '#a5b4fc' : 'var(--text-secondary)' }}
+                onClick={() => setSideTab(k)}>
+                {icon}{label}
               </button>
             ))}
           </div>
 
           <AnimatePresence mode="wait">
-            {sideTab === 'tables' && (
-              <motion.div key="tables" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {sideTab === 'tables' ? (
+              <motion.div key="t" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+                style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {/* Table list */}
                 <div className="sp-panel">
-                  <div className="sp-panel-hdr">Tables ({tables.length})</div>
+                  <div className="sp-hdr"><Database size={10}/> Tables ({tables.length})</div>
                   {tables.map(t => (
-                    <div key={t.name} className={`sp-tbl-item${activeTable === t.name ? ' active' : ''}`} onClick={() => setActiveTable(t.name)}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden' }}>
-                        <Table size={12} style={{ flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', flexShrink: 0 }}>({t.rows.length})</span>
+                    <div key={t.name} className={`sp-tbl-row${activeTable===t.name?' active':''}`} onClick={() => setActiveTable(t.name)}>
+                      <span style={{ display:'flex', alignItems:'center', gap:'0.38rem', overflow:'hidden', minWidth:0 }}>
+                        <Table size={11} style={{ flexShrink:0 }}/>
+                        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.name}</span>
+                        <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)', flexShrink:0 }}>({t.rows.length.toLocaleString()})</span>
                       </span>
-                      <button onClick={e => { e.stopPropagation(); removeTable(t.name); }} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: 2, flexShrink: 0 }}><Trash2 size={11} /></button>
+                      <button
+                        onClick={e => { e.stopPropagation(); removeTable(t.name); }}
+                        style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', padding:2, flexShrink:0, lineHeight:0 }}
+                        title="Remove table">
+                        <Trash2 size={11}/>
+                      </button>
                     </div>
                   ))}
                 </div>
 
-                {activeTableInfo && (
+                {/* Schema */}
+                {activeInfo && (
                   <div className="sp-panel">
-                    <div className="sp-panel-hdr">Schema — {activeTableInfo.name}</div>
-                    <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                      {activeTableInfo.columns.map(col => {
-                        const st = activeTableInfo.insights?.columnStats?.[col];
-                        const Ico = TYPE_ICON[st?.type || 'categorical'] || Tag;
-                        const clr = TYPE_COLOR[st?.type || 'categorical'];
+                    <div className="sp-hdr">Schema — {activeInfo.name}</div>
+                    <div style={{ maxHeight:260, overflowY:'auto' }}>
+                      {activeInfo.columns.map(col => {
+                        const type = colTypes[col] || 'categorical';
                         return (
-                          <div key={col} className="sp-col-item">
-                            <Ico size={10} style={{ color: clr, flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
-                            {st?.nullPct > 0 && <span style={{ marginLeft: 'auto', fontSize: '0.68rem', color: '#f59e0b', flexShrink: 0 }}>{st.nullPct}% null</span>}
+                          <div key={col} className="sp-col-row">
+                            <span style={{ color: TYPE_COLOR[type], fontWeight:700, fontSize:'0.68rem', flexShrink:0, minWidth:14 }}>
+                              {TYPE_LABEL[type]}
+                            </span>
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{col}</span>
                           </div>
                         );
                       })}
@@ -698,22 +702,28 @@ export default function SqlPractice() {
                   </div>
                 )}
 
-                <div className="sp-panel" style={{ padding: '0.7rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>Tips</strong>
-                  Ctrl+Enter to run · Tab to autocomplete · Ctrl+Space for suggestions
+                {/* Tips */}
+                <div style={{ padding:'0.55rem 0.7rem', background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:9, fontSize:'0.7rem', color:'var(--text-secondary)', lineHeight:1.8 }}>
+                  <strong style={{ color:'var(--text-primary)', display:'block', marginBottom:'0.1rem' }}>Keyboard shortcuts</strong>
+                  <span style={{ color:'#a5b4fc' }}>Ctrl+Enter</span> — Run query<br/>
+                  <span style={{ color:'#a5b4fc' }}>Tab</span> — Accept suggestion<br/>
+                  <span style={{ color:'#a5b4fc' }}>Ctrl+Space</span> — Open suggestions
                 </div>
               </motion.div>
-            )}
-
-            {sideTab === 'history' && (
-              <motion.div key="history" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            ) : (
+              <motion.div key="h" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
                 <div className="sp-panel">
-                  <div className="sp-panel-hdr">Recent queries</div>
-                  {queryHistory.length === 0 && <p style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>No queries yet</p>}
-                  {queryHistory.map((h, i) => (
-                    <div key={i} className="sp-history-item" onClick={() => { setQuery(h.sql); setMode('sql'); }} title={h.sql}>
-                      <span style={{ color: '#6366f1', fontSize: '0.68rem', marginRight: '0.4rem' }}>{h.time}ms</span>
-                      {h.sql.split('\n')[0]}
+                  <div className="sp-hdr"><History size={10}/> Query history</div>
+                  {history.length === 0 ? (
+                    <p style={{ padding:'1.2rem', fontSize:'0.78rem', color:'var(--text-secondary)', textAlign:'center' }}>
+                      No queries yet — run one!
+                    </p>
+                  ) : history.map((h, i) => (
+                    <div key={i} className="sp-hist-row"
+                      onClick={() => setQuery(h.sql)}
+                      title={`Click to restore:\n${h.sql}`}>
+                      <span style={{ color:'#6366f1', fontSize:'0.63rem', flexShrink:0 }}>{h.time}ms</span>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis' }}>{h.sql.split('\n')[0]}</span>
                     </div>
                   ))}
                 </div>
@@ -722,110 +732,100 @@ export default function SqlPractice() {
           </AnimatePresence>
         </div>
 
-        {/* ── CENTER: Editor + Suggestions + Results ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: 0 }}>
+        {/* ── CENTER ────────────────────────────────────────────────────────────── */}
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.7rem', minWidth:0 }}>
 
-          {/* Query area */}
+          {/* Editor */}
           <div className="sp-panel">
-            <div className="sp-panel-hdr">
-              {mode === 'sql' ? 'SQL Editor' : 'AI Query'}
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                {mode === 'sql' && (
-                  <button className="sp-btn-ghost" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }} onClick={copyQuery}>
-                    {copied ? <><Check size={11} />Copied</> : <><Copy size={11} />Copy</>}
-                  </button>
-                )}
-              </div>
+            <div className="sp-hdr" style={{ justifyContent:'space-between' }}>
+              SQL Editor
+              <span style={{ fontSize:'0.62rem', color:'#475569', fontWeight:400, textTransform:'none', letterSpacing:0 }}>
+                Ctrl+Enter to run
+              </span>
             </div>
-
-            {/* SQL editor — always in DOM so CodeMirror never loses its mount point */}
-            <div style={{ display: mode === 'sql' ? 'block' : 'none' }}>
-              <div ref={editorContainerRef} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 160, overflow: 'hidden' }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.85rem', background: 'rgba(0,0,0,0.15)' }}>
-                <button className="btn-primary" onClick={runQuery} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
-                  {loading ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</> : <><Play size={13} />Run Query</>}
-                </button>
-                {execTime && !error && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={11} />{execTime}ms</span>}
-                {results && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>{results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}</span>}
-              </div>
-            </div>
-
-            {/* AI mode — always in DOM too, just hidden */}
-            <div style={{ display: mode === 'ai' ? 'block' : 'none', padding: '1rem' }}>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>Describe what you want to see — no SQL needed.</p>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input
-                  value={nlQuery}
-                  onChange={e => setNlQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runNl()}
-                  placeholder={`e.g. "top 10 customers by revenue" or "monthly trend"`}
-                  style={{ flex: 1, padding: '0.6rem 0.9rem', borderRadius: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none' }}
-                />
-                <button className="btn-primary" onClick={runNl} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                  <Zap size={13} />Generate
-                </button>
-              </div>
-              <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                {[
-                  activeTableInfo?.insights?.numericColumns?.[0] && `top 10 by ${activeTableInfo.insights.numericColumns[0]}`,
-                  activeTableInfo?.insights?.dateColumns?.[0] && 'monthly trend',
-                  activeTableInfo?.insights?.categoricalColumns?.[0] && `breakdown by ${activeTableInfo.insights.categoricalColumns[0]}`,
-                  'find missing values',
-                ].filter(Boolean).map(hint => (
-                  <button key={hint} onClick={() => setNlQuery(hint)} style={{ padding: '0.25rem 0.65rem', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.75rem', color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.15s' }}>
-                    {hint}
-                  </button>
-                ))}
-              </div>
+            <div ref={editorContainerRef} style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', minHeight:200 }}/>
+            {/* Run bar */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.5rem 0.85rem', background:'rgba(0,0,0,0.18)' }}>
+              <button
+                onClick={() => runQuery()}
+                disabled={loading}
+                style={{
+                  display:'flex', alignItems:'center', gap:'0.42rem',
+                  padding:'0.44rem 1.15rem',
+                  background: loading ? 'rgba(99,102,241,0.35)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                  border:'none', borderRadius:8, cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize:'0.86rem', fontWeight:700, color:'#fff',
+                  boxShadow: loading ? 'none' : '0 2px 14px rgba(99,102,241,0.45)',
+                  transition:'all 0.14s',
+                }}>
+                {loading
+                  ? <><RefreshCw size={13} style={{ animation:'spin 0.9s linear infinite' }}/> Running…</>
+                  : <><Play size={13}/> Run</>}
+              </button>
+              <button
+                className="sp-btn"
+                onClick={() => setQuery(formatSQL(queryRef.current))}
+                title="Auto-format SQL (puts each clause on its own line)"
+              >
+                <Zap size={13}/> Format
+              </button>
+              {execTime && !error && (
+                <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)', display:'flex', alignItems:'center', gap:'0.28rem' }}>
+                  <Clock size={11}/>{execTime}ms
+                </span>
+              )}
+              {results && (
+                <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)', marginLeft:'auto' }}>
+                  {results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Suggestion cards */}
-          {suggestions.length > 0 && (
-            <div>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Sparkles size={11} style={{ color: '#6366f1' }} /> AI Suggestions
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.5rem' }}>
-                {suggestions.map(s => (
-                  <motion.div key={s.id} className="sp-card" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                    onClick={() => { setQuery(s.sql); setMode('sql'); setTimeout(() => runQueryRef.current?.(), 50); }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 8, background: `${s.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <s.Icon size={13} style={{ color: s.color }} />
-                      </div>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{s.title}</span>
-                    </div>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>{s.desc}</p>
-                    <span style={{ fontSize: '0.65rem', color: s.color, marginTop: '0.4rem', display: 'block', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{s.cat}</span>
-                  </motion.div>
-                ))}
-              </div>
+          {/* Starter query pills */}
+          {starters.length > 0 && (
+            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', alignItems:'center' }}>
+              <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:700, marginRight:'0.1rem' }}>
+                Quick:
+              </span>
+              {starters.map(s => (
+                <button key={s.label} className="sp-starter" onClick={() => runStarter(s.sql)}>
+                  <s.icon size={11}/>{s.label}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* Error */}
+          {/* Error banner */}
           <AnimatePresence>
             {error && (
-              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, color: '#f87171', fontSize: '0.82rem', fontFamily: 'monospace' }}>
-                <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>{error}</span>
-                <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}><X size={13} /></button>
+              <motion.div initial={{ opacity:0, y:-6 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
+                style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', padding:'0.7rem 1rem', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.22)', borderRadius:10, color:'#f87171', fontSize:'0.82rem' }}>
+                <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:600, marginBottom:'0.1rem' }}>Query error</div>
+                  <div style={{ fontFamily:'monospace', opacity:0.9 }}>{error}</div>
+                </div>
+                <button onClick={() => setError('')} style={{ background:'none', border:'none', color:'#f87171', cursor:'pointer', lineHeight:0, padding:2 }}><X size={13}/></button>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Results */}
+          {/* Results panel */}
           <AnimatePresence>
             {results && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="sp-panel">
-                <div className="sp-panel-hdr">
+              <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} className="sp-panel">
+                <div className="sp-hdr" style={{ justifyContent:'space-between' }}>
                   Results — {results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    {autoChartType && (
-                      <button className="sp-btn-ghost" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', color: showChart ? '#a5b4fc' : 'var(--text-secondary)' }} onClick={() => setShowChart(v => !v)}>
-                        <BarChart2 size={11} />{showChart ? 'Hide' : 'Chart'}
+                  <div style={{ display:'flex', gap:'0.35rem' }}>
+                    {results.rowCount > 0 && (
+                      <button className="sp-btn" style={{ padding:'0.18rem 0.5rem', fontSize:'0.67rem' }} onClick={() => exportCSV(results)}>
+                        <Download size={10}/> CSV
+                      </button>
+                    )}
+                    {autoChart && (
+                      <button className="sp-btn" style={{ padding:'0.18rem 0.5rem', fontSize:'0.67rem', color: showChart ? '#a5b4fc' : 'var(--text-secondary)' }} onClick={() => setShowChart(v => !v)}>
+                        <BarChart2 size={10}/>{showChart ? 'Hide chart' : 'Show chart'}
                       </button>
                     )}
                   </div>
@@ -834,38 +834,41 @@ export default function SqlPractice() {
                 {/* Chart */}
                 <AnimatePresence>
                   {showChart && cData.length > 0 && results.columns.length >= 2 && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 260 }} exit={{ opacity: 0, height: 0 }} style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
-                        {['bar','line','pie'].filter(t => t === autoChartType || t === 'bar').map(t => (
-                          <button key={t} onClick={() => setChartType(t)} style={{ padding: '0.2rem 0.6rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 600, border: '1px solid', cursor: 'pointer', background: chartType === t ? 'rgba(99,102,241,0.2)' : 'none', borderColor: chartType === t ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)', color: chartType === t ? '#a5b4fc' : 'var(--text-secondary)', transition: 'all 0.15s' }}>
-                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                    <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:255 }} exit={{ opacity:0, height:0 }}
+                      style={{ padding:'0.75rem 1rem', borderBottom:'1px solid rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                      <div style={{ display:'flex', gap:'0.35rem', marginBottom:'0.5rem' }}>
+                        {(['bar','line','pie']).filter(t => t === autoChart || t === 'bar').map(t => (
+                          <button key={t} onClick={() => setChartType(t)}
+                            style={{ padding:'0.18rem 0.55rem', borderRadius:5, fontSize:'0.7rem', fontWeight:600, border:'1px solid', cursor:'pointer', background: chartType===t ? 'rgba(99,102,241,0.22)' : 'none', borderColor: chartType===t ? 'rgba(99,102,241,0.55)' : 'rgba(255,255,255,0.1)', color: chartType===t ? '#a5b4fc' : 'var(--text-secondary)', transition:'all 0.13s' }}>
+                            {t.charAt(0).toUpperCase()+t.slice(1)}
                           </button>
                         ))}
                       </div>
-                      <ResponsiveContainer width="100%" height={195}>
+                      <ResponsiveContainer width="100%" height={188}>
                         {chartType === 'pie' ? (
                           <PieChart>
-                            <Pie data={cData} dataKey={results.columns[1]} nameKey={results.columns[0]} cx="50%" cy="50%" outerRadius={75} label={({ name, percent }) => `${String(name).slice(0,12)} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                              {cData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                            <Pie data={cData} dataKey={results.columns[1]} nameKey={results.columns[0]} cx="50%" cy="50%" outerRadius={72}
+                              label={({ name, percent }) => `${String(name).slice(0,14)} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={11}>
+                              {cData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]}/>)}
                             </Pie>
-                            <Tooltip contentStyle={{ background: '#1e1e28', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: '0.78rem' }} />
+                            <Tooltip contentStyle={{ background:'#12121e', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, fontSize:'0.76rem' }}/>
                           </PieChart>
                         ) : chartType === 'line' ? (
-                          <LineChart data={cData} margin={{ top: 5, right: 20, left: 0, bottom: 30 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey={results.columns[0]} tick={{ fill: '#64748b', fontSize: 11 }} angle={-30} textAnchor="end" interval="preserveStartEnd" />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={fmtNum} />
-                            <Tooltip contentStyle={{ background: '#1e1e28', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: '0.78rem' }} formatter={v => [fmtNum(+v), results.columns[1]]} />
-                            <Line type="monotone" dataKey={results.columns[1]} stroke="#6366f1" strokeWidth={2} dot={cData.length < 30} />
+                          <LineChart data={cData} margin={{ top:5, right:16, left:0, bottom:28 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+                            <XAxis dataKey={results.columns[0]} tick={{ fill:'#64748b', fontSize:11 }} angle={-30} textAnchor="end" interval="preserveStartEnd"/>
+                            <YAxis tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+                            <Tooltip contentStyle={{ background:'#12121e', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, fontSize:'0.76rem' }} formatter={v=>[fmtNum(+v), results.columns[1]]}/>
+                            <Line type="monotone" dataKey={results.columns[1]} stroke="#6366f1" strokeWidth={2} dot={cData.length < 30}/>
                           </LineChart>
                         ) : (
-                          <BarChart data={cData} margin={{ top: 5, right: 20, left: 0, bottom: 30 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey={results.columns[0]} tick={{ fill: '#64748b', fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={fmtNum} />
-                            <Tooltip contentStyle={{ background: '#1e1e28', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: '0.78rem' }} formatter={v => [fmtNum(+v), results.columns[1]]} />
-                            <Bar dataKey={results.columns[1]} radius={[4, 4, 0, 0]}>
-                              {cData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                          <BarChart data={cData} margin={{ top:5, right:16, left:0, bottom:28 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+                            <XAxis dataKey={results.columns[0]} tick={{ fill:'#64748b', fontSize:11 }} angle={-30} textAnchor="end" interval={0}/>
+                            <YAxis tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+                            <Tooltip contentStyle={{ background:'#12121e', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, fontSize:'0.76rem' }} formatter={v=>[fmtNum(+v), results.columns[1]]}/>
+                            <Bar dataKey={results.columns[1]} radius={[4,4,0,0]}>
+                              {cData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]}/>)}
                             </Bar>
                           </BarChart>
                         )}
@@ -874,25 +877,36 @@ export default function SqlPractice() {
                   )}
                 </AnimatePresence>
 
+                {/* Table */}
                 {results.columns.length === 0 ? (
-                  <p style={{ padding: '1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Query ran successfully with no output.</p>
+                  <p style={{ padding:'1rem 1.25rem', color:'var(--text-secondary)', fontSize:'0.84rem' }}>
+                    Query ran successfully — no rows returned.
+                  </p>
                 ) : (
                   <>
-                    <div className="sp-results-wrap">
-                      <table className="sp-results-table">
-                        <thead><tr>{results.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+                    <div className="sp-rw">
+                      <table className="sp-rt">
+                        <thead>
+                          <tr>
+                            <th className="sp-rn">#</th>
+                            {results.columns.map(c => <th key={c}>{c}</th>)}
+                          </tr>
+                        </thead>
                         <tbody>
                           {pagedValues.map((row, i) => (
-                            <tr key={i}>{row.map((cell, j) => <td key={j} title={String(cell ?? '')}>{String(cell ?? '')}</td>)}</tr>
+                            <tr key={i}>
+                              <td className="sp-rn">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                              {row.map((cell, j) => <td key={j} title={String(cell??'')}>{String(cell??'')}</td>)}
+                            </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                     {totalPages > 1 && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', padding: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        <button className="sp-btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '0.25rem 0.5rem' }}><ChevronLeft size={14} /></button>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Page {page} / {totalPages}</span>
-                        <button className="sp-btn-ghost" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ padding: '0.25rem 0.5rem' }}><ChevronRight size={14} /></button>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem', padding:'0.5rem', borderTop:'1px solid rgba(255,255,255,0.06)' }}>
+                        <button className="sp-btn" onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} style={{ padding:'0.22rem 0.45rem' }}><ChevronLeft size={13}/></button>
+                        <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>Page {page} / {totalPages}</span>
+                        <button className="sp-btn" onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} style={{ padding:'0.22rem 0.45rem' }}><ChevronRight size={13}/></button>
                       </div>
                     )}
                   </>
@@ -901,113 +915,10 @@ export default function SqlPractice() {
             )}
           </AnimatePresence>
         </div>
-
-        {/* ── RIGHT PANEL: Insights ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {activeTableInfo?.insights && (() => {
-            const ins = activeTableInfo.insights;
-            return (
-              <>
-                <div className="sp-panel">
-                  <div className="sp-panel-hdr"><Sparkles size={11} style={{ color: '#6366f1' }} /> Dataset Overview</div>
-                  <div style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                    {[
-                      { label: 'Rows', value: ins.rowCount.toLocaleString(), color: '#6366f1' },
-                      { label: 'Columns', value: ins.columnCount, color: '#8b5cf6' },
-                      { label: 'Completeness', value: `${ins.completeness}%`, color: ins.completeness > 90 ? '#10b981' : '#f59e0b' },
-                      { label: 'Numeric cols', value: ins.numericColumns.length, color: '#10b981' },
-                    ].map(({ label, value, color }) => (
-                      <div key={label} className="sp-stat-card">
-                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color }}>{value}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>{label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Numeric column stats */}
-                {ins.numericColumns.length > 0 && (
-                  <div className="sp-panel">
-                    <div className="sp-panel-hdr"><Hash size={11} style={{ color: '#10b981' }} /> Numeric Columns</div>
-                    <div style={{ padding: '0.5rem' }}>
-                      {ins.numericColumns.slice(0, 4).map(col => {
-                        const st = ins.columnStats[col];
-                        return (
-                          <div key={col} style={{ padding: '0.5rem', borderRadius: 8, marginBottom: '0.4rem', background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.1)' }}>
-                            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.25rem' }}>
-                              {[['min', fmtNum(st.min)], ['avg', fmtNum(st.avg)], ['max', fmtNum(st.max)]].map(([k, v]) => (
-                                <div key={k} style={{ textAlign: 'center' }}>
-                                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#10b981' }}>{v}</div>
-                                  <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Categorical top values */}
-                {ins.categoricalColumns.length > 0 && (
-                  <div className="sp-panel">
-                    <div className="sp-panel-hdr"><Tag size={11} style={{ color: '#6366f1' }} /> Top Categories</div>
-                    <div style={{ padding: '0.5rem' }}>
-                      {ins.categoricalColumns.slice(0, 2).map(col => {
-                        const st = ins.columnStats[col];
-                        const tops = st.topCategories || [];
-                        const total = tops.reduce((s, [, c]) => s + c, 0);
-                        return (
-                          <div key={col} style={{ marginBottom: '0.75rem' }}>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem', paddingLeft: '0.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</div>
-                            {tops.map(([val, cnt], i) => (
-                              <div key={val} style={{ marginBottom: '0.25rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.1rem' }}>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{String(val).slice(0, 20)}</span>
-                                  <span style={{ fontSize: '0.7rem', color: '#a5b4fc', flexShrink: 0 }}>{Math.round(cnt / total * 100)}%</span>
-                                </div>
-                                <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', borderRadius: 2, width: `${Math.round(cnt / total * 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length], transition: 'width 0.5s ease' }} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Quick actions */}
-                <div className="sp-panel">
-                  <div className="sp-panel-hdr"><Zap size={11} style={{ color: '#f59e0b' }} /> Quick Actions</div>
-                  <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    {[
-                      { label: 'Summary stats', sql: `SELECT COUNT(*) as rows${ins.numericColumns.slice(0,2).map(c => `,\n  ROUND(AVG("${c}"),2) as avg_${c.slice(0,10)},\n  ROUND(SUM("${c}"),2) as total_${c.slice(0,10)}`).join('')}\nFROM "${activeTableInfo.name}";` },
-                      { label: 'Null analysis', sql: `SELECT ${activeTableInfo.columns.slice(0,5).map(c => `SUM(CASE WHEN "${c}" IS NULL OR "${c}"='' THEN 1 ELSE 0 END) as ${c.slice(0,14)}_nulls`).join(',\n  ')}\nFROM "${activeTableInfo.name}";` },
-                      ...(ins.categoricalColumns[0] ? [{ label: `Top ${ins.categoricalColumns[0]}`, sql: `SELECT "${ins.categoricalColumns[0]}", COUNT(*) as count\nFROM "${activeTableInfo.name}"\nGROUP BY "${ins.categoricalColumns[0]}"\nORDER BY count DESC\nLIMIT 10;` }] : []),
-                      ...(ins.dateColumns[0] && ins.numericColumns[0] ? [{ label: 'Monthly trend', sql: `SELECT strftime('%Y-%m',"${ins.dateColumns[0]}") as month, ROUND(SUM("${ins.numericColumns[0]}"),2) as total\nFROM "${activeTableInfo.name}"\nGROUP BY month ORDER BY month;` }] : []),
-                    ].map(({ label, sql }) => (
-                      <button key={label} onClick={() => { setQuery(sql); setMode('sql'); setTimeout(() => runQueryRef.current?.(), 50); }}
-                        style={{ width: '100%', textAlign: 'left', padding: '0.45rem 0.6rem', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'all 0.15s' }}
-                        onMouseOver={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.color = '#a5b4fc'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
-                        onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'; }}
-                      >
-                        <FileText size={11} style={{ flexShrink: 0 }} />{label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </div>
       </div>
 
-      <div style={{ marginTop: '2rem' }}>
-        <RelatedTools currentToolId="sql-practice" category="utilities" />
+      <div style={{ marginTop:'2rem' }}>
+        <RelatedTools currentToolId="sql-practice" category="utilities"/>
       </div>
     </div>
   );

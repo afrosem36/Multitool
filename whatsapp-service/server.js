@@ -79,6 +79,13 @@ io.on('connection', (socket) => {
   });
 });
 
+// ── Global error middleware ────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[Express] Unhandled error:', err.message);
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+});
+
 // ── Server start ───────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   const workerUrl = process.env.WA_WORKER_URL || 'http://localhost:8787';
