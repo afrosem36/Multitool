@@ -1,0 +1,184 @@
+order_date,order_time,pizza_category,pizza_size,pizza_name,quantity,unit_price,total_price
+2024-01-05,11:23:00,Classic,M,Margherita,2,12.99,25.98
+2024-01-05,12:45:00,Supreme,L,Meat Lovers,1,16.99,16.99
+2024-01-06,13:10:00,Chicken,M,BBQ Chicken,3,12.99,38.97
+2024-01-07,18:30:00,Veggie,S,Garden Delight,2,8.99,17.98
+2024-01-08,19:15:00,Classic,L,Pepperoni,1,16.99,16.99
+2024-01-10,20:05:00,Supreme,M,Hawaiian,2,12.99,25.98
+2024-01-12,21:00:00,Chicken,XL,Tandoori,1,21.99,21.99
+2024-01-14,14:30:00,Veggie,M,Mushroom,2,12.99,25.98
+2024-01-15,17:45:00,Classic,S,Margherita,1,8.99,8.99
+2024-01-18,19:20:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-01-20,20:00:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-01-22,12:30:00,Classic,XL,Pepperoni,1,21.99,21.99
+2024-01-25,18:50:00,Veggie,L,Garden Delight,2,16.99,33.98
+2024-01-28,21:15:00,Supreme,S,Hawaiian,3,8.99,26.97
+2024-01-30,19:40:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-02-02,12:00:00,Classic,M,Margherita,1,12.99,12.99
+2024-02-04,13:30:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-02-06,18:45:00,Chicken,S,BBQ Chicken,3,8.99,26.97
+2024-02-08,20:00:00,Veggie,M,Mushroom,1,12.99,12.99
+2024-02-10,14:15:00,Classic,L,Pepperoni,2,16.99,33.98
+2024-02-12,19:30:00,Supreme,XL,Hawaiian,1,21.99,21.99
+2024-02-14,20:45:00,Chicken,M,Tandoori,3,12.99,38.97
+2024-02-16,12:20:00,Veggie,S,Garden Delight,2,8.99,17.98
+2024-02-18,17:00:00,Classic,M,Margherita,1,12.99,12.99
+2024-02-20,19:10:00,Supreme,L,Meat Lovers,1,16.99,16.99
+2024-02-22,21:30:00,Chicken,M,BBQ Chicken,2,12.99,25.98
+2024-02-25,13:45:00,Veggie,L,Mushroom,1,16.99,16.99
+2024-02-28,18:20:00,Classic,XL,Pepperoni,2,21.99,43.98
+2024-03-01,11:30:00,Supreme,M,Hawaiian,3,12.99,38.97
+2024-03-03,12:00:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-03-05,18:30:00,Veggie,M,Garden Delight,1,12.99,12.99
+2024-03-07,19:45:00,Classic,L,Margherita,2,16.99,33.98
+2024-03-09,20:30:00,Supreme,M,Meat Lovers,3,12.99,38.97
+2024-03-11,13:15:00,Chicken,XL,BBQ Chicken,1,21.99,21.99
+2024-03-13,17:00:00,Veggie,S,Mushroom,3,8.99,26.97
+2024-03-15,19:20:00,Classic,M,Pepperoni,2,12.99,25.98
+2024-03-17,20:00:00,Supreme,L,Hawaiian,1,16.99,16.99
+2024-03-19,21:10:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-03-21,12:40:00,Veggie,L,Garden Delight,2,16.99,33.98
+2024-03-23,18:55:00,Classic,S,Margherita,4,8.99,35.96
+2024-03-25,19:30:00,Supreme,M,Meat Lovers,1,12.99,12.99
+2024-03-27,20:45:00,Chicken,M,BBQ Chicken,3,12.99,38.97
+2024-03-29,14:00:00,Veggie,XL,Mushroom,1,21.99,21.99
+2024-04-01,11:15:00,Classic,L,Pepperoni,2,16.99,33.98
+2024-04-03,12:30:00,Supreme,M,Hawaiian,3,12.99,38.97
+2024-04-05,18:00:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-04-07,19:30:00,Veggie,M,Garden Delight,1,12.99,12.99
+2024-04-09,20:15:00,Classic,XL,Margherita,1,21.99,21.99
+2024-04-11,13:45:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-04-13,17:30:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-04-15,19:00:00,Veggie,S,Mushroom,3,8.99,26.97
+2024-04-17,20:30:00,Classic,M,Pepperoni,2,12.99,25.98
+2024-04-19,21:00:00,Supreme,L,Hawaiian,1,16.99,16.99
+2024-04-21,12:10:00,Chicken,M,Tandoori,3,12.99,38.97
+2024-04-23,18:40:00,Veggie,L,Garden Delight,1,16.99,16.99
+2024-04-25,19:55:00,Classic,M,Margherita,2,12.99,25.98
+2024-04-27,20:20:00,Supreme,XL,Meat Lovers,1,21.99,21.99
+2024-04-29,14:30:00,Chicken,S,BBQ Chicken,2,8.99,17.98
+2024-05-02,11:00:00,Veggie,M,Mushroom,1,12.99,12.99
+2024-05-04,12:45:00,Classic,L,Pepperoni,3,16.99,50.97
+2024-05-06,18:15:00,Supreme,M,Hawaiian,2,12.99,25.98
+2024-05-08,19:30:00,Chicken,XL,Tandoori,1,21.99,21.99
+2024-05-10,20:00:00,Veggie,S,Garden Delight,3,8.99,26.97
+2024-05-12,13:20:00,Classic,M,Margherita,2,12.99,25.98
+2024-05-14,17:45:00,Supreme,L,Meat Lovers,1,16.99,16.99
+2024-05-16,19:10:00,Chicken,M,BBQ Chicken,2,12.99,25.98
+2024-05-18,20:30:00,Veggie,M,Mushroom,1,12.99,12.99
+2024-05-20,21:00:00,Classic,L,Pepperoni,2,16.99,33.98
+2024-05-22,12:30:00,Supreme,S,Hawaiian,4,8.99,35.96
+2024-05-24,18:50:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-05-26,19:20:00,Veggie,L,Garden Delight,1,16.99,16.99
+2024-05-28,20:45:00,Classic,XL,Margherita,1,21.99,21.99
+2024-05-30,14:00:00,Supreme,M,Meat Lovers,3,12.99,38.97
+2024-06-01,11:30:00,Chicken,S,BBQ Chicken,2,8.99,17.98
+2024-06-03,12:00:00,Veggie,M,Mushroom,2,12.99,25.98
+2024-06-05,18:30:00,Classic,L,Pepperoni,1,16.99,16.99
+2024-06-07,19:45:00,Supreme,XL,Hawaiian,1,21.99,21.99
+2024-06-09,20:15:00,Chicken,M,Tandoori,3,12.99,38.97
+2024-06-11,13:00:00,Veggie,S,Garden Delight,2,8.99,17.98
+2024-06-13,17:30:00,Classic,M,Margherita,2,12.99,25.98
+2024-06-15,19:00:00,Supreme,L,Meat Lovers,1,16.99,16.99
+2024-06-17,20:30:00,Chicken,M,BBQ Chicken,2,12.99,25.98
+2024-06-19,21:15:00,Veggie,L,Mushroom,1,16.99,16.99
+2024-06-21,12:45:00,Classic,M,Pepperoni,3,12.99,38.97
+2024-06-23,18:00:00,Supreme,S,Hawaiian,2,8.99,17.98
+2024-06-25,19:30:00,Chicken,XL,Tandoori,1,21.99,21.99
+2024-06-27,20:00:00,Veggie,M,Garden Delight,2,12.99,25.98
+2024-06-29,14:15:00,Classic,L,Margherita,1,16.99,16.99
+2024-07-02,11:45:00,Supreme,M,Meat Lovers,2,12.99,25.98
+2024-07-04,12:30:00,Chicken,S,BBQ Chicken,3,8.99,26.97
+2024-07-06,18:00:00,Veggie,M,Mushroom,1,12.99,12.99
+2024-07-08,19:15:00,Classic,XL,Pepperoni,1,21.99,21.99
+2024-07-10,20:45:00,Supreme,L,Hawaiian,2,16.99,33.98
+2024-07-12,13:30:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-07-14,17:00:00,Veggie,S,Garden Delight,3,8.99,26.97
+2024-07-16,19:30:00,Classic,M,Margherita,1,12.99,12.99
+2024-07-18,20:00:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-07-20,21:30:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-07-22,12:00:00,Veggie,L,Mushroom,2,16.99,33.98
+2024-07-24,18:30:00,Classic,M,Pepperoni,3,12.99,38.97
+2024-07-26,19:45:00,Supreme,XL,Hawaiian,1,21.99,21.99
+2024-07-28,20:15:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-07-30,14:00:00,Veggie,M,Garden Delight,1,12.99,12.99
+2024-08-01,11:00:00,Classic,L,Margherita,2,16.99,33.98
+2024-08-03,12:30:00,Supreme,M,Meat Lovers,3,12.99,38.97
+2024-08-05,18:45:00,Chicken,M,BBQ Chicken,2,12.99,25.98
+2024-08-07,19:00:00,Veggie,S,Mushroom,1,8.99,8.99
+2024-08-09,20:30:00,Classic,XL,Pepperoni,1,21.99,21.99
+2024-08-11,13:15:00,Supreme,L,Hawaiian,2,16.99,33.98
+2024-08-13,17:45:00,Chicken,M,Tandoori,3,12.99,38.97
+2024-08-15,19:20:00,Veggie,L,Garden Delight,1,16.99,16.99
+2024-08-17,20:00:00,Classic,M,Margherita,2,12.99,25.98
+2024-08-19,21:10:00,Supreme,S,Meat Lovers,3,8.99,26.97
+2024-08-21,12:40:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-08-23,18:00:00,Veggie,M,Mushroom,2,12.99,25.98
+2024-08-25,19:30:00,Classic,L,Pepperoni,2,16.99,33.98
+2024-08-27,20:45:00,Supreme,XL,Hawaiian,1,21.99,21.99
+2024-08-29,14:30:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-09-01,11:15:00,Veggie,M,Garden Delight,3,12.99,38.97
+2024-09-03,12:00:00,Classic,L,Margherita,1,16.99,16.99
+2024-09-05,18:30:00,Supreme,M,Meat Lovers,2,12.99,25.98
+2024-09-07,19:45:00,Chicken,XL,BBQ Chicken,1,21.99,21.99
+2024-09-09,20:15:00,Veggie,S,Mushroom,3,8.99,26.97
+2024-09-11,13:30:00,Classic,M,Pepperoni,2,12.99,25.98
+2024-09-13,17:00:00,Supreme,L,Hawaiian,1,16.99,16.99
+2024-09-15,19:10:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-09-17,20:30:00,Veggie,L,Garden Delight,1,16.99,16.99
+2024-09-19,21:00:00,Classic,M,Margherita,3,12.99,38.97
+2024-09-21,12:20:00,Supreme,S,Meat Lovers,2,8.99,17.98
+2024-09-23,18:45:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-09-25,19:30:00,Veggie,XL,Mushroom,1,21.99,21.99
+2024-09-27,20:00:00,Classic,L,Pepperoni,2,16.99,33.98
+2024-09-29,14:15:00,Supreme,M,Hawaiian,3,12.99,38.97
+2024-10-01,11:30:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-10-03,12:45:00,Veggie,M,Garden Delight,1,12.99,12.99
+2024-10-05,18:00:00,Classic,XL,Margherita,1,21.99,21.99
+2024-10-07,19:30:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-10-09,20:00:00,Chicken,M,BBQ Chicken,3,12.99,38.97
+2024-10-11,13:00:00,Veggie,S,Mushroom,2,8.99,17.98
+2024-10-13,17:15:00,Classic,M,Pepperoni,2,12.99,25.98
+2024-10-15,19:00:00,Supreme,L,Hawaiian,1,16.99,16.99
+2024-10-17,20:30:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-10-19,21:00:00,Veggie,L,Garden Delight,1,16.99,16.99
+2024-10-21,12:30:00,Classic,M,Margherita,4,12.99,51.96
+2024-10-23,18:15:00,Supreme,XL,Meat Lovers,1,21.99,21.99
+2024-10-25,19:45:00,Chicken,S,BBQ Chicken,3,8.99,26.97
+2024-10-27,20:15:00,Veggie,M,Mushroom,2,12.99,25.98
+2024-10-29,14:00:00,Classic,L,Pepperoni,1,16.99,16.99
+2024-10-31,19:30:00,Supreme,M,Hawaiian,2,12.99,25.98
+2024-11-01,11:00:00,Chicken,XL,Tandoori,1,21.99,21.99
+2024-11-03,12:30:00,Veggie,S,Garden Delight,3,8.99,26.97
+2024-11-05,18:45:00,Classic,M,Margherita,2,12.99,25.98
+2024-11-07,19:00:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-11-09,20:15:00,Chicken,M,BBQ Chicken,1,12.99,12.99
+2024-11-11,13:30:00,Veggie,L,Mushroom,1,16.99,16.99
+2024-11-13,17:00:00,Classic,XL,Pepperoni,1,21.99,21.99
+2024-11-15,19:30:00,Supreme,M,Hawaiian,3,12.99,38.97
+2024-11-17,20:00:00,Chicken,S,Tandoori,2,8.99,17.98
+2024-11-19,21:15:00,Veggie,M,Garden Delight,1,12.99,12.99
+2024-11-21,12:00:00,Classic,L,Margherita,2,16.99,33.98
+2024-11-23,18:30:00,Supreme,M,Meat Lovers,1,12.99,12.99
+2024-11-25,19:45:00,Chicken,M,BBQ Chicken,3,12.99,38.97
+2024-11-27,20:30:00,Veggie,XL,Mushroom,1,21.99,21.99
+2024-11-29,14:15:00,Classic,S,Pepperoni,4,8.99,35.96
+2024-12-01,11:45:00,Supreme,L,Hawaiian,2,16.99,33.98
+2024-12-03,12:30:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-12-05,18:00:00,Veggie,M,Garden Delight,3,12.99,38.97
+2024-12-07,19:15:00,Classic,XL,Margherita,1,21.99,21.99
+2024-12-09,20:45:00,Supreme,L,Meat Lovers,2,16.99,33.98
+2024-12-11,13:00:00,Chicken,S,BBQ Chicken,2,8.99,17.98
+2024-12-13,17:30:00,Veggie,M,Mushroom,1,12.99,12.99
+2024-12-15,19:00:00,Classic,L,Pepperoni,3,16.99,50.97
+2024-12-17,20:15:00,Supreme,M,Hawaiian,2,12.99,25.98
+2024-12-19,21:00:00,Chicken,XL,Tandoori,1,21.99,21.99
+2024-12-21,12:30:00,Veggie,S,Garden Delight,3,8.99,26.97
+2024-12-23,18:45:00,Classic,M,Margherita,2,12.99,25.98
+2024-12-24,19:30:00,Supreme,L,Meat Lovers,3,16.99,50.97
+2024-12-25,20:00:00,Chicken,M,BBQ Chicken,2,12.99,25.98
+2024-12-26,21:15:00,Veggie,L,Mushroom,1,16.99,16.99
+2024-12-27,12:00:00,Classic,XL,Pepperoni,2,21.99,43.98
+2024-12-28,18:30:00,Supreme,S,Hawaiian,4,8.99,35.96
+2024-12-29,19:45:00,Chicken,M,Tandoori,2,12.99,25.98
+2024-12-30,20:30:00,Veggie,M,Garden Delight,1,12.99,12.99
