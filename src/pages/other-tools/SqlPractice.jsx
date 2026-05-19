@@ -627,14 +627,16 @@ export default function SqlPractice() {
   const editorContainerRef = useRef(null);
   const editorViewRef      = useRef(null);
   const tablesRef          = useRef(tables);
+  const activeTableRef     = useRef(activeTable);
   const runQueryRef        = useRef(null);
   const queryRef           = useRef(query);
   const historyBtnRef      = useRef(null);
   const overflowBtnRef     = useRef(null);
   const paletteInputRef    = useRef(null);
 
-  useEffect(() => { tablesRef.current = tables; }, [tables]);
-  useEffect(() => { queryRef.current  = query; },  [query]);
+  useEffect(() => { tablesRef.current      = tables; },      [tables]);
+  useEffect(() => { activeTableRef.current = activeTable; }, [activeTable]);
+  useEffect(() => { queryRef.current       = query; },       [query]);
   useEffect(() => { previewLimitRef.current = previewLimit; }, [previewLimit]);
   useEffect(() => { localStorage.setItem('sql-sidebar-collapsed', !sidebarOpen); }, [sidebarOpen]);
 
@@ -758,8 +760,19 @@ export default function SqlPractice() {
 
   // ── Run SQL ─────────────────────────────────────────────────────────────────────
   const runQuery = useCallback(async (sqlOverride) => {
-    const sql = sqlOverride ?? queryRef.current;
+    let sql = sqlOverride ?? queryRef.current;
     if (!sql?.trim()) return;
+
+    // Auto-fix partial queries that start with a clause keyword instead of SELECT/INSERT/etc.
+    const trimmed = sql.trim().toUpperCase();
+    const clauseOnly = /^(JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|FULL\s+JOIN|CROSS\s+JOIN|ON\s|WHERE\s|GROUP\s+BY|ORDER\s+BY|HAVING\s|UNION\s|LIMIT\s|OFFSET\s)/.test(trimmed);
+    if (clauseOnly) {
+      const activeT = tablesRef.current.find(t => t.name === activeTableRef.current) || tablesRef.current[0];
+      if (activeT) {
+        sql = `SELECT *\nFROM "${activeT.name}"\n${sql.trim()}`;
+        setQuery(sql);
+      }
+    }
 
     const myId = ++queryMsgIdRef.current;
     setLoading(true); setError(''); setResults(null); setPage(1);
