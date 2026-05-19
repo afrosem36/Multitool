@@ -540,8 +540,8 @@ const Home = () => {
           </article>
           <article className="trust-card glass-panel">
             <div className="trust-icon">👥</div>
-            <h3>Trusted by 100K+ Users</h3>
-            <p>Used daily by students, professionals, and businesses worldwide for reliable document processing.</p>
+            <h3>Built for Real Workflows</h3>
+            <p>Designed for students, professionals, and businesses who need quick, reliable tools for everyday document tasks.</p>
           </article>
           <article className="trust-card glass-panel">
             <div className="trust-icon">🛠️</div>
@@ -564,12 +564,12 @@ const Home = () => {
             <p>Professional Tools</p>
           </article>
           <article className="stat-card glass-panel">
-            <h3 className="stat-number">100K+</h3>
-            <p>Active Monthly Users</p>
+            <h3 className="stat-number">0</h3>
+            <p>Files Stored on Servers</p>
           </article>
           <article className="stat-card glass-panel">
-            <h3 className="stat-number">99.9%</h3>
-            <p>Uptime Guarantee</p>
+            <h3 className="stat-number">100%</h3>
+            <p>Browser-Based Processing</p>
           </article>
           <article className="stat-card glass-panel">
             <h3 className="stat-number">24/7</h3>

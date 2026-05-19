@@ -30,7 +30,7 @@ import RelatedTools from '../../components/shared/RelatedTools';
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
 const CHART_COLORS = ['#6366f1','#8b5cf6','#d946ef','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
-const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','HOUR','MINUTE','MONTH','YEAR','DAY','MONTHNAME','DAYNAME','DAYOFWEEK','DENSE_RANK','RANK','ROW_NUMBER','OVER','PARTITION','WITH'];
+const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','FULL','CROSS','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','REPLACE','SUBSTR','INSTR','COALESCE','NULLIF','ABS','TYPEOF','CAST','HOUR','MINUTE','MONTH','YEAR','DAY','MONTHNAME','DAYNAME','DAYOFWEEK','DENSE_RANK','RANK','ROW_NUMBER','OVER','PARTITION','WITH','CREATE','TABLE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','DROP','ALTER','VIEW','INDEX','UNIQUE','PRIMARY','KEY','FOREIGN','REFERENCES','DEFAULT','AUTOINCREMENT','EXISTS','IF','NOT','ISNULL','NVL','CONCAT','LPAD','RPAD','PRINTF','DATE','TIME','DATETIME','CURRENT_DATE','CURRENT_TIMESTAMP','EXPLAIN','PRAGMA'];
 
 // ─── sql.js singleton ──────────────────────────────────────────────────────────
 const CDN_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
@@ -51,6 +51,28 @@ function regFns(d) {
   d.create_function('MONTHNAME', v => { if(!v) return null; return MONTHS[+String(v).slice(5,7)-1]||null; });
   d.create_function('DAYNAME',   v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:DAYS[t.getUTCDay()]; });
   d.create_function('DAYOFWEEK', v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:t.getUTCDay()+1; });
+  // ISNULL / NVL compat
+  d.create_function('ISNULL',    (v, def) => (v === null || v === undefined || v === '') ? def : v);
+  d.create_function('NVL',       (v, def) => (v === null || v === undefined || v === '') ? def : v);
+  d.create_function('IF',        (cond, a, b) => cond ? a : b);
+  d.create_function('CONCAT',    (...args) => args.map(v => v ?? '').join(''));
+  d.create_function('LPAD',      (s, n, p) => String(s ?? '').padStart(n, p ?? ' '));
+  d.create_function('RPAD',      (s, n, p) => String(s ?? '').padEnd(n, p ?? ' '));
+}
+
+// Return live schema from the worker DB (tables + columns + row counts)
+function getSchema() {
+  try {
+    const tblRes = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    if (!tblRes.length) return [];
+    return tblRes[0].values.map(([name]) => {
+      const cols = db.exec("PRAGMA table_info([" + name + "])");
+      const columns = cols.length ? cols[0].values.map(r => r[1]) : [];
+      const cnt = db.exec("SELECT COUNT(*) FROM [" + name + "]");
+      const rowCount = cnt.length ? (cnt[0].values[0][0] ?? 0) : 0;
+      return { name, columns, rowCount };
+    });
+  } catch { return []; }
 }
 
 self.onmessage = async ({ data }) => {
@@ -68,7 +90,10 @@ self.onmessage = async ({ data }) => {
     try {
       const t0 = performance.now();
       const res = db.exec(data.sql);
-      self.postMessage({ type: 'result', res: res||[], elapsed: (performance.now()-t0).toFixed(1), msgId: data.msgId });
+      const elapsed = (performance.now() - t0).toFixed(1);
+      const rowsModified = db.getRowsModified ? db.getRowsModified() : 0;
+      const schema = getSchema();
+      self.postMessage({ type: 'result', res: res||[], elapsed, rowsModified, schema, msgId: data.msgId });
     } catch(e) { self.postMessage({ type: 'error', error: e.message, msgId: data.msgId }); }
   }
 };
@@ -127,7 +152,10 @@ async function buildDb(tables) {
     if (t.rows.length > 0) {
       const ph = t.columns.map(() => '?').join(', ');
       const stmt = db.prepare(`INSERT INTO "${t.name}" VALUES (${ph})`);
-      for (const row of t.rows) stmt.run(t.columns.map(c => String(row[c] ?? '')));
+      for (const row of t.rows) stmt.run(t.columns.map(c => {
+        const v = row[c];
+        return typeof v === 'string' ? v.trim() : String(v ?? '');
+      }));
       stmt.free();
     }
   }
@@ -146,8 +174,15 @@ async function parseFile(file) {
   const ws  = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   if (raw.length < 2) throw new Error('File appears empty or has only a header row.');
-  const columns = raw[0].map((c, i) => (String(c || `col${i}`).replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1') || `col${i}`));
-  const rows    = raw.slice(1).map(row => { const o = {}; columns.forEach((col, i) => { o[col] = row[i] ?? ''; }); return o; });
+  const columns = raw[0].map((c, i) => (String(c || `col${i}`).trim().replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1') || `col${i}`));
+  const rows    = raw.slice(1).map(row => {
+    const o = {};
+    columns.forEach((col, i) => {
+      const v = row[i];
+      o[col] = typeof v === 'string' ? v.trim() : (v ?? '');
+    });
+    return o;
+  });
   return { name: toTableName(file.name), columns, rows };
 }
 
@@ -337,7 +372,7 @@ function exportJSON(results) {
 }
 
 // ─── Starter queries ───────────────────────────────────────────────────────────
-function buildStarters(table) {
+function buildStarters(table, allTables = []) {
   if (!table) return [];
   const tn      = `"${table.name}"`;
   const cols    = table.columns;
@@ -355,6 +390,21 @@ function buildStarters(table) {
   if (numCols[0] && catCols[0]) starters.push({ icon: BarChart2, label: `Top by ${numCols[0]}`, sql: `SELECT "${catCols[0]}",\n  ROUND(SUM("${numCols[0]}"), 2) AS total\nFROM ${tn}\nGROUP BY "${catCols[0]}"\nORDER BY total DESC\nLIMIT 10;` });
   if (dateCols[0] && numCols[0]) starters.push({ icon: TrendingUp, label: 'Monthly trend', sql: `SELECT\n  STRFTIME('%Y-%m', "${dateCols[0]}") AS month,\n  ROUND(SUM("${numCols[0]}"), 2) AS total,\n  COUNT(*) AS records\nFROM ${tn}\nGROUP BY month\nORDER BY month ASC;` });
   starters.push({ icon: Search, label: 'Missing values', sql: `SELECT ${cols.slice(0, 5).map(c => `\n  SUM(CASE WHEN "${c}" IS NULL OR "${c}" = '' THEN 1 ELSE 0 END) AS ${c.slice(0,14)}_nulls`).join(',')}\nFROM ${tn};` });
+
+  // JOIN starter (when 2+ tables are loaded)
+  const otherTables = allTables.filter(t => t.name !== table.name);
+  if (otherTables.length > 0) {
+    const t2 = otherTables[0];
+    const shared = cols.find(c => t2.columns.includes(c));
+    const joinCol = shared || cols[0];
+    starters.push({ icon: ExternalLink, label: `JOIN ${t2.name}`, sql: `SELECT a.*, b.*\nFROM ${tn} a\nINNER JOIN "${t2.name}" b\n  ON a."${joinCol}" = b."${joinCol}"\nLIMIT 20;` });
+    starters.push({ icon: ExternalLink, label: `LEFT JOIN ${t2.name}`, sql: `SELECT a."${cols[0]}", b."${t2.columns[0]}",\n  COUNT(*) AS count\nFROM ${tn} a\nLEFT JOIN "${t2.name}" b\n  ON a."${joinCol}" = b."${joinCol}"\nGROUP BY a."${cols[0]}"\nORDER BY count DESC;` });
+    starters.push({ icon: Database, label: 'UNION ALL', sql: `SELECT "${cols[0]}" AS col1, '${table.name}' AS source\nFROM ${tn}\nUNION ALL\nSELECT "${t2.columns[0]}" AS col1, '${t2.name}' AS source\nFROM "${t2.name}";` });
+  }
+
+  // CREATE TABLE + INSERT template
+  starters.push({ icon: Database, label: 'Create new table', sql: `-- Create a new table\nCREATE TABLE IF NOT EXISTS new_table (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  value REAL DEFAULT 0,\n  created_at TEXT DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Insert rows\nINSERT INTO new_table (name, value) VALUES\n  ('Alice', 42.5),\n  ('Bob', 87.3),\n  ('Carol', 15.0);\n\n-- View results\nSELECT * FROM new_table;` });
+
   return starters;
 }
 
@@ -533,6 +583,7 @@ export default function SqlPractice() {
   const [page,           setPage]           = useState(1);
   const [history,        setHistory]        = useState([]);
   const [isDragging,     setIsDragging]     = useState(false);
+  const [scratchMode,    setScratchMode]    = useState(false);
   // ── UI / chart state ────────────────────────────────────────────────────────────
   const [showChart,      setShowChart]      = useState(false);
   const [chartType,      setChartType]      = useState('bar');
@@ -583,7 +634,7 @@ export default function SqlPractice() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────────
   const activeInfo   = useMemo(() => tables.find(t => t.name === activeTable), [tables, activeTable]);
-  const starters     = useMemo(() => buildStarters(activeInfo), [activeInfo]);
+  const starters     = useMemo(() => buildStarters(activeInfo, tables), [activeInfo, tables]);
   const chartAnalysis= useMemo(() => analyzeChart(results), [results]);
   const cData        = useMemo(() => chartData(results), [results]);
   const colTypes     = useMemo(() => activeInfo ? getColumnTypes(activeInfo) : {}, [activeInfo]);
@@ -659,6 +710,7 @@ export default function SqlPractice() {
       }
       setTables(merged);
       setActiveTable(merged[0].name);
+      setScratchMode(false);
       dbRef.current = null;
       workerReadyRef.current = false;
       setQuery(`SELECT *\nFROM "${parsed[0].name}"\nLIMIT 10;`);
@@ -679,6 +731,7 @@ export default function SqlPractice() {
       if (idx >= 0) merged[idx] = t; else merged.push(t);
       setTables(merged);
       setActiveTable(t.name);
+      setScratchMode(false);
       dbRef.current = null;
       workerReadyRef.current = false;
       setQuery(`SELECT *\nFROM "${t.name}"\nLIMIT 10;`);
@@ -694,7 +747,6 @@ export default function SqlPractice() {
   const runQuery = useCallback(async (sqlOverride) => {
     const sql = sqlOverride ?? queryRef.current;
     if (!sql?.trim()) return;
-    if (!tablesRef.current.length) { toast.error('Upload a file first'); return; }
 
     const myId = ++queryMsgIdRef.current;
     setLoading(true); setError(''); setResults(null); setPage(1);
@@ -725,20 +777,58 @@ export default function SqlPractice() {
       }
 
       const execId = ++queryMsgIdRef.current;
-      const { res, elapsed } = await send({ type: 'exec', sql, msgId: execId });
+      const { res, elapsed, rowsModified, schema } = await send({ type: 'exec', sql, msgId: execId });
       if (execId !== queryMsgIdRef.current) return;
 
       setExecTime(elapsed);
+
+      // Sync tables state from worker schema (DDL may have added/dropped tables)
+      if (schema) {
+        setTables(prevTables => {
+          const existing = new Map(prevTables.map(t => [t.name, t]));
+          const newTables = schema.map(s => {
+            if (existing.has(s.name)) {
+              const prev = existing.get(s.name);
+              return JSON.stringify(prev.columns) !== JSON.stringify(s.columns)
+                ? { ...prev, columns: s.columns }
+                : prev;
+            }
+            return { name: s.name, columns: s.columns, rows: [] };
+          });
+          return newTables;
+        });
+        setActiveTable(at => (!at && schema.length > 0) ? schema[0].name : at);
+      }
+
+      // Determine operation type for user-friendly status
+      const upperSql = sql.trim().toUpperCase().replace(/--[^\n]*/g, '').trim();
+      const isDDL = /^(CREATE|DROP|ALTER)\s/.test(upperSql);
+      const isDML = !isDDL && (rowsModified ?? 0) > 0 && !res?.length;
+
       if (!res?.length) {
-        setResults({ columns: [], values: [], rowCount: 0 });
+        if (isDDL) {
+          const verb = upperSql.startsWith('CREATE TABLE') ? 'Table created'
+                     : upperSql.startsWith('CREATE VIEW')  ? 'View created'
+                     : upperSql.startsWith('CREATE INDEX') ? 'Index created'
+                     : upperSql.startsWith('DROP')         ? 'Dropped successfully'
+                     : upperSql.startsWith('ALTER')        ? 'Table altered'
+                     : 'Statement executed';
+          setResults({ columns: ['Status'], values: [[`✓ ${verb} successfully`]], rowCount: 1, statusOnly: true });
+        } else if (isDML) {
+          const n = rowsModified ?? 0;
+          setResults({ columns: ['Status'], values: [[`✓ ${n} row${n !== 1 ? 's' : ''} affected`]], rowCount: 1, statusOnly: true });
+        } else {
+          setResults({ columns: [], values: [], rowCount: 0 });
+        }
       } else {
         const { columns, values } = res[0];
         setResults({ columns, values, rowCount: values.length });
       }
-      setHistory(h => [{ sql, time: elapsed, ts: Date.now(), rowCount: res?.[0]?.values?.length ?? 0 }, ...h].slice(0, 30));
+      setHistory(h => [{ sql, time: elapsed, ts: Date.now(), rowCount: res?.[0]?.values?.length ?? (rowsModified ?? 0) }, ...h].slice(0, 30));
     } catch (e) {
       let msg = e.message || 'Unknown error';
-      if (msg.includes('no such table')) msg = `${msg}. Available: ${tablesRef.current.map(t => t.name).join(', ')}`;
+      const knownTables = tablesRef.current.map(t => t.name);
+      if (msg.includes('no such table') && knownTables.length) msg = `${msg}. Available tables: ${knownTables.join(', ')}`;
       setError(msg);
     } finally {
       setLoading(false);
@@ -1033,7 +1123,7 @@ export default function SqlPractice() {
   // ─────────────────────────────────────────────────────────────────────────────
   // ── UPLOAD SCREEN ────────────────────────────────────────────────────────────
   // ─────────────────────────────────────────────────────────────────────────────
-  if (!tables.length) {
+  if (!tables.length && !scratchMode) {
     return (
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
         <ToolHeader title="SQL Practice" description="Upload any CSV or Excel file and start querying instantly — 100% in your browser, nothing uploaded to a server." icon={Database} toolId="sql-practice"/>
@@ -1071,12 +1161,21 @@ export default function SqlPractice() {
           </div>
           <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)}/>
 
-          <div style={{ textAlign:'center', marginTop:'1.1rem' }}>
+          <div style={{ textAlign:'center', marginTop:'1.1rem', display:'flex', gap:'1.5rem', justifyContent:'center', flexWrap:'wrap' }}>
             <button onClick={handleSampleData} disabled={uploading}
               style={{ background:'none', border:'none', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.84rem', textDecoration:'underline', textUnderlineOffset:3, opacity: uploading ? 0.5 : 1, transition:'color 0.15s' }}
               onMouseOver={e => e.currentTarget.style.color='#a5b4fc'}
               onMouseOut={e => e.currentTarget.style.color='var(--text-secondary)'}>
               Try with sample data →
+            </button>
+            <button onClick={() => {
+              setScratchMode(true);
+              setQuery(`-- Create a new table from scratch\nCREATE TABLE IF NOT EXISTS employees (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  department TEXT,\n  salary REAL DEFAULT 0\n);\n\n-- Insert some rows\nINSERT INTO employees (name, department, salary) VALUES\n  ('Alice', 'Engineering', 95000),\n  ('Bob', 'Marketing', 72000),\n  ('Carol', 'Engineering', 88000),\n  ('Dave', 'HR', 65000);\n\n-- Query results\nSELECT * FROM employees ORDER BY salary DESC;`);
+            }} disabled={uploading}
+              style={{ background:'none', border:'none', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.84rem', textDecoration:'underline', textUnderlineOffset:3, transition:'color 0.15s' }}
+              onMouseOver={e => e.currentTarget.style.color='#a5b4fc'}
+              onMouseOut={e => e.currentTarget.style.color='var(--text-secondary)'}>
+              Write SQL from scratch →
             </button>
           </div>
         </motion.div>
@@ -1151,7 +1250,7 @@ export default function SqlPractice() {
                 <div className="sp-overflow-item" onClick={() => { navigator.clipboard.writeText(queryRef.current); setShowOverflow(false); toast.success('Copied!'); }}>
                   <Copy size={12}/> Copy SQL
                 </div>
-                {results && results.rowCount > 0 && <>
+                {results && results.rowCount > 0 && !results.statusOnly && <>
                   <div className="sp-overflow-item" onClick={() => { exportCSV(results); setShowOverflow(false); }}>
                     <Download size={12}/> Export CSV
                   </div>
@@ -1360,7 +1459,7 @@ export default function SqlPractice() {
                         <BarChart2 size={10}/>{showChart ? 'Hide chart' : 'Show chart'}
                       </button>
                     )}
-                    {results.rowCount > 0 && (
+                    {results.rowCount > 0 && !results.statusOnly && (
                       <button className="sp-btn" style={{ padding:'0.18rem 0.5rem', fontSize:'0.68rem' }} onClick={() => exportCSV(results)}>
                         <Download size={10}/> CSV
                       </button>
@@ -1426,6 +1525,8 @@ export default function SqlPractice() {
                 {chartAnalysis.type !== 'stat-cards' && (
                   results.columns.length === 0 ? (
                     <p style={{ padding:'1rem 1.25rem', color:'var(--text-secondary)', fontSize:'0.84rem' }}>Query ran successfully — no rows returned.</p>
+                  ) : results.statusOnly ? (
+                    <p style={{ padding:'1rem 1.25rem', color:'#10b981', fontSize:'0.88rem', fontWeight:600 }}>{results.values[0][0]}</p>
                   ) : (
                     <>
                       <div className="sp-rw">

@@ -7,20 +7,15 @@ import '../styles/AboutPage.css';
 const AboutUs = () => {
   const teamMembers = [
     {
-      name: 'Development Team',
-      role: 'Engineers & Designers',
-      bio: 'Our team of experienced developers and designers builds reliable, fast, and user-friendly tools.'
+      name: 'Mohammad Afroz',
+      role: 'Founder & Developer',
+      bio: 'Built MultiTool to make everyday digital tasks faster and more accessible for everyone. Handles development, tool design, and continuous improvements.'
     },
     {
-      name: 'Quality Assurance',
-      role: 'Testing & Performance',
-      bio: 'Dedicated testers ensure every tool works flawlessly across all browsers and devices.'
+      name: 'Open Source & Community',
+      role: 'Contributors & Feedback',
+      bio: 'MultiTool is improved by feedback from real users. Bug reports, feature suggestions, and community input directly shape each update.'
     },
-    {
-      name: 'Support Team',
-      role: 'Customer Success',
-      bio: 'Available to help with questions, feedback, and continuous improvement suggestions.'
-    }
   ];
 
   const values = [
@@ -63,10 +58,10 @@ const AboutUs = () => {
   ];
 
   const achievements = [
-    { number: '50+', label: 'Professional Tools' },
-    { number: '100K+', label: 'Active Users Monthly' },
-    { number: '99.9%', label: 'Uptime Guarantee' },
-    { number: '24/7', label: 'Service Availability' }
+    { number: '50+', label: 'Free Online Tools' },
+    { number: '0', label: 'Files Stored on Servers' },
+    { number: '100%', label: 'Browser-Based Processing' },
+    { number: '24/7', label: 'Available — No Login Required' }
   ];
 
   return (
@@ -83,10 +78,10 @@ const AboutUs = () => {
           logo: '/logo.png',
           description:
             'Free online tools for PDF, image, text processing, and utilities. Browser-based, fast, and privacy-focused.',
-          sameAs: [
-            'https://twitter.com/multitool',
-            'https://linkedin.com/company/multitool'
-          ],
+          founder: {
+            '@type': 'Person',
+            name: 'Mohammad Afroz'
+          },
           contactPoint: {
             '@type': 'ContactPoint',
             url: 'https://multitoolhub.space/contact-us',
@@ -249,14 +244,14 @@ const AboutUs = () => {
             </motion.h2>
             <div className="why-list">
               {[
-                'Completely free - no hidden charges or premium features',
-                'Browser-based - no installation or downloads needed',
-                'Privacy-focused - all processing happens locally',
-                'Fast and responsive - instant results on any device',
-                'Regularly updated - new tools and features added monthly',
-                'Trusted by 100K+ users worldwide',
-                'Professional quality - built to enterprise standards',
-                'Accessible - WCAG compliant and inclusive design'
+                'Completely free — no hidden charges, subscriptions, or premium tiers',
+                'Browser-based — no installation or account required',
+                'Privacy-focused — all processing happens locally in your browser',
+                'Fast and responsive — instant results on any device',
+                'Regularly updated — new tools and improvements added continuously',
+                'Simple, direct workflows — pick a tool, use it, done',
+                'Honest and transparent — no fake statistics or misleading claims',
+                'Open to feedback — real user suggestions shape every update'
               ].map((item, idx) => (
                 <motion.div
                   key={idx}

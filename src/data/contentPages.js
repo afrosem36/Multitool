@@ -322,6 +322,265 @@ export const guideArticles = [
         ]
       }
     ]
+  },
+
+  {
+    slug: 'how-to-convert-pdf-to-word',
+    path: '/guides/how-to-convert-pdf-to-word',
+    title: 'How to Convert PDF to Word and Edit the Content',
+    description:
+      'Learn how to convert a PDF to an editable Word document, what to expect from the conversion, and how to fix common formatting issues.',
+    keywords:
+      'how to convert pdf to word, pdf to docx, edit pdf in word, pdf converter guide, editable document from pdf',
+    category: 'PDF Guides',
+    readTime: '6 min read',
+    intro:
+      'Converting a PDF to Word is one of the most common document tasks for people who need to revise content in a file they did not originally create. The conversion works well for simple layouts but requires manual cleanup for complex formatting. Understanding what to expect before you start saves time and avoids frustration.',
+    sections: [
+      {
+        heading: 'Why PDF to Word Conversion Has Limitations',
+        paragraphs: [
+          'A PDF is a fixed-layout format designed for consistent display and printing. When you convert it to Word, the software has to reverse-engineer the layout into editable elements, which is an imperfect process. The result is usually good enough for editing the text, but complex multi-column layouts, tables, and special fonts often require adjustment after conversion.',
+          'The conversion challenge is especially noticeable with scanned PDFs. A scanned PDF is essentially a photograph of a page, not a text document. Converting it requires optical character recognition (OCR) to read and digitize the text. OCR is accurate for clean scans but can introduce errors on low-quality or handwritten documents.'
+        ]
+      },
+      {
+        heading: 'What Converts Well and What Does Not',
+        paragraphs: [
+          'Standard single-column documents with simple formatting convert cleanly most of the time. Letters, reports, articles, and straightforward proposals usually produce editable Word documents with minimal cleanup. Headings, bold text, paragraphs, and basic tables are generally preserved in usable form.',
+          'Multi-column magazine-style layouts, documents with heavy use of text boxes, complex chart-heavy reports, and PDFs with custom or embedded fonts often produce messy Word output. If the original document is not already clean and simple in structure, expect to spend time correcting the converted version.'
+        ]
+      },
+      {
+        heading: 'Practical Steps After Conversion',
+        paragraphs: [
+          'The most efficient approach is to accept that some cleanup is expected and plan for it. Start by reviewing the document from beginning to end before editing content. Look for line breaks in the wrong places, incorrect spacing between paragraphs, missing or misplaced images, and font inconsistencies. Fix these structural issues before changing any actual content.',
+          'For tables, check each cell for merged or split data. Scanned tables often convert with misaligned content. If the table is complex, it can be faster to recreate it from scratch in Word rather than trying to fix a broken converted version. Once the structure looks correct, text edits will be reliable and the final output will be clean enough to share or submit.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-protect-pdf-with-password',
+    path: '/guides/how-to-protect-pdf-with-password',
+    title: 'How to Protect a PDF With a Password Before Sharing It',
+    description:
+      'Learn how to add a password to a PDF, why it matters for sensitive documents, and how to share protected files safely.',
+    keywords:
+      'how to protect pdf with password, pdf password, secure pdf, encrypt pdf, locked pdf guide',
+    category: 'PDF Guides',
+    readTime: '5 min read',
+    intro:
+      'Adding a password to a PDF before sending it is one of the simplest ways to prevent unauthorized access to sensitive information. Whether you are sharing a payslip, a contract, or a confidential report, a password ensures that only the intended recipient can open the file. Understanding the right way to do this makes the protection meaningful rather than just symbolic.',
+    sections: [
+      {
+        heading: 'When PDF Password Protection Actually Matters',
+        paragraphs: [
+          'Password protection is most valuable when the document contains personally identifiable information, financial data, medical records, legal agreements, or internal business content that should not be seen by anyone who accidentally receives the file. Email can be forwarded, cloud links can be shared, and attachments can be opened by the wrong person. A password adds a meaningful barrier against casual unauthorized access.',
+          'It is less effective when someone has advanced technical tools or time to attempt brute-force methods. PDF encryption is not unbreakable given enough effort, but it is a substantial deterrent for most real-world sharing situations. For documents that require stronger protection, encryption combined with secure sharing platforms is a better approach.'
+        ]
+      },
+      {
+        heading: 'How to Choose a Good Password for a PDF',
+        paragraphs: [
+          'A good PDF password is at least eight characters and uses a mix of uppercase letters, lowercase letters, numbers, and symbols. Avoid using names, dates, or simple words that could be guessed from context. The password should be something you can remember or store securely, but not something the recipient could reasonably guess.',
+          'Never send the password in the same email as the PDF itself. If someone intercepts the email, they get both the file and the key to open it. Instead, share the password through a different channel, such as a phone call, text message, or a separate messaging app. This simple practice significantly improves the value of the protection.'
+        ]
+      },
+      {
+        heading: 'What PDF Password Protection Does Not Do',
+        paragraphs: [
+          'Password protection controls who can open the file, but once the recipient has opened it, the content is visible and usable. If the recipient shares the open document or takes screenshots of the content, the password does not prevent that. Permission restrictions, such as disabling printing or copying, are an additional layer available in advanced PDF tools, but they are also bypassable with enough effort.',
+          'For practical use, PDF password protection is appropriate for most business and personal sharing situations. It is not a substitute for proper data security, encrypted email services, or secure file sharing platforms for truly sensitive information. Use it as part of a broader approach to document security rather than as the sole control.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-reduce-pdf-file-size',
+    path: '/guides/how-to-reduce-pdf-file-size',
+    title: 'How to Reduce PDF File Size Without Losing Too Much Quality',
+    description:
+      'Learn why PDF files become large, which compression methods work best, and how to reduce size while keeping your document readable.',
+    keywords:
+      'how to reduce pdf file size, compress pdf, smaller pdf, pdf size reduction, pdf optimization guide',
+    category: 'PDF Guides',
+    readTime: '6 min read',
+    intro:
+      'Large PDF files cause problems when you try to send them by email, upload them to forms with size limits, or share them with a slow internet connection. Most PDF size problems come from embedded images that have not been optimized. Understanding what makes a PDF large helps you choose the right method to reduce it without ruining the document.',
+    sections: [
+      {
+        heading: 'What Makes a PDF File Large',
+        paragraphs: [
+          'The biggest contributor to PDF file size is usually high-resolution images embedded in the document. A PDF created from a Word file with inserted photos, or a PDF produced by scanning a document at high DPI, can easily reach tens of megabytes even if the visual content looks ordinary. Each image stores far more pixel data than what is actually needed for screen reading or standard printing.',
+          'Other contributors include embedded fonts, vector graphics, and metadata. However, images are almost always the primary culprit for unexpectedly large files. When you compress a PDF, most tools focus on downsampling or recompressing those embedded images because that is where the greatest size reduction is possible.'
+        ]
+      },
+      {
+        heading: 'Compression Methods and Their Trade-offs',
+        paragraphs: [
+          'Light compression reduces images to a slightly lower quality while keeping the file readable at full size. This is a good choice for professional documents where quality still matters. Medium compression produces a noticeably smaller file at a modest quality cost, which is appropriate for sharing via email or uploading to a web form where size is limited. Heavy compression creates the smallest file at the cost of some visual clarity, which is acceptable for documents that will only be read on screen.',
+          'If the PDF is mostly text with minimal images, compression may produce only modest size reductions because the text itself is already stored efficiently. In that case, reviewing whether fonts are fully embedded or whether metadata can be stripped may help further, but large reductions are unlikely without the presence of image-heavy content to compress.'
+        ]
+      },
+      {
+        heading: 'Checking the Result Before Sending',
+        paragraphs: [
+          'After compressing a PDF, open the result at full zoom on your screen and scroll through it carefully. Check pages with images, charts, or diagrams specifically, since those are the areas most affected by compression. Text should remain crisp at 100% view even after moderate compression. If text looks blurry or pixelated, the compression setting was too aggressive for the content type.',
+          'Keep a copy of the original file before sharing the compressed version. If someone requests a higher-quality copy later, or if the PDF is used for printing where quality matters more, you can always compress a fresh version from the original. Repeatedly compressing an already-compressed PDF degrades quality each time, so the original should be treated as the master copy.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-remove-background-from-image',
+    path: '/guides/how-to-remove-background-from-image',
+    title: 'How to Remove the Background From an Image for Clean Results',
+    description:
+      'Learn how background removal tools work, when to use them, and how to get clean edges for product photos and portraits.',
+    keywords:
+      'how to remove background from image, background remover guide, transparent png, product photo background, portrait cutout',
+    category: 'Image Guides',
+    readTime: '5 min read',
+    intro:
+      'Removing the background from an image is a common task for product photography, profile pictures, marketing materials, and design work. Online AI tools make it significantly faster than manual selection in a photo editor, but the quality of the result depends on the source image and a few simple preparation steps.',
+    sections: [
+      {
+        heading: 'What Makes a Good Source Image for Background Removal',
+        paragraphs: [
+          'The most important factor is contrast between the subject and the background. An AI removal tool works by detecting where the subject ends and the background begins. When the subject and background have similar colors, textures, or lighting, the tool has a harder time finding the boundary cleanly. A person in a beige jacket standing in front of a beige wall will produce worse results than the same person in front of a plain gray background.',
+          'Lighting also affects edge quality. Harsh shadows that fall across both the subject and background confuse the detection. Even, soft lighting that clearly separates the subject from its surroundings gives the AI model more reliable information to work with. If you are photographing products or subjects for background removal, using a simple light-colored backdrop and even lighting will consistently give better edge results.'
+        ]
+      },
+      {
+        heading: 'Handling Edges and Fine Details',
+        paragraphs: [
+          'Hair, fur, and fine wisps at the boundary of a subject are the hardest part of background removal. AI tools handle this reasonably well for most images, but very detailed or curly hair, translucent fabric edges, and fine fur often need manual refinement. If the edges look rough or if fine details are missing in the output, some manual touch-up in an image editor may be needed for final use.',
+          'For product images, the edges are usually much cleaner because products have defined, consistent boundaries. A bottle, a shoe, or a piece of equipment photographed against a clean background can usually be isolated with very clean edges by a modern AI tool without any manual correction. Products are typically the best use case for fully automated background removal.'
+        ]
+      },
+      {
+        heading: 'Using the Transparent Output Correctly',
+        paragraphs: [
+          'The output from a background remover is a PNG file with a transparent background. PNG transparency is not visible in all applications. When you open the file in a viewer that does not support transparency, you may see a white or gray checkerboard pattern instead of nothing, which is the software indicating that area is transparent rather than white.',
+          'To use the cutout in a design, open it in a tool that supports transparency, such as Canva, Photoshop, or a presentation application, and place it over a new background. If the edges look slightly rough when placed over a new background, check the original at full zoom before concluding that the tool failed. Many edge issues that seem obvious when zooming in at 400% look fine at normal viewing size.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-use-qr-code-for-business',
+    path: '/guides/how-to-use-qr-code-for-business',
+    title: 'How to Use QR Codes for Business: Practical Applications',
+    description:
+      'Learn where and how to use QR codes effectively in business — from contact pages and menus to product packaging and marketing campaigns.',
+    keywords:
+      'how to use qr code for business, qr code marketing, qr code restaurant menu, qr code business card, qr code guide',
+    category: 'Business Guides',
+    readTime: '6 min read',
+    intro:
+      'QR codes have become a standard tool for contactless information sharing in business contexts. A QR code can direct a customer to a website, open a WhatsApp conversation, display contact details, or show a restaurant menu without any physical exchange. Understanding where QR codes add real value and where they become friction helps you place them where they actually get scanned.',
+    sections: [
+      {
+        heading: 'Where QR Codes Work Well in Business',
+        paragraphs: [
+          'The strongest QR code placements are those closest to a moment of intent. A QR code on a restaurant table works because customers are already looking for the menu. A QR code on product packaging works because customers who just received a product are interested in learning how to use it. A QR code on a business card works because someone who just received your card is already thinking about connecting.',
+          'Physical materials like flyers, brochures, posters, menus, product packaging, receipts, and name badges all benefit from QR codes because the person is holding something but cannot click a link. QR codes bridge print and digital by giving people an immediate way to take the next step without typing a URL. They also reduce the chance of typos in long web addresses.'
+        ]
+      },
+      {
+        heading: 'Common Business QR Code Use Cases',
+        paragraphs: [
+          'Customer support links are one of the most practical uses. A QR code on a product or in a confirmation email that opens a pre-filled WhatsApp message to your support number reduces the steps a customer has to take to reach you. That faster contact path can meaningfully improve customer satisfaction. Payments and invoice links can also be embedded in QR codes, making it easier for customers to pay by scanning rather than typing in a URL or account number.',
+          'Feedback and review collection is another high-value use. A QR code on a receipt or at the checkout that links directly to a Google review page or feedback form is more effective than asking customers to find the review page themselves. The fewer steps required to complete an action, the more people will complete it. QR codes reduce those steps for anything that involves accessing a URL in a physical context.'
+        ]
+      },
+      {
+        heading: 'Testing and Maintaining QR Codes',
+        paragraphs: [
+          'Always test a QR code on multiple devices before printing or publishing it. Scan it on an iPhone and an Android device to confirm the link opens correctly on both. Check the landing page loads fast, displays correctly on mobile, and delivers on what the context promises. A QR code that opens a slow-loading or desktop-only page frustrates users and reflects poorly on the business.',
+          'If the destination URL might change over time, use a QR code that links to a URL shortener you control rather than linking directly to a hard-coded page. That way, you can update the destination without reprinting all the physical materials. Static QR codes cannot be changed after printing, so planning for this upfront saves time and printing cost later.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-format-json-correctly',
+    path: '/guides/how-to-format-json-correctly',
+    title: 'How to Format JSON Correctly and Fix Common Errors',
+    description:
+      'Learn JSON formatting rules, understand the most common JSON syntax errors, and know how to validate and fix JSON quickly.',
+    keywords:
+      'how to format json, json syntax errors, validate json, fix json error, json formatting guide',
+    category: 'Developer Guides',
+    readTime: '6 min read',
+    intro:
+      'JSON (JavaScript Object Notation) is the most widely used data format for APIs, configuration files, and web applications. Malformed JSON causes errors that stop processes, break integrations, and waste debugging time. Learning the core formatting rules and knowing where errors commonly appear makes working with JSON much faster and less frustrating.',
+    sections: [
+      {
+        heading: 'The Core Rules of Valid JSON',
+        paragraphs: [
+          'JSON has a strict, simple set of rules. All keys must be strings enclosed in double quotes. Values can be strings, numbers, booleans, null, arrays, or objects. The last item in an object or array must not have a trailing comma. All strings must use double quotes, not single quotes. These four rules cover the vast majority of formatting errors that cause JSON to be invalid.',
+          'The most common mistake is the trailing comma. In many programming languages, a trailing comma after the last item in a list is acceptable or even encouraged. In JSON, it is a syntax error that causes parsers to fail. The second most common error is using single quotes instead of double quotes for strings. Both of these are easy to miss visually but immediately break JSON parsing.'
+        ]
+      },
+      {
+        heading: 'How to Read JSON Error Messages',
+        paragraphs: [
+          'JSON parsers typically report an error with a line and column number. The error often points to the character after where the actual mistake is, not the exact character causing the issue. If the error says "unexpected token at line 12 column 3," look at line 11 or 12 for a missing comma, an extra bracket, or an unclosed string. The actual error is almost always one or two lines before where the parser fails.',
+          'Bracket and brace mismatches are another frequent cause. Every opening bracket must have a matching closing bracket, and every opening brace must have a matching closing brace. In deeply nested JSON, it is easy to miss one of these pairs. A JSON formatter tool that shows indented structure makes these mismatches much easier to spot visually than reading through minified or raw JSON.'
+        ]
+      },
+      {
+        heading: 'Practical Tips for Writing Clean JSON',
+        paragraphs: [
+          'Use a formatter or linter before finalizing any JSON you write by hand. Formatters reindent the structure and make bracket mismatches and missing commas immediately visible. Validators tell you whether the JSON is syntactically correct. Running both takes about five seconds and avoids the frustrating experience of deploying code with an invisible JSON error.',
+          'When working with API responses or tool outputs, paste unfamiliar JSON into a formatter first before trying to use it in code. Formatted JSON is much easier to read and understand. Knowing the structure of the data before writing code to process it saves debugging time and avoids assumptions that turn out to be wrong about how the data is organized.'
+        ]
+      }
+    ]
+  },
+
+  {
+    slug: 'how-to-improve-typing-speed',
+    path: '/guides/how-to-improve-typing-speed',
+    title: 'How to Improve Typing Speed: A Practical Training Guide',
+    description:
+      'Learn the techniques that actually improve typing speed — from proper finger placement to practice habits that build long-term results.',
+    keywords:
+      'how to improve typing speed, typing practice tips, increase words per minute, typing technique guide, touch typing',
+    category: 'Productivity Guides',
+    readTime: '6 min read',
+    intro:
+      'Improving typing speed is a skill that pays off every day for anyone who spends significant time at a computer. The difference between 40 words per minute and 80 words per minute translates to real time saved across every email, document, and message. The good news is that typing speed improves quickly with consistent, deliberate practice using the right technique.',
+    sections: [
+      {
+        heading: 'The Foundation: Home Row and Touch Typing',
+        paragraphs: [
+          'The single biggest unlock for typing speed is learning touch typing — typing without looking at the keyboard. Most people who type slowly look down at the keyboard for many keystrokes. This breaks the mental flow between thinking and outputting text, and makes it nearly impossible to reach higher speeds. The home row technique assigns specific fingers to specific keys so that your hands always return to the same position, allowing muscle memory to guide your fingers to the right keys without visual confirmation.',
+          'The home row is the middle row of letters on the keyboard: ASDF for the left hand and JKL for the right. Each finger is responsible for a vertical column of keys above and below its home position. It feels awkward and slow at first because you are overwriting old habits. The short-term speed drop is temporary. Most people see noticeable improvement within two to three weeks of daily practice using correct technique.'
+        ]
+      },
+      {
+        heading: 'Prioritizing Accuracy Over Speed',
+        paragraphs: [
+          'A common mistake in typing practice is rushing for speed while ignoring errors. Typing fast with many errors is less useful than typing at a moderate speed with high accuracy. Errors require the time to spot them, move your hands to correct them, and return to the typing position. At high error rates, the actual effective output speed is often lower than a more careful, accurate typist who types fewer words per minute but makes far fewer corrections.',
+          'In practice, focus on accuracy as the primary goal and let speed follow. Use a typing speed test to monitor your words-per-minute at different accuracy rates. A score of 60 WPM at 98% accuracy is more practically useful than 80 WPM at 85% accuracy. As your accuracy becomes consistent, increase your target speed incrementally.'
+        ]
+      },
+      {
+        heading: 'Building a Consistent Practice Habit',
+        paragraphs: [
+          'Short daily practice sessions are more effective than occasional long ones. Fifteen to twenty minutes of focused touch typing practice each day builds muscle memory faster than a two-hour session once a week. The key is repetition at the right difficulty level. If the text is too easy, you are reinforcing existing habits without growing. If it is too hard, errors and frustration slow progress.',
+          'Track your WPM and accuracy over time. Seeing improvement quantified is motivating and helps you identify plateaus. When progress stalls, try practicing with less common letter combinations, longer words, or text that contains numbers and punctuation. Those elements appear in real work and make up a meaningful part of total typing time for most people.'
+        ]
+      }
+    ]
   }
 ];
 

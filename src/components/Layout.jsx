@@ -7,8 +7,10 @@ import MobileTopBar from './MobileTopBar';
 import BackButton from './BackButton';
 import MobileSearch from './MobileSearch';
 import SeoManager from './SeoManager';
+import ToolContentSection from './shared/ToolContentSection';
 import { Boxes } from './ui/background-boxes';
 import { footerPages } from '../data/contentPages';
+import { getToolContent } from '../data/toolContent';
 import {
   calculatorTools,
   excelTools,
@@ -119,6 +121,7 @@ const Layout = () => {
   const noLayoutPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
   const isNoLayout = noLayoutPages.includes(location.pathname) || location.pathname.startsWith('/s/');
   const isToolPage = TOOL_PAGE_PATHS.has(location.pathname);
+  const toolContent = getToolContent(location.pathname);
   const isIde = location.pathname === '/tools/html-ide';
 
   if (isNoLayout) return <Outlet />;
@@ -158,6 +161,10 @@ const Layout = () => {
         <main className="main-content">
           <BackButton />
           <Outlet />
+
+          {toolContent && (
+            <ToolContentSection content={toolContent.richContent} />
+          )}
 
           <footer className="footer glass-panel">
             <div className="footer-inner">
