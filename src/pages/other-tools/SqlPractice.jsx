@@ -484,16 +484,19 @@ function relTime(ts) {
 
 // ─── CSS ───────────────────────────────────────────────────────────────────────
 const CSS = `
-  .sp-wrap { display:grid; gap:0.75rem; align-items:flex-start; transition:grid-template-columns 0.22s ease; }
-  .sp-wrap.open  { grid-template-columns:250px 1fr; }
-  .sp-wrap.closed { grid-template-columns:36px 1fr; }
+  /* ── Top schema/table bar ── */
+  .sp-top-bar { display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; padding:0.55rem 0.9rem; background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.07); border-radius:14px; margin-bottom:0.75rem; min-height:44px; }
+  .sp-tbl-chip { display:inline-flex; align-items:center; gap:0.3rem; padding:0.28rem 0.55rem 0.28rem 0.6rem; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); cursor:pointer; transition:all 0.13s; font-size:0.75rem; color:var(--text-secondary); white-space:nowrap; }
+  .sp-tbl-chip.active { background:rgba(99,102,241,0.14); border-color:rgba(99,102,241,0.45); color:#a5b4fc; }
+  .sp-tbl-chip:hover { border-color:rgba(99,102,241,0.3); color:var(--text-primary); }
+  .sp-bar-sep { width:1px; height:20px; background:rgba(255,255,255,0.1); flex-shrink:0; margin:0 0.15rem; }
+  .sp-ccol { display:inline-flex; align-items:center; gap:0.22rem; padding:0.18rem 0.5rem; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); font-size:0.69rem; color:var(--text-secondary); cursor:pointer; font-family:monospace; transition:background 0.1s; white-space:nowrap; }
+  .sp-ccol:hover { background:rgba(99,102,241,0.09); color:#a5b4fc; }
+  /* ── Editor/Results split ── */
+  .sp-split { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; align-items:flex-start; }
+  /* ── Shared panel/table ── */
   .sp-panel { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:12px; overflow:hidden; }
   .sp-hdr { padding:0.48rem 0.85rem; background:rgba(0,0,0,0.28); border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.69rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.07em; display:flex; align-items:center; gap:0.35rem; }
-  .sp-tbl-row { display:flex; align-items:center; justify-content:space-between; padding:0.48rem 0.75rem; cursor:pointer; font-size:0.79rem; transition:background 0.12s; }
-  .sp-tbl-row:hover { background:rgba(255,255,255,0.04); }
-  .sp-tbl-row.active { background:rgba(99,102,241,0.13); color:#a5b4fc; }
-  .sp-col-row { padding:0.24rem 0.75rem; font-size:0.73rem; color:var(--text-secondary); border-bottom:1px solid rgba(255,255,255,0.03); font-family:monospace; display:flex; align-items:center; gap:0.35rem; cursor:pointer; transition:background 0.1s; }
-  .sp-col-row:hover { background:rgba(99,102,241,0.07); color:#a5b4fc; }
   .sp-rt { width:100%; border-collapse:collapse; font-size:0.79rem; table-layout:auto; }
   .sp-rt th { padding:0.46rem 0.7rem; background:#1a1a2e; color:#a5b4fc; text-align:left; font-weight:700; border-bottom:2px solid rgba(99,102,241,0.3); white-space:nowrap; position:sticky; top:0; z-index:2; font-size:0.73rem; box-shadow:0 2px 6px rgba(0,0,0,0.5); cursor:pointer; user-select:none; }
   .sp-rt th:hover { background:#1e1e38; }
@@ -503,20 +506,23 @@ const CSS = `
   .sp-rt td.sp-rn { color:#475569; font-size:0.7rem; text-align:right; user-select:none; cursor:default; }
   .sp-rt tbody tr:nth-child(even) td { background:rgba(255,255,255,0.012); }
   .sp-rt tbody tr:hover td { background:rgba(99,102,241,0.06) !important; }
-  .sp-rw { overflow:auto; max-height:440px; }
+  .sp-rw { overflow:auto; max-height:380px; }
+  .sp-preview-rw { overflow:auto; max-height:320px; }
+  /* ── Buttons ── */
   .sp-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); border-radius:8px; padding:0.34rem 0.65rem; font-size:0.76rem; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; gap:0.3rem; transition:all 0.13s; white-space:nowrap; }
   .sp-btn:hover { border-color:rgba(99,102,241,0.4); color:#a5b4fc; background:rgba(99,102,241,0.07); }
   .sp-btn:disabled { opacity:0.35; cursor:not-allowed; }
   .sp-btn-ghost { background:none; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:0.34rem 0.65rem; font-size:0.76rem; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; gap:0.3rem; transition:all 0.13s; white-space:nowrap; }
   .sp-btn-ghost:hover { border-color:rgba(99,102,241,0.35); color:#a5b4fc; }
+  .sp-lim-btn { padding:0.2rem 0.55rem; border-radius:6px; border:1px solid rgba(255,255,255,0.09); background:none; font-size:0.72rem; color:var(--text-secondary); cursor:pointer; transition:all 0.12s; }
+  .sp-lim-btn.active { background:rgba(99,102,241,0.18); border-color:rgba(99,102,241,0.45); color:#a5b4fc; font-weight:700; }
   .sp-starter { display:flex; align-items:center; gap:0.35rem; padding:0.3rem 0.65rem; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); font-size:0.74rem; color:var(--text-secondary); cursor:pointer; transition:all 0.13s; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis; }
   .sp-starter:hover { background:rgba(99,102,241,0.1); border-color:rgba(99,102,241,0.35); color:#a5b4fc; }
   .sp-icon-btn { background:none; border:none; color:var(--text-secondary); cursor:pointer; padding:0.3rem; border-radius:7px; display:flex; align-items:center; justify-content:center; transition:all 0.13s; }
   .sp-icon-btn:hover { background:rgba(255,255,255,0.07); color:var(--text-primary); }
+  /* ── History/overflow ── */
   .sp-hist-row { padding:0.5rem 0.85rem; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.12s; }
   .sp-hist-row:hover { background:rgba(255,255,255,0.04); }
-  .sp-collapse-btn { width:36px; height:36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:9px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); transition:all 0.13s; flex-shrink:0; }
-  .sp-collapse-btn:hover { background:rgba(99,102,241,0.12); color:#a5b4fc; border-color:rgba(99,102,241,0.3); }
   .sp-stat-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:1.25rem 1rem; text-align:center; transition:all 0.15s; }
   .sp-stat-card:hover { border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.05); }
   .sp-chart-pill { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:7px; border:1px solid rgba(255,255,255,0.1); background:none; cursor:pointer; transition:all 0.13s; color:var(--text-secondary); }
@@ -537,7 +543,7 @@ const CSS = `
   @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   @keyframes spin { to { transform:rotate(360deg); } }
   .cm-editor { border-radius:0 !important; }
-  @media(max-width:768px) { .sp-wrap.open,.sp-wrap.closed { grid-template-columns:1fr; } }
+  @media(max-width:900px) { .sp-split { grid-template-columns:1fr; } }
 `;
 
 // ─── CodeMirror light theme ─────────────────────────────────────────────────────
@@ -584,6 +590,10 @@ export default function SqlPractice() {
   const [history,        setHistory]        = useState([]);
   const [isDragging,     setIsDragging]     = useState(false);
   const [scratchMode,    setScratchMode]    = useState(false);
+  const [previewLimit,   setPreviewLimit]   = useState(10);
+  const [previewData,    setPreviewData]    = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewTable,   setPreviewTable]   = useState('');
   // ── UI / chart state ────────────────────────────────────────────────────────────
   const [showChart,      setShowChart]      = useState(false);
   const [chartType,      setChartType]      = useState('bar');
@@ -611,6 +621,8 @@ export default function SqlPractice() {
   const workerRef          = useRef(null);
   const workerReadyRef     = useRef(false);
   const queryMsgIdRef      = useRef(0);
+  const previewMsgIdRef    = useRef(0);
+  const previewLimitRef    = useRef(10);
   const fileInputRef       = useRef(null);
   const editorContainerRef = useRef(null);
   const editorViewRef      = useRef(null);
@@ -623,6 +635,7 @@ export default function SqlPractice() {
 
   useEffect(() => { tablesRef.current = tables; }, [tables]);
   useEffect(() => { queryRef.current  = query; },  [query]);
+  useEffect(() => { previewLimitRef.current = previewLimit; }, [previewLimit]);
   useEffect(() => { localStorage.setItem('sql-sidebar-collapsed', !sidebarOpen); }, [sidebarOpen]);
 
   // ── Theme observer ──────────────────────────────────────────────────────────────
@@ -797,7 +810,12 @@ export default function SqlPractice() {
           });
           return newTables;
         });
-        setActiveTable(at => (!at && schema.length > 0) ? schema[0].name : at);
+        setActiveTable(at => {
+          const next = (!at && schema.length > 0) ? schema[0].name : at;
+          // Refresh preview after schema change (DDL added/dropped tables)
+          setTimeout(() => runPreview(next || schema[0]?.name, previewLimitRef.current), 80);
+          return next;
+        });
       }
 
       // Determine operation type for user-friendly status
@@ -836,6 +854,49 @@ export default function SqlPractice() {
   }, []);
 
   useEffect(() => { runQueryRef.current = runQuery; }, [runQuery]);
+
+  // ── Preview runner ───────────────────────────────────────────────────────────────
+  const runPreview = useCallback(async (tableName, limit) => {
+    if (!tableName) { setPreviewData(null); return; }
+    const pid = ++previewMsgIdRef.current;
+    setPreviewLoading(true);
+    try {
+      const sql = `SELECT * FROM "${tableName}" LIMIT ${limit}`;
+      let res;
+      if (workerRef.current && workerReadyRef.current) {
+        const data = await new Promise((resolve, reject) => {
+          const id = 'pv-' + pid;
+          workerRef.current._handlers[id] = d => {
+            delete workerRef.current._handlers[id];
+            if (d.type === 'error') reject(new Error(d.error));
+            else resolve(d);
+          };
+          workerRef.current.postMessage({ type: 'exec', sql, msgId: id });
+        });
+        res = data.res;
+      } else if (dbRef.current) {
+        res = dbRef.current.exec(sql);
+      }
+      if (pid !== previewMsgIdRef.current) return;
+      if (res?.length) setPreviewData({ columns: res[0].columns, values: res[0].values, tableName });
+      else setPreviewData({ columns: [], values: [], tableName });
+    } catch {
+      if (pid !== previewMsgIdRef.current) return;
+      setPreviewData(null);
+    } finally {
+      if (pid === previewMsgIdRef.current) setPreviewLoading(false);
+    }
+  }, []);
+
+  // Sync previewTable with activeTable when it changes
+  useEffect(() => {
+    if (activeTable) setPreviewTable(activeTable);
+  }, [activeTable]);
+
+  // Refresh preview when previewTable or previewLimit changes
+  useEffect(() => {
+    if (previewTable) runPreview(previewTable, previewLimit);
+  }, [previewTable, previewLimit, runPreview]);
 
   // ── Remove table ────────────────────────────────────────────────────────────────
   const removeTable = useCallback((name) => {
@@ -1232,170 +1293,151 @@ export default function SqlPractice() {
         )}
       </AnimatePresence>
 
-      {/* ── Top toolbar ────────────────────────────────────────────────────────── */}
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', flexWrap:'wrap', position:'relative' }}>
-        <button className="sp-btn" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-          <Upload size={13}/>{uploading ? 'Loading…' : 'Add File'}
-        </button>
-        <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)}/>
+      {/* ── TOP BAR: Schema + Tables ────────────────────────────────────────────── */}
+      <div className="sp-top-bar">
+        {/* Table chips */}
+        {tables.map(t => (
+          <div key={t.name} className={`sp-tbl-chip${activeTable===t.name?' active':''}`}
+            onClick={() => setActiveTable(t.name)}>
+            <Table size={11} style={{ flexShrink:0 }}/>
+            <span style={{ fontWeight:600 }}>{t.name}</span>
+            <span style={{ fontSize:'0.66rem', opacity:0.6 }}>({(t.rows?.length ?? 0).toLocaleString()})</span>
+            <button onClick={e => { e.stopPropagation(); removeTable(t.name); }}
+              style={{ background:'none', border:'none', color:'inherit', cursor:'pointer', padding:'0 0 0 2px', lineHeight:0, opacity:0.55 }}
+              title="Remove">
+              <X size={10}/>
+            </button>
+          </div>
+        ))}
 
-        {/* ⋯ overflow menu */}
-        <div style={{ position:'relative' }}>
-          <button ref={overflowBtnRef} className="sp-btn" onClick={() => setShowOverflow(v => !v)} title="More options">
-            <MoreHorizontal size={13}/>
+        {/* Divider + column chips for active table */}
+        {activeInfo && activeInfo.columns.length > 0 && (
+          <>
+            <div className="sp-bar-sep"/>
+            <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap', alignItems:'center' }}>
+              {filteredCols.slice(0, 10).map(col => {
+                const type = colTypes[col] || 'categorical';
+                return (
+                  <span key={col} className="sp-ccol" onClick={() => insertColumn(col)} title={`Insert "${col}"`}>
+                    <span style={{ color:TYPE_COLOR[type], fontWeight:700, fontSize:'0.65rem' }}>{TYPE_LABEL[type]}</span>
+                    {col}
+                  </span>
+                );
+              })}
+              {activeInfo.columns.length > 10 && (
+                <span style={{ fontSize:'0.69rem', color:'var(--text-secondary)', opacity:0.7 }}>
+                  +{activeInfo.columns.length - 10} cols
+                </span>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Right-aligned controls */}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+          <button className="sp-btn" onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{ padding:'0.28rem 0.6rem' }}>
+            <Upload size={12}/>{uploading ? 'Loading…' : 'Add File'}
           </button>
-          <AnimatePresence>
-            {showOverflow && (
-              <motion.div className="sp-overflow-menu" initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}>
-                <div className="sp-overflow-item" onClick={() => { navigator.clipboard.writeText(queryRef.current); setShowOverflow(false); toast.success('Copied!'); }}>
-                  <Copy size={12}/> Copy SQL
-                </div>
-                {results && results.rowCount > 0 && !results.statusOnly && <>
-                  <div className="sp-overflow-item" onClick={() => { exportCSV(results); setShowOverflow(false); }}>
-                    <Download size={12}/> Export CSV
-                  </div>
-                  <div className="sp-overflow-item" onClick={() => { exportJSON(results); setShowOverflow(false); }}>
-                    <Download size={12}/> Export JSON
-                  </div>
-                </>}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden onChange={e => handleFiles(e.target.files)}/>
 
-        {/* Cmd+K shortcut hint */}
-        <button className="sp-btn" onClick={() => { setShowPalette(true); setPaletteQuery(''); setPaletteIdx(0); }} title="Command palette (Ctrl+K)">
-          <Command size={12}/> <span style={{ fontSize:'0.7rem', opacity:0.7 }}>Ctrl+K</span>
-        </button>
+          {/* History */}
+          <div style={{ position:'relative' }}>
+            <button ref={historyBtnRef} className="sp-icon-btn" onClick={() => setShowHistory(v => !v)} title="Query history">
+              <Clock size={15}/>
+            </button>
+            <AnimatePresence>
+              {showHistory && (
+                <motion.div className="sp-hist-popover" initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}>
+                  <div className="sp-hdr" style={{ borderRadius:0 }}>Query history</div>
+                  {history.length === 0
+                    ? <p style={{ padding:'1rem', fontSize:'0.8rem', color:'var(--text-secondary)', textAlign:'center' }}>No queries yet</p>
+                    : history.map((h, i) => (
+                      <div key={i} className="sp-hist-row" onClick={() => { setQuery(h.sql); setShowHistory(false); }}>
+                        <div style={{ fontSize:'0.78rem', color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}>
+                          {h.sql.replace(/\s+/g, ' ').slice(0, 55)}{h.sql.length > 55 ? '…' : ''}
+                        </div>
+                        <div style={{ display:'flex', gap:'0.6rem', marginTop:'0.2rem', fontSize:'0.68rem', color:'var(--text-secondary)' }}>
+                          <span>{h.rowCount.toLocaleString()} rows</span>
+                          <span>{h.time}ms</span>
+                          <span style={{ marginLeft:'auto' }}>{relTime(h.ts)}</span>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-        {/* History popover */}
-        <div style={{ position:'relative' }}>
-          <button ref={historyBtnRef} className="sp-icon-btn" onClick={() => setShowHistory(v => !v)} title="Query history">
-            <Clock size={15}/>
-          </button>
-          <AnimatePresence>
-            {showHistory && (
-              <motion.div className="sp-hist-popover" initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}>
-                <div className="sp-hdr" style={{ borderRadius:0 }}>Query history</div>
-                {history.length === 0
-                  ? <p style={{ padding:'1rem', fontSize:'0.8rem', color:'var(--text-secondary)', textAlign:'center' }}>No queries yet</p>
-                  : history.map((h, i) => (
-                    <div key={i} className="sp-hist-row" onClick={() => { setQuery(h.sql); setShowHistory(false); }}>
-                      <div style={{ fontSize:'0.78rem', color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}>
-                        {h.sql.replace(/\s+/g, ' ').slice(0, 55)}{h.sql.length > 55 ? '…' : ''}
-                      </div>
-                      <div style={{ display:'flex', gap:'0.6rem', marginTop:'0.2rem', fontSize:'0.68rem', color:'var(--text-secondary)' }}>
-                        <span>{h.rowCount.toLocaleString()} rows</span>
-                        <span>{h.time}ms</span>
-                        <span style={{ marginLeft:'auto' }}>{relTime(h.ts)}</span>
-                      </div>
+          {/* Overflow menu */}
+          <div style={{ position:'relative' }}>
+            <button ref={overflowBtnRef} className="sp-icon-btn" onClick={() => setShowOverflow(v => !v)} title="More options">
+              <MoreHorizontal size={15}/>
+            </button>
+            <AnimatePresence>
+              {showOverflow && (
+                <motion.div className="sp-overflow-menu" style={{ left:'auto', right:0 }} initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}>
+                  <div className="sp-overflow-item" onClick={() => { navigator.clipboard.writeText(queryRef.current); setShowOverflow(false); toast.success('Copied!'); }}>
+                    <Copy size={12}/> Copy SQL
+                  </div>
+                  {results && results.rowCount > 0 && !results.statusOnly && <>
+                    <div className="sp-overflow-item" onClick={() => { exportCSV(results); setShowOverflow(false); }}>
+                      <Download size={12}/> Export CSV
                     </div>
-                  ))
-                }
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                    <div className="sp-overflow-item" onClick={() => { exportJSON(results); setShowOverflow(false); }}>
+                      <Download size={12}/> Export JSON
+                    </div>
+                  </>}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-        {/* ChatGPT icon — right-aligned, subtle */}
-        <button className="sp-icon-btn" onClick={openChatGPT} title="Ask ChatGPT for practice queries" style={{ marginLeft:'auto' }}>
-          <ExternalLink size={15}/>
-        </button>
+          {/* Ctrl+K palette */}
+          <button className="sp-icon-btn" onClick={() => { setShowPalette(true); setPaletteQuery(''); setPaletteIdx(0); }} title="Command palette (Ctrl+K)">
+            <Command size={15}/>
+          </button>
+
+          {/* ChatGPT */}
+          <button className="sp-icon-btn" onClick={openChatGPT} title="Ask ChatGPT for practice queries">
+            <ExternalLink size={15}/>
+          </button>
+        </div>
       </div>
 
-      {/* ── Main grid ──────────────────────────────────────────────────────────── */}
-      <div className={`sp-wrap ${sidebarOpen ? 'open' : 'closed'}`}>
+      {/* ── MIDDLE: Editor LEFT + Results RIGHT ─────────────────────────────────── */}
+      <div className="sp-split">
 
-        {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', minWidth:0 }}>
-          {/* Collapse toggle */}
-          <button className="sp-collapse-btn" onClick={() => setSidebarOpen(v => !v)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
-            {sidebarOpen ? <CollapseLeft size={14}/> : <ChevronCollapse size={14}/>}
-          </button>
-
-          {sidebarOpen && (
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-              {/* Table list */}
-              <div className="sp-panel">
-                <div className="sp-hdr"><Database size={10}/> Tables ({tables.length})</div>
-                {tables.map(t => (
-                  <div key={t.name} className={`sp-tbl-row${activeTable===t.name?' active':''}`} onClick={() => setActiveTable(t.name)}>
-                    <span style={{ display:'flex', alignItems:'center', gap:'0.38rem', overflow:'hidden', minWidth:0 }}>
-                      <Table size={11} style={{ flexShrink:0 }}/>
-                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.name}</span>
-                      <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)', flexShrink:0 }}>({t.rows.length.toLocaleString()})</span>
-                    </span>
-                    <button onClick={e => { e.stopPropagation(); removeTable(t.name); }}
-                      style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', padding:2, flexShrink:0, lineHeight:0 }} title="Remove table">
-                      <Trash2 size={11}/>
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Schema */}
-              {activeInfo && (
-                <div className="sp-panel">
-                  <div className="sp-hdr">Schema — {activeInfo.name}</div>
-                  {activeInfo.columns.length > 6 && (
-                    <div style={{ padding:'0.4rem 0.75rem', borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
-                      <input
-                        placeholder="Search columns…" value={colSearch} onChange={e => setColSearch(e.target.value)}
-                        style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:6, padding:'0.28rem 0.55rem', fontSize:'0.74rem', color:'var(--text-primary)', outline:'none' }}/>
-                    </div>
-                  )}
-                  <div style={{ maxHeight:240, overflowY:'auto' }}>
-                    {filteredCols.map(col => {
-                      const type = colTypes[col] || 'categorical';
-                      return (
-                        <div key={col} className="sp-col-row" onClick={() => insertColumn(col)} title={`Click to insert "${col}"`}>
-                          <span style={{ color:TYPE_COLOR[type], fontWeight:700, fontSize:'0.68rem', flexShrink:0, minWidth:14 }}>{TYPE_LABEL[type]}</span>
-                          <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={col}>{col}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Shortcuts tip */}
-              <div style={{ padding:'0.55rem 0.7rem', background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:9, fontSize:'0.7rem', color:'var(--text-secondary)', lineHeight:1.85 }}>
-                <strong style={{ color:'var(--text-primary)', display:'block', marginBottom:'0.1rem' }}>Shortcuts</strong>
-                <span style={{ color:'#a5b4fc' }}>Ctrl+Enter</span> — Run<br/>
-                <span style={{ color:'#a5b4fc' }}>Tab</span> — Accept hint<br/>
-                <span style={{ color:'#a5b4fc' }}>Ctrl+K</span> — Command palette
-              </div>
-            </motion.div>
-          )}
-        </div>
-
-        {/* ── CENTER ──────────────────────────────────────────────────────────── */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.7rem', minWidth:0 }}>
+        {/* ── LEFT: SQL Editor ─────────────────────────────────────────────────── */}
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem', minWidth:0 }}>
 
           {/* Editor panel */}
           <div className="sp-panel">
-            <div className="sp-hdr">SQL Editor</div>
-            <div ref={editorContainerRef} style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', minHeight:200 }}/>
+            <div className="sp-hdr" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:'0.35rem' }}><Database size={10}/> SQL Editor</span>
+              <span style={{ fontSize:'0.63rem', opacity:0.5, fontWeight:400, textTransform:'none', letterSpacing:0 }}>Ctrl+Enter to run · Tab to accept hint</span>
+            </div>
+            <div ref={editorContainerRef} style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', minHeight:220 }}/>
             {/* Run bar */}
-            <div style={{ display:'flex', alignItems:'center', gap:'0.65rem', padding:'0.5rem 0.85rem', background:'rgba(0,0,0,0.18)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.45rem 0.75rem', background:'rgba(0,0,0,0.18)', flexWrap:'wrap' }}>
               <button onClick={() => runQuery()} disabled={loading} title="Run query (Ctrl+Enter)"
-                style={{ display:'flex', alignItems:'center', gap:'0.45rem', padding:'0.5rem 1.4rem',
+                style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.44rem 1.2rem',
                   background: loading ? 'rgba(99,102,241,0.35)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
                   border:'none', borderRadius:8, cursor: loading ? 'not-allowed' : 'pointer',
-                  fontSize:'0.9rem', fontWeight:700, color:'#fff',
-                  boxShadow: loading ? 'none' : '0 2px 14px rgba(99,102,241,0.45)', transition:'all 0.14s' }}>
+                  fontSize:'0.88rem', fontWeight:700, color:'#fff',
+                  boxShadow: loading ? 'none' : '0 2px 12px rgba(99,102,241,0.4)', transition:'all 0.14s' }}>
                 {loading ? <><RefreshCw size={13} style={{ animation:'spin 0.9s linear infinite' }}/> Running…</> : <><Play size={13}/> Run</>}
               </button>
-              <button className="sp-btn-ghost" onClick={() => setQuery(formatSQL(queryRef.current))} title="Auto-format SQL">
-                <Zap size={13}/> Format
+              <button className="sp-btn-ghost" onClick={() => setQuery(formatSQL(queryRef.current))} title="Auto-format SQL" style={{ padding:'0.3rem 0.6rem' }}>
+                <Zap size={12}/> Format
               </button>
               {execTime && !error && (
-                <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)', display:'flex', alignItems:'center', gap:'0.28rem' }}>
+                <span style={{ fontSize:'0.71rem', color:'var(--text-secondary)', display:'flex', alignItems:'center', gap:'0.25rem' }}>
                   <Clock size={11}/>{execTime}ms
                 </span>
               )}
-              {results && (
-                <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)', marginLeft:'auto' }}>
+              {results && !results.statusOnly && (
+                <span style={{ fontSize:'0.71rem', color:'var(--text-secondary)', marginLeft:'auto' }}>
                   {results.rowCount.toLocaleString()} row{results.rowCount !== 1 ? 's' : ''}
                 </span>
               )}
@@ -1404,7 +1446,7 @@ export default function SqlPractice() {
 
           {/* Starter pills */}
           {starters.length > 0 && (
-            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', alignItems:'center' }}>
               {visibleStarters.map(s => (
                 <button key={s.label} className="sp-starter" onClick={() => runStarter(s.sql)} title={s.label}>
                   <s.icon size={11}/>{s.label.slice(0, 20)}{s.label.length > 20 ? '…' : ''}
@@ -1418,8 +1460,12 @@ export default function SqlPractice() {
               )}
             </div>
           )}
+        </div>
 
-          {/* Error banner — slim inline */}
+        {/* ── RIGHT: Results ──────────────────────────────────────────────────── */}
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem', minWidth:0 }}>
+
+          {/* Error banner */}
           <AnimatePresence>
             {error && (
               <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
@@ -1439,7 +1485,7 @@ export default function SqlPractice() {
             </div>
           )}
 
-          {/* Visualize pill for scatter/histogram */}
+          {/* Visualize pill */}
           {results && chartAnalysis.type && !chartAnalysis.autoShow && !showChart && (
             <button className="sp-starter" onClick={() => setShowChart(true)}
               style={{ alignSelf:'flex-start', border:'1px solid rgba(99,102,241,0.35)', color:'#a5b4fc', background:'rgba(99,102,241,0.07)' }}>
@@ -1467,24 +1513,18 @@ export default function SqlPractice() {
                   </div>
                 </div>
 
-                {/* Stat cards (1-row aggregation) */}
                 {chartAnalysis.type === 'stat-cards' && renderStatCards()}
 
-                {/* Chart */}
                 {chartAnalysis.type !== 'stat-cards' && (
                   <AnimatePresence>
                     {showChart && cData.length > 0 && (
                       <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }}
                         style={{ padding:'0.75rem 1rem', borderBottom:'1px solid rgba(255,255,255,0.06)', overflow:'hidden' }}>
-
-                        {/* Caption */}
                         {chartAnalysis.caption && (
                           <div style={{ fontSize:'0.78rem', color:'var(--text-secondary)', marginBottom:'0.5rem', fontStyle:'italic' }}>
                             {chartAnalysis.caption}
                           </div>
                         )}
-
-                        {/* Smart chart switcher */}
                         {chartAnalysis.altTypes.length > 0 && (
                           <div style={{ display:'flex', gap:'0.3rem', marginBottom:'0.5rem', alignItems:'center' }}>
                             {[chartAnalysis.type, ...chartAnalysis.altTypes].map(t => {
@@ -1498,8 +1538,6 @@ export default function SqlPractice() {
                             })}
                           </div>
                         )}
-
-                        {/* Axis selector for 3-col queries */}
                         {chartAnalysis.axisConfig && (
                           <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.5rem', alignItems:'center', fontSize:'0.74rem', color:'var(--text-secondary)' }}>
                             <span>X:</span>
@@ -1512,7 +1550,6 @@ export default function SqlPractice() {
                             </select>
                           </div>
                         )}
-
                         <ResponsiveContainer width="100%" height={210}>
                           {renderChart(chartType) || <div/>}
                         </ResponsiveContainer>
@@ -1521,7 +1558,6 @@ export default function SqlPractice() {
                   </AnimatePresence>
                 )}
 
-                {/* Table */}
                 {chartAnalysis.type !== 'stat-cards' && (
                   results.columns.length === 0 ? (
                     <p style={{ padding:'1rem 1.25rem', color:'var(--text-secondary)', fontSize:'0.84rem' }}>Query ran successfully — no rows returned.</p>
@@ -1536,8 +1572,7 @@ export default function SqlPractice() {
                               <th className="sp-rn">#</th>
                               {results.columns.map(c => (
                                 <th key={c} onClick={() => handleSort(c)} title={`Sort by ${c}`}>
-                                  {c}
-                                  {sortCol === c ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+                                  {c}{sortCol === c ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
                                 </th>
                               ))}
                             </tr>
@@ -1576,6 +1611,70 @@ export default function SqlPractice() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* ── BOTTOM: Data Preview ─────────────────────────────────────────────────── */}
+      {tables.length > 0 && (
+        <div className="sp-panel" style={{ marginTop:'0.75rem' }}>
+          <div className="sp-hdr" style={{ justifyContent:'space-between' }}>
+            {/* Left: label + table selector */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.55rem' }}>
+              <Eye size={11}/>
+              <span>Data Preview</span>
+              {tables.length > 1 && (
+                <select value={previewTable} onChange={e => setPreviewTable(e.target.value)}
+                  style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:6, padding:'0.18rem 0.45rem', fontSize:'0.72rem', color:'var(--text-primary)', outline:'none', cursor:'pointer' }}>
+                  {tables.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </select>
+              )}
+              {tables.length === 1 && (
+                <span style={{ color:'#a5b4fc', fontWeight:600 }}>{previewTable || tables[0]?.name}</span>
+              )}
+              {previewLoading && (
+                <RefreshCw size={11} style={{ animation:'spin 0.9s linear infinite', opacity:0.5 }}/>
+              )}
+            </div>
+            {/* Right: row limit buttons */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+              <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)', marginRight:'0.2rem' }}>Rows:</span>
+              {[10, 20, 50].map(n => (
+                <button key={n} className={`sp-lim-btn${previewLimit===n?' active':''}`} onClick={() => setPreviewLimit(n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Preview table */}
+          {previewData && previewData.columns.length > 0 ? (
+            <div className="sp-preview-rw">
+              <table className="sp-rt">
+                <thead>
+                  <tr>
+                    <th className="sp-rn">#</th>
+                    {previewData.columns.map(c => <th key={c}>{c}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.values.map((row, i) => (
+                    <tr key={i}>
+                      <td className="sp-rn">{i + 1}</td>
+                      {row.map((cell, j) => (
+                        <td key={j} title={String(cell??'')}>{String(cell??'')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : previewData && previewData.columns.length === 0 ? (
+            <p style={{ padding:'0.85rem 1rem', color:'var(--text-secondary)', fontSize:'0.82rem' }}>Table is empty — insert rows to see data here.</p>
+          ) : (
+            <div style={{ padding:'0.75rem' }}>
+              {[0,1,2].map(i => <div key={i} className="sp-skeleton" style={{ marginBottom: i < 2 ? '0.4rem' : 0, animationDelay:`${i*0.1}s` }}/>)}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop:'2rem' }}>
         <RelatedTools currentToolId="sql-practice" category="utilities"/>
