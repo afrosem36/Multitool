@@ -1015,9 +1015,9 @@ export default function SqlPractice() {
     });
     editorViewRef.current = view;
     return () => { view.destroy(); editorViewRef.current = null; };
-  // Recreate when table presence or theme changes
+  // Recreate when table presence, scratch mode, or theme changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!tables.length, isDark]);
+  }, [!!tables.length, scratchMode, isDark]);
 
   useEffect(() => {
     const view = editorViewRef.current;
@@ -1231,7 +1231,7 @@ export default function SqlPractice() {
             </button>
             <button onClick={() => {
               setScratchMode(true);
-              setQuery(`-- Create a new table from scratch\nCREATE TABLE IF NOT EXISTS employees (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  department TEXT,\n  salary REAL DEFAULT 0\n);\n\n-- Insert some rows\nINSERT INTO employees (name, department, salary) VALUES\n  ('Alice', 'Engineering', 95000),\n  ('Bob', 'Marketing', 72000),\n  ('Carol', 'Engineering', 88000),\n  ('Dave', 'HR', 65000);\n\n-- Query results\nSELECT * FROM employees ORDER BY salary DESC;`);
+              setQuery('');
             }} disabled={uploading}
               style={{ background:'none', border:'none', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.84rem', textDecoration:'underline', textUnderlineOffset:3, transition:'color 0.15s' }}
               onMouseOver={e => e.currentTarget.style.color='#a5b4fc'}
