@@ -23,6 +23,35 @@ import '../styles/WhatsAppTools.css';
 
 const normalizePhone = (v) => String(v || '').replace(/\D/g, '');
 
+/** Format a raw phone number like 971501234567 → +971 50 123 4567 */
+const formatPhone = (v) => {
+  const digits = normalizePhone(v);
+  if (!digits) return v || '';
+  // Already has +
+  if (String(v || '').startsWith('+')) {
+    const d = digits;
+    if (d.length >= 10) {
+      const cc = d.slice(0, d.length - 9); // country code (1-3 digits)
+      const rest = d.slice(cc.length);
+      const parts = [];
+      if (rest.length === 9) parts.push(rest.slice(0, 2), rest.slice(2, 5), rest.slice(5));
+      else if (rest.length === 10) parts.push(rest.slice(0, 3), rest.slice(3, 6), rest.slice(6));
+      else parts.push(rest);
+      return `+${cc} ${parts.join(' ')}`;
+    }
+  }
+  if (digits.length >= 10) {
+    const cc = digits.slice(0, digits.length - 9);
+    const rest = digits.slice(cc.length);
+    const parts = [];
+    if (rest.length === 9) parts.push(rest.slice(0, 2), rest.slice(2, 5), rest.slice(5));
+    else if (rest.length === 10) parts.push(rest.slice(0, 3), rest.slice(3, 6), rest.slice(6));
+    else parts.push(rest);
+    return `+${cc} ${parts.join(' ')}`;
+  }
+  return `+${digits}`;
+};
+
 const buildWaLink = (phone, msg) => {
   const n = normalizePhone(phone);
   if (!n || n.length < 8 || n.length > 15) return { link: '', error: n ? 'Invalid number.' : '' };
@@ -536,7 +565,7 @@ function QAModule({ qaQueue, loading, fetchQaQueue, onOpenChat }) {
                 <tr key={c.chatId}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{c.customer}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{c.phone}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{formatPhone(c.phone)}</div>
                   </td>
                   <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.lastMessage}</td>
                   <td>
@@ -739,8 +768,8 @@ function LeadsModule({ leads, loading, fetchLeads, createLead, updateLead, onOpe
               >
                 <div className="wt-lead-card-head">
                   <div>
-                    <div className="wt-lead-name">{l.name || l.phone}</div>
-                    <div className="wt-lead-phone">{l.phone}</div>
+                    <div className="wt-lead-name">{l.name || formatPhone(l.phone)}</div>
+                    <div className="wt-lead-phone">{formatPhone(l.phone)}</div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end' }}>
                     {stage && (
@@ -801,7 +830,7 @@ function LeadsModule({ leads, loading, fetchLeads, createLead, updateLead, onOpe
 
 // ─── Contacts Module ──────────────────────────────────────────────────────────
 
-function ContactsModule({ contacts, loading, fetchContacts }) {
+function ContactsModule({ contacts, loading, fetchContacts, onOpenChat }) {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilter] = useState('all');
 
@@ -856,14 +885,19 @@ function ContactsModule({ contacts, loading, fetchContacts }) {
             <tbody>
               {list.map((c) => (
                 <tr key={c.phone}>
-                  <td><strong>{c.name || c.pushname || c.phone}</strong></td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{c.phone}</td>
+                  <td><strong>{c.name || c.pushname || formatPhone(c.phone)}</strong></td>
+                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{formatPhone(c.phone)}</td>
                   <td>{c.leadStatus ? statusBadge(c.leadStatus) : <span className="wt-badge gray">—</span>}</td>
                   <td>{(c.tags || []).map((t) => <span key={t} className="wt-badge blue" style={{ marginRight: 4, fontSize: '0.68rem' }}>{t}</span>)}</td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{timeAgo(c.lastContact)}</td>
-                  <td>
-                    <a href={`https://wa.me/${normalizePhone(c.phone)}`} target="_blank" rel="noopener noreferrer" className="wt-btn wt-btn-sm wt-btn-ghost" style={{ textDecoration: 'none' }}>
-                      <MessageCircle size={12} />
+                  <td style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                    {onOpenChat && (
+                      <button className="wt-btn wt-btn-sm wt-btn-primary" onClick={() => onOpenChat({ chatId: null, name: c.name || c.pushname, phone: c.phone })}>
+                        <MessageCircle size={12} /> Chat
+                      </button>
+                    )}
+                    <a href={`https://wa.me/${normalizePhone(c.phone)}`} target="_blank" rel="noopener noreferrer" className="wt-btn wt-btn-sm wt-btn-ghost" style={{ textDecoration: 'none' }} title="Open in WhatsApp">
+                      <ExternalLink size={12} />
                     </a>
                   </td>
                 </tr>
@@ -976,7 +1010,7 @@ function ReportsModule() {
             <p className="wt-report-desc">{r.desc}</p>
             <div className="wt-report-actions">
               <button className="wt-btn wt-btn-sm wt-btn-ghost" onClick={() => download(r.title)}><FileSpreadsheet size={12} /> CSV</button>
-              <button className="wt-btn wt-btn-sm wt-btn-ghost"><FileText size={12} /> PDF</button>
+              <button className="wt-btn wt-btn-sm wt-btn-ghost" disabled style={{ opacity: 0.45, cursor: 'not-allowed' }} title="PDF export coming soon"><FileText size={12} /> PDF</button>
               <button className="wt-btn wt-btn-sm wt-btn-primary" style={{ marginLeft: 'auto' }} onClick={() => download(r.title)}><Download size={12} /> Download</button>
             </div>
           </div>
@@ -996,13 +1030,13 @@ function NotificationsModule({ notifications, data, loading, fetchNotifs }) {
   const localNotifs = useMemo(() => {
     const out = [];
     (data?.qaQueue || []).filter((c) => c.slaStatus === 'breached').forEach((c) => {
-      out.push({ type: 'critical', title: 'SLA Breached', desc: `${c.customer || c.phone} — waiting ${fmtWaiting(c.waitingMinutes)}`, time: new Date().toISOString() });
+      out.push({ type: 'critical', title: 'SLA Breached', desc: `${c.customer || formatPhone(c.phone)} — waiting ${fmtWaiting(c.waitingMinutes)}`, time: new Date().toISOString() });
     });
     (data?.leads || []).filter((l) => l.follow_up_date && l.follow_up_date < today).forEach((l) => {
-      out.push({ type: 'warning', title: 'Overdue Follow-Up', desc: `${l.name || l.phone} — was due on ${l.follow_up_date}`, time: new Date().toISOString() });
+      out.push({ type: 'warning', title: 'Overdue Follow-Up', desc: `${l.name || formatPhone(l.phone)} — was due on ${l.follow_up_date}`, time: new Date().toISOString() });
     });
     (data?.leads || []).filter((l) => (l.status === 'hot-lead' || l.status === 'hot') && l.updatedAt && (Date.now() - new Date(l.updatedAt).getTime() > 7200000)).forEach((l) => {
-      out.push({ type: 'warning', title: 'Hot Lead — No Reply', desc: `${l.name || l.phone} — no reply in over 2 hours`, time: new Date().toISOString() });
+      out.push({ type: 'warning', title: 'Hot Lead — No Reply', desc: `${l.name || formatPhone(l.phone)} — no reply in over 2 hours`, time: new Date().toISOString() });
     });
     return out;
   }, [data?.qaQueue, data?.leads, today]);
@@ -1384,7 +1418,7 @@ function ChatWindowArea({ activeChat, messages, loading, optimisticMsgs, onSend,
           <strong>{activeChat.name || activeChat.phone}</strong>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             {activeChat.phone && !activeChat.isGroup && (
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>{activeChat.phone}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>{formatPhone(activeChat.phone)}</span>
             )}
             {slaStatus && statusBadge(slaStatus)}
             {tatMins !== null && tatMins !== undefined && (
@@ -1677,7 +1711,7 @@ function WorkspaceModule({
 }) {
   const [localChatId, setLocalChatId] = useState('');
   const [optimisticMsgs, setOptimisticMsgs] = useState({});
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useState(() => Date.now());
 
   // Live TAT clock — tick every 60 seconds
   useEffect(() => {
@@ -1867,7 +1901,7 @@ const WhatsAppTools = () => {
       case 'leads':
         return <LeadsModule leads={data.leads} loading={loading} fetchLeads={fetchLeads} createLead={createLead} updateLead={updateLead} onOpenChat={onOpenChat} />;
       case 'contacts':
-        return <ContactsModule contacts={data.contacts} loading={loading} fetchContacts={fetchContacts} />;
+        return <ContactsModule contacts={data.contacts} loading={loading} fetchContacts={fetchContacts} onOpenChat={onOpenChat} />;
       case 'chat-search':
         return <ChatSearchModule searchResults={data.searchResults} loading={loading} fetchSearch={fetchSearch} />;
       case 'reports':

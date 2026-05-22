@@ -997,15 +997,38 @@ export default function SqlPractice() {
       const lastKw = before.match(/\b(SELECT|FROM|JOIN|WHERE|AND|OR|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET)\s*[\w\s,"`.]*?$/)?.[1]?.replace(/\s+/g, ' ');
       const fromCtx = lastKw === 'FROM' || lastKw === 'JOIN';
       const selCtx  = ['SELECT','WHERE','AND','OR','GROUP BY','ORDER BY','HAVING','ON','SET'].includes(lastKw);
-      const opts = [];
-      if (fromCtx) for (const t of tablesRef.current) opts.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
-      else if (selCtx) for (const t of tablesRef.current) for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 15 });
-      for (const kw of SQL_KW) opts.push({ label: kw, type: 'keyword', boost: 1 });
-      for (const t of tablesRef.current) {
-        if (!fromCtx) opts.push({ label: t.name, type: 'class', detail: 'table', boost: 5 });
-        if (!selCtx) for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 3 });
+
+      // Parse table aliases from FROM/JOIN clauses for alias.column completion
+      const fullDocBefore = ctx.state.doc.sliceString(0, word.from);
+      const aliases = new Map(); // alias -> table name
+      // Match: FROM "table" alias, FROM table AS alias, JOIN "table" alias, etc.
+      const aliasRegex = /(?:FROM|JOIN|INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|FULL\s+JOIN|CROSS\s+JOIN)\s+["']?([a-zA-Z_]\w*)["']?\s+(?:AS\s+)?([a-zA-Z_]\w*)/gi;
+      for (const match of fullDocBefore.matchAll(aliasRegex)) {
+        const tbl = match[1];
+        const alias = match[2];
+        const table = tablesRef.current.find(t => t.name.toLowerCase() === tbl.toLowerCase());
+        if (table) aliases.set(alias.toUpperCase(), table.name);
       }
-      return { from: word.from, options: opts, validFor: /^\w*$/ };
+
+      // Check if typing "alias.column"
+      const wordStr = word ? ctx.state.doc.sliceString(word.from, word.to) : '';
+      const dotMatch = wordStr.match(/^([a-zA-Z_]\w*)\.(.*)$/);
+      const aliasPrefix = dotMatch?.[1]?.toUpperCase();
+      const colPrefix = dotMatch?.[2]?.toLowerCase() || '';
+
+      const opts = [];
+
+      // Always show aliases and columns (highest priority)
+      for (const [alias, tbl] of aliases) opts.push({ label: alias, type: 'variable', detail: `alias for ${tbl}`, boost: 30 });
+      for (const t of tablesRef.current) for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 25 });
+
+      // Context-specific suggestions
+      if (fromCtx) for (const t of tablesRef.current) opts.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
+
+      // Keywords (lowest priority)
+      for (const kw of SQL_KW) opts.push({ label: kw, type: 'keyword', boost: 1 });
+
+      return { from: word.from, options: opts, validFor: /^[\w.]*$/ };
     };
 
     const view = new EditorView({

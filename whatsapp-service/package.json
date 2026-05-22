@@ -2,7 +2,7 @@
   "name": "whatsapp-service",
   "version": "1.0.0",
   "description": "WhatsApp Web.js backend — real-time session, analytics, and chat sync",
-  "main": "server.js",
+  "main": "start.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"

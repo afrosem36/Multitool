@@ -42,4 +42,4 @@ if (!fs.existsSync(nodeModules) || !fs.existsSync(waWebJsEntry)) {
   console.log('[whatsapp-service] Dependencies OK — starting server…');
 }
 
-require('./server');
+require('./src/server');

@@ -9,7 +9,7 @@ const path    = require('path');
 const crypto  = require('crypto');
 
 // ── Local JSON file helpers ────────────────────────────────────────────────────
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 function readJson(file) {
   const fp = path.join(DATA_DIR, file);

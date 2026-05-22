@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 // Keep the process alive — Puppeteer errors are caught per-client and retried
 process.on('uncaughtException',  (err) => console.error('[Process] Uncaught exception:',  err.message));

@@ -123,11 +123,12 @@ const Layout = () => {
   const isToolPage = TOOL_PAGE_PATHS.has(location.pathname);
   const toolContent = getToolContent(location.pathname);
   const isIde = location.pathname === '/tools/html-ide';
+  const isFullscreen = isIde || location.pathname === '/whatsapp-tools';
 
   if (isNoLayout) return <Outlet />;
 
-  // IDE gets fullscreen mode — no navbar, sidebar, or footer
-  if (isIde) return (
+  // IDE and WhatsApp tool get fullscreen mode — no navbar, sidebar, or footer
+  if (isFullscreen) return (
     <div className="ide-fullscreen">
       <SeoManager />
       <Outlet />

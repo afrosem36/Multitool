@@ -10,7 +10,9 @@
 .wt-workspace {
   display: flex;
   gap: 0;
-  min-height: calc(100vh - 70px);
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   animation: wtFadeIn 0.35s ease;
 }
 
@@ -28,9 +30,7 @@
   display: flex;
   flex-direction: column;
   padding: 1.25rem 0.75rem 1.5rem;
-  position: sticky;
-  top: 70px;
-  height: calc(100vh - 70px);
+  height: 100%;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -149,7 +149,9 @@
   flex: 1;
   min-width: 0;
   padding: 1.5rem;
+  overflow-y: auto;
   overflow-x: hidden;
+  height: 100%;
 }
 
 /* ---- Page Header ---- */
@@ -919,8 +921,8 @@
 .wt-live-workspace {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(420px, 1fr) minmax(260px, 320px);
-  height: calc(100vh - 118px);
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   background: rgba(9, 12, 18, 0.84);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 12px;
@@ -1502,7 +1504,7 @@
   }
   .wt-live-workspace {
     grid-template-columns: minmax(240px, 38%) 1fr;
-    height: calc(100vh - 145px);
+    height: 100%;
   }
   .wt-insights-panel {
     display: none;
