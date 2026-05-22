@@ -1,0 +1,33 @@
+{
+  "name": "speed-test-server",
+  "version": "1.0.0",
+  "description": "Optional backend server for Advanced Internet Speed Tester",
+  "main": "speed-test-server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node speed-test-server.js",
+    "dev": "nodemon speed-test-server.js",
+    "test": "curl http://localhost:3001/health"
+  },
+  "keywords": [
+    "speed-test",
+    "internet-speed",
+    "download-speed",
+    "upload-speed",
+    "ping",
+    "latency"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

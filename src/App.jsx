@@ -73,6 +73,7 @@ const SqlFormatter = React.lazy(() => import('./pages/other-tools/SqlFormatter')
 const TextToSql = React.lazy(() => import('./pages/other-tools/TextToSql'));
 const AudioTranscription = React.lazy(() => import('./pages/other-tools/AudioTranscription'));
 const TypingSpeedTest = React.lazy(() => import('./pages/other-tools/TypingSpeedTest'));
+const InternetSpeedTester = React.lazy(() => import('./pages/other-tools/InternetSpeedTester'));
 const PdfLightener = React.lazy(() => import('./pages/pdf-tools/PdfLightener'));
 const BackgroundRemover = React.lazy(() => import('./pages/other-tools/BackgroundRemover'));
 const HtmlIde = React.lazy(() => import('./pages/other-tools/HtmlIde'));
@@ -196,6 +197,7 @@ function AppRoutes() {
           <Route path="/tools/audio-transcription" element={<AudioTranscription />} />
         )}
         <Route path="/tools/typing-test" element={<TypingSpeedTest />} />
+        <Route path="/tools/internet-speed-tester" element={<InternetSpeedTester />} />
         <Route path="/tools/pdf-lightener" element={<PdfLightener />} />
         <Route path="/tools/background-remover" element={<BackgroundRemover />} />
         <Route path="/tools/html-ide" element={<HtmlIde />} />

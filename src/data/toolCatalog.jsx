@@ -53,7 +53,8 @@ import {
   Download,
   Car,
   Heart,
-  LayoutDashboard
+  LayoutDashboard,
+  Wifi
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
@@ -162,6 +163,14 @@ export const utilityTools = [
     path: '/tools/sql-practice',
     icon: Database,
     color: 'rgba(99, 102, 241, 0.1)'
+  },
+  {
+    id: 'internet-speed-tester',
+    name: 'Internet Speed Tester',
+    description: 'Test your download speed, upload speed, ping, and connection quality with detailed analysis.',
+    path: '/tools/internet-speed-tester',
+    icon: Wifi,
+    color: 'rgba(0, 245, 255, 0.1)'
   },
 ];
 
