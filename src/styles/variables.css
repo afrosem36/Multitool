@@ -1,0 +1,36 @@
+/* ─── CSS Custom Properties (Design Tokens) ─────────────────────────────────── */
+
+:root, .dark {
+  --bg-dark: #0a0a0f;
+  --bg-dark-secondary: #12121a;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --accent-primary: #6366f1;
+  --accent-secondary: #8b5cf6;
+  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+  --glass-bg: rgba(15, 15, 25, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --danger: #ef4444;
+  --success: #10b981;
+  --surface-color: #1e1e28;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --sidebar-width: 280px;
+}
+
+.light {
+  --bg-dark: #f8fafc;
+  --bg-dark-secondary: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --accent-primary: #4f46e5;
+  --accent-secondary: #7c3aed;
+  --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-glow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  --danger: #ef4444;
+  --success: #10b981;
+  --surface-color: #ffffff;
+  --border-color: rgba(0, 0, 0, 0.1);
+}

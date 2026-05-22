@@ -80,41 +80,18 @@ const Home = () => {
       </section>
 
       {/* Trending Banner */}
-      <section className="feature-section" style={{ padding: '0 1rem' }}>
-        <Link to="/trending" className="glass-panel" style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          padding: '1.5rem 2rem',
-          textDecoration: 'none',
-          color: 'inherit',
-          borderRadius: '1.5rem',
-          background: 'linear-gradient(90deg, rgba(var(--primary-rgb), 0.1), rgba(var(--accent-rgb), 0.1))',
-          border: '1px solid var(--border-color)',
-          transition: 'transform 0.3s ease',
-          marginBottom: '2rem'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.01)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <div style={{ 
-              background: 'var(--primary-color)', 
-              color: 'white', 
-              padding: '0.75rem', 
-              borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <TrendingUp size={24} />
+      <section className="feature-section trending-banner-section">
+        <Link to="/trending" className="trending-banner glass-panel">
+          <div className="trending-banner-left">
+            <div className="trending-banner-icon">
+              <TrendingUp size={22} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700' }}>See What's Trending Now</h3>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Discover the most used tools by our community today.</p>
+              <h3 className="trending-banner-title">See What's Trending Now</h3>
+              <p className="trending-banner-sub">Discover the most used tools by our community today.</p>
             </div>
           </div>
-          <ArrowRight size={24} color="var(--text-secondary)" />
+          <ArrowRight size={20} className="trending-banner-arrow" />
         </Link>
       </section>
 

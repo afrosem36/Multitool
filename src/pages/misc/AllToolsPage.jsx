@@ -77,8 +77,8 @@ const AllToolsPage = () => {
 
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                gap: '1rem',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
+                gap: '0.85rem',
               }}>
                 {section.tools.map((tool) => {
                   const ToolIcon = tool.icon;

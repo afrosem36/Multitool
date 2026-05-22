@@ -100,7 +100,7 @@
   margin: -1.5rem -1rem 0;
   padding: 0.75rem 1rem;
   position: sticky;
-  top: 0;
+  top: 54px; /* must sit below fixed MobileTopBar (54px tall) */
   z-index: 50;
   border-bottom: 1px solid var(--border-color);
 }
@@ -174,59 +174,82 @@
 }
 
 @media (max-width: 768px) {
+  /* ── Category pill bar ── */
   .mobile-category-bar {
     display: block;
   }
 
+  /* ── Hero ── */
   .tool-hub-hero {
     flex-direction: column;
-    padding: 1.5rem;
-    gap: 1.25rem;
+    padding: 1.25rem 1rem;
+    gap: 1rem;
     text-align: center;
     align-items: center;
   }
 
+  .tool-hub-hero h1 {
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
+  }
+
+  .hero-content p {
+    font-size: 0.9rem;
+  }
+
+  /* ── Summary badge ── */
   .tool-hub-summary {
     min-width: 100%;
     justify-content: center;
-    padding: 1rem;
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
   }
 
+  /* ── Tool grid: single column ── */
   .tool-hub-grid {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0.85rem;
   }
 
+  /* ── Each card ── */
   .tool-hub-card {
-    padding: 1.25rem;
-    min-height: 140px;
+    padding: 1rem 1rem 0.75rem;
   }
 
+  /* Icon + title row */
   .tool-hub-card-header {
     flex-direction: row;
-    gap: 1rem;
-    align-items: flex-start;
-    margin-bottom: 1rem;
+    gap: 0.85rem;
+    align-items: center;
+    margin-bottom: 0.85rem;
   }
 
   .tool-hub-card-icon {
     margin-bottom: 0;
     flex-shrink: 0;
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
   }
 
   .tool-hub-card-title {
     text-align: left;
-    padding-right: 2rem;
+    padding-right: 2.5rem; /* room for the ☆ button */
+    flex: 1;
+    min-width: 0;
   }
 
   .tool-hub-card-title h3 {
-    margin-bottom: 0.2rem;
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .tool-hub-card-title p {
     margin-bottom: 0;
+    font-size: 0.82rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -234,12 +257,23 @@
     overflow: hidden;
   }
 
+  /* "Use Tool →" button — full-width tap target */
   .tool-hub-link {
     width: 100%;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
+    min-height: 48px;               /* comfortable tap target */
+    background: rgba(99,102,241,0.07);
+    border-radius: 10px;
+    border: 1px solid rgba(99,102,241,0.18);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+  }
+
+  /* Favorite button — easier to tap */
+  .card-favorite-btn {
+    top: 0.9rem;
+    right: 0.9rem;
+    padding: 0.35rem;
   }
 }
