@@ -9,6 +9,8 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../../config';
 import { useAuth } from '../../context/AuthContext';
+import { useAiRateLimit } from '../../hooks/useAiRateLimit';
+import { AiLoginGate, AiRateLimitBanner, AiRateLimitBadge } from '../../components/shared/AiRateLimitGate';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -124,6 +126,7 @@ function ErrorPanel({ error, onRetry, retryCount }) {
 
 export default function TextToSql() {
   const { user, token } = useAuth();
+  const rateLimit = useAiRateLimit('text-to-sql');
   const [credits, setCredits] = useState(null);
   const [question, setQuestion] = useState('');
   const [tableName, setTableName] = useState(() => localStorage.getItem('tsql-table') || 'users');
@@ -225,6 +228,16 @@ export default function TextToSql() {
     if (!question.trim()) return toast.error('Enter a question first');
     if (!tableName.trim()) return toast.error('Enter a table name');
     if (columns.some(c => !c.trim())) return toast.error('All columns need names');
+
+    // Login required
+    if (!rateLimit.isLoggedIn) return;
+
+    // Client-side rate gate (10/hour per user; unlimited for admin)
+    if (attempt === 0 && !rateLimit.consume()) {
+      toast.error(`SQL limit reached (${rateLimit.maxCalls}/hour). Resets in ${rateLimit.resetIn}.`);
+      return;
+    }
+
     setStatus(attempt === 0 ? 'generating' : 'retrying');
     setError(null);
 
@@ -270,6 +283,9 @@ export default function TextToSql() {
 
   return (
     <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '1.5rem 2rem' }}>
+
+      {/* Login gate — must be signed in to use this AI tool */}
+      {!rateLimit.isLoggedIn && <AiLoginGate toolName="AI Text → SQL" />}
 
       {/* Global styles */}
       <style>{`
@@ -319,11 +335,15 @@ export default function TextToSql() {
           </div>
           <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '800' }}>AI Text → SQL</h1>
           <StatusBadge status={status} />
+          <AiRateLimitBadge hook={rateLimit} />
         </div>
         <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
           Type a plain-English question, define your schema, and get production-ready SQL instantly via Groq Llama-3.
         </p>
       </div>
+
+      {/* Rate limit banner (guests / logged-out users) */}
+      <AiRateLimitBanner hook={rateLimit} />
 
       {/* Credit bar (logged in) */}
       {user && credits && (
@@ -451,9 +471,9 @@ export default function TextToSql() {
             <button
               onClick={() => generate(0)}
               disabled={
-                !user ||
                 status === 'generating' ||
                 status === 'retrying' ||
+                !rateLimit.allowed ||
                 (credits && !credits.unlimited && credits.creditsRemaining <= 0)
               }
               className="btn-primary"
@@ -461,14 +481,14 @@ export default function TextToSql() {
                 width: '100%', padding: '1rem',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
                 fontSize: '1rem', fontWeight: '700', borderRadius: '10px',
-                opacity: (!user || status === 'generating' || status === 'retrying' || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 0.6 : 1,
-                cursor: (!user || status === 'generating' || status === 'retrying' || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 'not-allowed' : 'pointer',
+                opacity: (status === 'generating' || status === 'retrying' || !rateLimit.allowed || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 0.6 : 1,
+                cursor: (status === 'generating' || status === 'retrying' || !rateLimit.allowed || (credits && !credits.unlimited && credits.creditsRemaining <= 0)) ? 'not-allowed' : 'pointer',
               }}
             >
               {(status === 'generating' || status === 'retrying')
                 ? <><RefreshCw size={18} className="spin" /> {status === 'retrying' ? `Retrying (${retryCount}/${MAX_RETRIES})…` : 'Generating…'}</>
-                : !user
-                  ? <><AlertCircle size={18} /> Login to Generate</>
+                : !rateLimit.allowed
+                  ? <><Clock size={18} /> Limit reached · resets in {rateLimit.resetIn}</>
                   : (credits && !credits.unlimited && credits.creditsRemaining <= 0)
                     ? <><AlertCircle size={18} /> No Credits Left Today</>
                     : <><Sparkles size={18} /> Generate SQL  <span style={{ fontSize: '0.8rem', opacity: 0.7, fontWeight: 400 }}>Ctrl+Enter</span></>

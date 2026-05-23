@@ -9,8 +9,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../context/AuthContext';
 import './Navbar.css';
 
-const Navbar = ({ onToggleSidebar, isSidebarOpen, visible, onNavHover }) => {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
   const location = useLocation();
@@ -52,16 +51,12 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen, visible, onNavHover }) => {
 
   return (
     <>
-      <nav
-        className={`navbar glass-panel expanded${!visible && !isMobile ? ' navbar--hidden' : ''}`}
-        onMouseEnter={() => onNavHover?.(true)}
-        onMouseLeave={() => onNavHover?.(false)}
-      >
+      <nav className="navbar glass-panel">
         <div className="navbar-container">
           <div className="navbar-left">
             {onToggleSidebar && (
-              <button 
-                className="btn-icon hidden-mobile" 
+              <button
+                className="btn-icon"
                 onClick={onToggleSidebar}
                 title={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
                 style={{ color: 'var(--text-secondary)' }}
@@ -69,17 +64,12 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen, visible, onNavHover }) => {
                 {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
               </button>
             )}
-            
-            {/* Mobile Hamburger - Only visible on mobile */}
-            <button className="mobile-only hamburger-btn" onClick={toggleDrawer}>
-              <Menu size={24} />
-            </button>
 
             <Link to="/" className="navbar-logo" title="MultiTool">
               <div className="logo-icon">
                 <Settings size={24} color="var(--accent-primary)" />
               </div>
-              <span className="text-gradient logo-text hidden-mobile">MultiTool</span>
+              <span className="text-gradient logo-text">MultiTool</span>
             </Link>
           </div>
 
@@ -115,7 +105,12 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen, visible, onNavHover }) => {
                   </button>
                 </div>
               ) : (
-                <Link to="/login" className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Link
+                  to="/login"
+                  state={{ from: location.pathname }}
+                  className="btn-primary"
+                  style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
                   <User size={16} /> Login
                 </Link>
               )}

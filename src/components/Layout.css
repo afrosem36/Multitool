@@ -28,21 +28,8 @@
 .layout {
   display: flex;
   flex-direction: column;
-}
-
-/* Pull content up smoothly when the navbar hides so no dead space remains.
-   82px ≈ navbar height (72px container + 10px top gap from sticky top:1rem) */
-.layout .layout-shell {
-  transition: margin-top 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.layout--nav-hidden .layout-shell {
-  margin-top: -82px;
-}
-@media (max-width: 768px) {
-  /* On mobile the navbar never hides, so never pull up */
-  .layout--nav-hidden .layout-shell {
-    margin-top: 0;
-  }
+  /* Push content below the fixed 60px navbar */
+  padding-top: 60px;
 }
 
 /* IDE fullscreen — hides everything except the tool */
@@ -68,7 +55,7 @@
   width: 280px;
   flex-shrink: 0;
   position: sticky;
-  top: 6.5rem;
+  top: 1.25rem;
   align-self: flex-start;
   display: flex;
   flex-direction: column;
@@ -153,13 +140,8 @@
 
 @media (max-width: 768px) {
   /* Desktop navbar hidden on mobile — MobileTopBar replaces it */
-  .navbar {
-    display: none !important;
-  }
-
-  /* Reset nav-hidden shift — not needed without desktop navbar */
-  .layout--nav-hidden .layout-shell {
-    margin-top: 0;
+  .layout {
+    padding-top: 0; /* No desktop navbar on mobile */
   }
 
   .layout-shell {

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, ShieldCheck, Sparkles, Star, TrendingUp } from 'lucide-react';
-import { aiTools, imageTools, linkTools, pdfTools, textTools, excelTools } from '../../data/toolCatalog';
+import { motion, useInView } from 'framer-motion';
+import { ArrowRight, BookOpen, ShieldCheck, Sparkles, Star, TrendingUp, Zap, FileText, Image, Cpu } from 'lucide-react';
+import { aiTools, imageTools, linkTools, pdfTools, textTools } from '../../data/toolCatalog';
 import { homeFaqs } from '../../seo/seoConfig';
 import { guideArticles, sitePages } from '../../data/contentPages';
 import { useFavorites } from '../../hooks/useFavorites';
@@ -9,9 +10,36 @@ import { TiltCard } from '../../components/ui/TiltCard';
 import SEOHead from '../../components/seo/SEOHead';
 import '../styles/Home.css';
 
+// ── Scroll-triggered section wrapper ─────────────────────────────────────────
+function FadeUp({ children, delay = 0, className, style }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: '-60px' });
+  const classes = ['home-section-wrap', className].filter(Boolean).join(' ');
+  return (
+    <motion.div
+      ref={ref}
+      className={classes}
+      style={style}
+      initial={{ opacity: 0, y: 32 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+const STATS = [
+  { value: '50+',  label: 'Free Tools',     icon: Zap },
+  { value: 'AI',   label: 'Powered Tools',  icon: Cpu },
+  { value: '100%', label: 'Browser-Based',  icon: ShieldCheck },
+  { value: '∞',    label: 'Always Free',    icon: Sparkles },
+];
+
 const Home = () => {
   const { isFavorite, toggleFavorite } = useFavorites();
-  
+
   const advantages = [
     {
       title: 'All-In-One Workspace',
@@ -43,7 +71,7 @@ const Home = () => {
 
   return (
     <div className="home-container">
-      <SEOHead 
+      <SEOHead
         title="MultiTool"
         description="Smart online tools for PDF, text, image, and link tasks. Browser-based utilities for documents, text cleanup, images, and business communication."
         canonicalUrl="/"
@@ -59,531 +87,582 @@ const Home = () => {
           }
         }}
       />
+
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="hero-section text-center">
-        <p className="hero-kicker">Tools + Guides + Trust Pages</p>
-        <h1 className="hero-title animate-fade-in">
-          Smart online tools for <span className="text-gradient">PDF, text, image, and link tasks</span>
-        </h1>
-        <p className="hero-subtitle animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          MultiTool helps you merge PDFs, clean text, convert files, and create share-ready links. It also includes
-          helpful guides, policy pages, and clear navigation so visitors can both use the tools and understand the
-          workflows behind them.
-        </p>
-        <div className="hero-actions animate-fade-in" style={{ animationDelay: '0.16s' }}>
-          <Link to="/explore" className="btn-primary">
-            Explore Tools
+        {/* Pill badge */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.85, y: -10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
+          className="hero-badge"
+        >
+          <span className="hero-badge-dot" />
+          ✨ AI-Powered · 50+ Tools · Always Free
+        </motion.div>
+
+        <motion.h1
+          className="hero-title"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.65, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+        >
+          Your complete <span className="text-gradient">toolkit</span> for<br className="hero-br" /> everyday work
+        </motion.h1>
+
+        <motion.p
+          className="hero-subtitle"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.22, ease: 'easeOut' }}
+        >
+          Merge PDFs, convert images, generate SQL with AI, transcribe audio, and 50+ more tools —
+          all free, all in your browser, nothing to install.
+        </motion.p>
+
+        <motion.div
+          className="hero-actions"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.32, ease: 'easeOut' }}
+        >
+          <Link to="/explore" className="btn-hero-primary">
+            Explore All Tools <ArrowRight size={18} />
           </Link>
-          <Link to="/guides" className="btn-secondary">
-            Read Guides
+          <Link to="/ai-tools" className="btn-hero-secondary">
+            <Sparkles size={16} /> Try AI Tools
           </Link>
-        </div>
-      </section>
+        </motion.div>
 
-      {/* Trending Banner */}
-      <section className="feature-section trending-banner-section">
-        <Link to="/trending" className="trending-banner glass-panel">
-          <div className="trending-banner-left">
-            <div className="trending-banner-icon">
-              <TrendingUp size={22} />
-            </div>
-            <div>
-              <h3 className="trending-banner-title">See What's Trending Now</h3>
-              <p className="trending-banner-sub">Discover the most used tools by our community today.</p>
-            </div>
-          </div>
-          <ArrowRight size={20} className="trending-banner-arrow" />
-        </Link>
-      </section>
-
-      <section className="feature-section">
-        <div className="home-intro-grid">
-          <article className="home-intro-card glass-panel">
-            <div className="home-intro-icon">
-              <Sparkles size={22} />
-            </div>
-            <h2>What this site does</h2>
-            <p>
-              The website brings together browser-based utilities for documents, text cleanup, images, and business
-              communication. Instead of hunting for a separate converter, formatter, and link generator, you can
-              handle common tasks from one organized workspace.
-            </p>
-          </article>
-          <article className="home-intro-card glass-panel">
-            <div className="home-intro-icon">
-              <BookOpen size={22} />
-            </div>
-            <h2>Why the guides matter</h2>
-            <p>
-              Helpful content pages explain which tool to choose, when a file format makes sense, and how to avoid
-              quality or workflow mistakes. That gives visitors more value than a tool page alone.
-            </p>
-          </article>
-          <article className="home-intro-card glass-panel">
-            <div className="home-intro-icon">
-              <ShieldCheck size={22} />
-            </div>
-            <h2>Built for trust</h2>
-            <p>
-              The site now includes About Us, Privacy Policy, and Contact Us pages so people and advertisers can see
-              that there is a real information structure behind the tools.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>PDF Tools</h2>
-          <p>
-            Convert, organize, secure, merge, split, and export PDF files online from one place. These pages are
-            useful for school documents, office paperwork, proposals, reports, invoices, and scanned files.
-          </p>
-        </div>
-
-        <div className="features-grid">
-          {pdfTools.map((feature, index) => {
-            const Icon = feature.icon;
-
-            return (
-              <TiltCard
-                key={feature.path}
-                className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.2 + index * 0.06}s`, position: 'relative' }}
-                tiltLimit={5}
-                scale={1.02}
-              >
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleFavorite(feature.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    right: '1rem',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
-                    zIndex: 10
-                  }}
-                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
-                >
-                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
-                </button>
-                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
-                  <Icon size={32} className="feature-icon text-gradient" />
-                </div>
-                <h3>{feature.name}</h3>
-                <p>{feature.description}</p>
-                <Link to={feature.path} className="feature-link">
-                  Open Tool <ArrowRight size={16} />
-                </Link>
-              </TiltCard>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Image Tools</h2>
-          <p>
-            Compress, enhance, convert, and combine images online. These tools help with social media assets, product
-            images, document preparation, quick design exports, and format cleanup without leaving the browser.
-          </p>
-        </div>
-
-        <div className="features-grid">
-          {imageTools.map((feature, index) => {
-            const Icon = feature.icon;
-
-            return (
-              <TiltCard
-                key={feature.path}
-                className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.22 + index * 0.06}s`, position: 'relative' }}
-                tiltLimit={5}
-                scale={1.02}
-              >
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleFavorite(feature.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    right: '1rem',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
-                    zIndex: 10
-                  }}
-                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
-                >
-                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
-                </button>
-                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
-                  <Icon size={32} className="feature-icon text-gradient" />
-                </div>
-                <h3>{feature.name}</h3>
-                <p>{feature.description}</p>
-                <Link to={feature.path} className="feature-link">
-                  Open Tool <ArrowRight size={16} />
-                </Link>
-              </TiltCard>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Text Tools</h2>
-          <p>
-            Clean pasted text, remove unwanted formatting, generate useful random content, and export the result
-            instantly. These tools are especially helpful when text comes from PDFs, spreadsheets, websites, or AI
-            outputs.
-          </p>
-        </div>
-
-        <div className="features-grid">
-          {textTools.map((feature, index) => {
-            const Icon = feature.icon;
-
-            return (
-              <TiltCard
-                key={feature.path}
-                className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.25 + index * 0.06}s`, position: 'relative' }}
-                tiltLimit={5}
-                scale={1.02}
-              >
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleFavorite(feature.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    right: '1rem',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
-                    zIndex: 10
-                  }}
-                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
-                >
-                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
-                </button>
-                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
-                  <Icon size={32} className="feature-icon text-gradient" />
-                </div>
-                <h3>{feature.name}</h3>
-                <p>{feature.description}</p>
-                <Link to={feature.path} className="feature-link">
-                  Open Tool <ArrowRight size={16} />
-                </Link>
-              </TiltCard>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Link Tools</h2>
-          <p>
-            Create share-ready communication links for WhatsApp campaigns, customer support, and contact pages. This
-            keeps outreach flows faster and more consistent for businesses and solo operators.
-          </p>
-        </div>
-
-        <div className="features-grid features-grid-compact">
-          {linkTools.map((feature, index) => {
-            const Icon = feature.icon;
-
-            return (
-              <TiltCard
-                key={feature.path}
-                className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.3 + index * 0.06}s`, position: 'relative' }}
-                tiltLimit={5}
-                scale={1.02}
-              >
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleFavorite(feature.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    right: '1rem',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
-                    zIndex: 10
-                  }}
-                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
-                >
-                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
-                </button>
-                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
-                  <Icon size={32} className="feature-icon text-gradient" />
-                </div>
-                <h3>{feature.name}</h3>
-                <p>{feature.description}</p>
-                <Link to={feature.path} className="feature-link">
-                  Open Tool <ArrowRight size={16} />
-                </Link>
-              </TiltCard>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Featured Guides</h2>
-          <p>
-            Useful reading for visitors who want more than a button. These long-form pages help explain formats,
-            workflows, and best practices around the most common tasks on the site.
-          </p>
-        </div>
-
-        <div className="features-grid">
-          {guideArticles.map((article, index) => (
-            <TiltCard
-              key={article.path}
-              className="feature-card glass-panel animate-fade-in"
-              style={{ animationDelay: `${0.18 + index * 0.04}s` }}
-              tiltLimit={5}
-              scale={1.02}
+        {/* Stats row */}
+        <motion.div
+          className="hero-stats"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.46 }}
+        >
+          {STATS.map(({ value, label, icon: Icon }, i) => (
+            <motion.div
+              key={label}
+              className="hero-stat"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.5 + i * 0.07 }}
             >
-              <div className="guide-meta-row">
-                <span>{article.category}</span>
-                <span>{article.readTime}</span>
+              <div className="hero-stat-icon"><Icon size={14} /></div>
+              <span className="hero-stat-value">{value}</span>
+              <span className="hero-stat-label">{label}</span>
+            </motion.div>
+          ))}
+        </motion.div>
+      </section>
+
+      {/* ── Trending Banner ───────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section trending-banner-section">
+          <Link to="/trending" className="trending-banner glass-panel">
+            <div className="trending-banner-left">
+              <div className="trending-banner-icon">
+                <TrendingUp size={22} />
               </div>
-              <h3>{article.title}</h3>
-              <p>{article.description}</p>
-              <Link to={article.path} className="feature-link">
-                Read Guide <ArrowRight size={16} />
-              </Link>
-            </TiltCard>
-          ))}
-        </div>
-      </section>
+              <div>
+                <h3 className="trending-banner-title">See What's Trending Now</h3>
+                <p className="trending-banner-sub">Discover the most used tools by our community today.</p>
+              </div>
+            </div>
+            <ArrowRight size={20} className="trending-banner-arrow" />
+          </Link>
+        </section>
+      </FadeUp>
 
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Why Use MultiTool</h2>
-          <p>Designed as an online toolkit for creators, students, offices, and anyone who needs quick utility tools.</p>
-        </div>
-
-        <div className="content-grid">
-          {advantages.map((item) => (
-            <article key={item.title} className="content-card glass-panel">
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
+      {/* ── Intro Cards ───────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="home-intro-grid">
+            <article className="home-intro-card glass-panel">
+              <div className="home-intro-icon">
+                <Sparkles size={22} />
+              </div>
+              <h2>What this site does</h2>
+              <p>
+                Browser-based utilities for documents, text cleanup, images, and business communication —
+                handle common tasks from one organized workspace without installing anything.
+              </p>
             </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>Site Information</h2>
-          <p>
-            These pages help visitors understand who runs the website, how the site handles privacy, and how to get
-            in touch if they need support or want to report an issue.
-          </p>
-        </div>
-
-        <div className="content-grid">
-          {trustPages.map((page) => (
-            <article key={page.path} className="content-card glass-panel">
-              <h3>{page.title}</h3>
-              <p>{page.description}</p>
-              <Link to={page.path} className="feature-link">
-                Open Page <ArrowRight size={16} />
-              </Link>
+            <article className="home-intro-card glass-panel">
+              <div className="home-intro-icon">
+                <BookOpen size={22} />
+              </div>
+              <h2>Why the guides matter</h2>
+              <p>
+                Helpful content pages explain which tool to choose, when a file format makes sense, and how to avoid
+                quality or workflow mistakes. More value than a tool page alone.
+              </p>
             </article>
-          ))}
-        </div>
-      </section>
+            <article className="home-intro-card glass-panel">
+              <div className="home-intro-icon">
+                <ShieldCheck size={22} />
+              </div>
+              <h2>Built for trust</h2>
+              <p>
+                The site now includes About Us, Privacy Policy, and Contact Us pages so people and advertisers can see
+                that there is a real information structure behind the tools.
+              </p>
+            </article>
+          </div>
+        </section>
+      </FadeUp>
 
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>AI Tools</h2>
-          <p>
-            Intelligent AI-powered tools for conversations, analysis, and smart text enhancement. Powered by advanced language models with secure processing.
-          </p>
-        </div>
+      {/* ── PDF Tools ─────────────────────────────────────────────────────── */}
+      <FadeUp delay={0.05}>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label"><FileText size={14} /> PDF Tools</div>
+            <h2>PDF Tools</h2>
+            <p>
+              Merge, split, convert, protect, watermark, and export PDF files — all online, no software needed.
+            </p>
+          </div>
 
-        <div className="features-grid">
-          {aiTools.map((feature, index) => {
-            const Icon = feature.icon;
+          <div className="features-grid">
+            {pdfTools.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <TiltCard
+                  key={feature.path}
+                  className="feature-card glass-panel stagger-card"
+                  style={{ position: 'relative', '--card-delay': `${index * 0.04}s` }}
+                  tiltLimit={5}
+                  scale={1.02}
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleFavorite(feature.id); }}
+                    style={{
+                      position: 'absolute', top: '1rem', right: '1rem',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)', zIndex: 10
+                    }}
+                    title={isFavorite(feature.id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                  </button>
+                  <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                    <Icon size={32} className="feature-icon text-gradient" />
+                  </div>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                  <Link to={feature.path} className="feature-link">
+                    Open Tool <ArrowRight size={16} />
+                  </Link>
+                </TiltCard>
+              );
+            })}
+          </div>
+        </section>
+      </FadeUp>
 
-            return (
+      {/* ── Image Tools ───────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label"><Image size={14} /> Image Tools</div>
+            <h2>Image Tools</h2>
+            <p>
+              Compress, enhance, convert, and combine images online. These tools help with social media assets, product
+              images, document preparation, quick design exports, and format cleanup without leaving the browser.
+            </p>
+          </div>
+
+          <div className="features-grid">
+            {imageTools.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <TiltCard
+                  key={feature.path}
+                  className="feature-card glass-panel stagger-card"
+                  style={{ '--card-delay': `${index * 0.06}s`, position: 'relative' }}
+                  tiltLimit={5}
+                  scale={1.02}
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleFavorite(feature.id); }}
+                    style={{
+                      position: 'absolute', top: '1rem', right: '1rem',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)', zIndex: 10
+                    }}
+                    title={isFavorite(feature.id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                  </button>
+                  <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                    <Icon size={32} className="feature-icon text-gradient" />
+                  </div>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                  <Link to={feature.path} className="feature-link">
+                    Open Tool <ArrowRight size={16} />
+                  </Link>
+                </TiltCard>
+              );
+            })}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Text Tools ────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label">Text Tools</div>
+            <h2>Text Tools</h2>
+            <p>
+              Clean pasted text, remove unwanted formatting, generate useful random content, and export the result
+              instantly. These tools are especially helpful when text comes from PDFs, spreadsheets, websites, or AI
+              outputs.
+            </p>
+          </div>
+
+          <div className="features-grid">
+            {textTools.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <TiltCard
+                  key={feature.path}
+                  className="feature-card glass-panel stagger-card"
+                  style={{ '--card-delay': `${index * 0.06}s`, position: 'relative' }}
+                  tiltLimit={5}
+                  scale={1.02}
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleFavorite(feature.id); }}
+                    style={{
+                      position: 'absolute', top: '1rem', right: '1rem',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)', zIndex: 10
+                    }}
+                    title={isFavorite(feature.id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                  </button>
+                  <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                    <Icon size={32} className="feature-icon text-gradient" />
+                  </div>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                  <Link to={feature.path} className="feature-link">
+                    Open Tool <ArrowRight size={16} />
+                  </Link>
+                </TiltCard>
+              );
+            })}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Link Tools ────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label">Link Tools</div>
+            <h2>Link Tools</h2>
+            <p>
+              Create share-ready communication links for WhatsApp campaigns, customer support, and contact pages. This
+              keeps outreach flows faster and more consistent for businesses and solo operators.
+            </p>
+          </div>
+
+          <div className="features-grid features-grid-compact">
+            {linkTools.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <TiltCard
+                  key={feature.path}
+                  className="feature-card glass-panel stagger-card"
+                  style={{ '--card-delay': `${index * 0.06}s`, position: 'relative' }}
+                  tiltLimit={5}
+                  scale={1.02}
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleFavorite(feature.id); }}
+                    style={{
+                      position: 'absolute', top: '1rem', right: '1rem',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)', zIndex: 10
+                    }}
+                    title={isFavorite(feature.id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                  </button>
+                  <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                    <Icon size={32} className="feature-icon text-gradient" />
+                  </div>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                  <Link to={feature.path} className="feature-link">
+                    Open Tool <ArrowRight size={16} />
+                  </Link>
+                </TiltCard>
+              );
+            })}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── AI Tools ──────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label"><Cpu size={14} /> AI Tools</div>
+            <h2>AI Tools</h2>
+            <p>
+              Intelligent AI-powered tools for conversations, analysis, and smart text enhancement. Powered by advanced
+              language models with secure processing.
+            </p>
+          </div>
+
+          <div className="features-grid">
+            {aiTools.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <TiltCard
+                  key={feature.path}
+                  className="feature-card glass-panel stagger-card"
+                  style={{ '--card-delay': `${index * 0.06}s`, position: 'relative' }}
+                  tiltLimit={5}
+                  scale={1.02}
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleFavorite(feature.id); }}
+                    style={{
+                      position: 'absolute', top: '1rem', right: '1rem',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)', zIndex: 10
+                    }}
+                    title={isFavorite(feature.id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
+                  </button>
+                  <div className="feature-icon-wrapper" style={{ background: feature.color }}>
+                    <Icon size={32} className="feature-icon text-gradient" />
+                  </div>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                  <Link to={feature.path} className="feature-link">
+                    Open Tool <ArrowRight size={16} />
+                  </Link>
+                </TiltCard>
+              );
+            })}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Featured Guides ───────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <div className="section-label"><BookOpen size={14} /> Guides</div>
+            <h2>Featured Guides</h2>
+            <p>
+              Useful reading for visitors who want more than a button. These long-form pages help explain formats,
+              workflows, and best practices around the most common tasks on the site.
+            </p>
+          </div>
+
+          <div className="features-grid">
+            {guideArticles.map((article, index) => (
               <TiltCard
-                key={feature.path}
-                className="feature-card glass-panel animate-fade-in"
-                style={{ animationDelay: `${0.2 + index * 0.06}s`, position: 'relative' }}
+                key={article.path}
+                className="feature-card glass-panel stagger-card"
+                style={{ '--card-delay': `${index * 0.05}s` }}
                 tiltLimit={5}
                 scale={1.02}
               >
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleFavorite(feature.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    right: '1rem',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isFavorite(feature.id) ? '#eab308' : 'var(--text-secondary)',
-                    zIndex: 10
-                  }}
-                  title={isFavorite(feature.id) ? "Remove from Favorites" : "Add to Favorites"}
-                >
-                  <Star size={20} fill={isFavorite(feature.id) ? '#eab308' : 'none'} />
-                </button>
-                <div className="feature-icon-wrapper" style={{ background: feature.color }}>
-                  <Icon size={32} className="feature-icon text-gradient" />
+                <div className="guide-meta-row">
+                  <span>{article.category}</span>
+                  <span>{article.readTime}</span>
                 </div>
-                <h3>{feature.name}</h3>
-                <p>{feature.description}</p>
-                <Link to={feature.path} className="feature-link">
-                  Open Tool <ArrowRight size={16} />
+                <h3>{article.title}</h3>
+                <p>{article.description}</p>
+                <Link to={article.path} className="feature-link">
+                  Read Guide <ArrowRight size={16} />
                 </Link>
               </TiltCard>
-            );
-          })}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      </FadeUp>
 
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>How It Works</h2>
-          <p>Use the toolkit in three simple steps.</p>
-        </div>
+      {/* ── Why Use MultiTool ─────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <h2>Why Use MultiTool</h2>
+            <p>Designed as an online toolkit for creators, students, offices, and anyone who needs quick utility tools.</p>
+          </div>
 
-        <div className="steps-grid">
-          {steps.map((step, index) => (
-            <article key={step} className="step-card glass-panel">
-              <span className="step-number">0{index + 1}</span>
-              <p>{step}</p>
+          <div className="content-grid">
+            {advantages.map((item) => (
+              <article key={item.title} className="content-card glass-panel">
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Site Information ──────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <h2>Site Information</h2>
+            <p>
+              These pages help visitors understand who runs the website, how the site handles privacy, and how to get
+              in touch if they need support or want to report an issue.
+            </p>
+          </div>
+
+          <div className="content-grid">
+            {trustPages.map((page) => (
+              <article key={page.path} className="content-card glass-panel">
+                <h3>{page.title}</h3>
+                <p>{page.description}</p>
+                <Link to={page.path} className="feature-link">
+                  Open Page <ArrowRight size={16} />
+                </Link>
+              </article>
+            ))}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── How It Works ──────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <h2>How It Works</h2>
+            <p>Use the toolkit in three simple steps.</p>
+          </div>
+
+          <div className="steps-grid">
+            {steps.map((step, index) => (
+              <article key={step} className="step-card glass-panel">
+                <span className="step-number">0{index + 1}</span>
+                <p>{step}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Trust & Security ──────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section trust-section">
+          <div className="section-heading">
+            <h2>Why Users Trust MultiTool</h2>
+            <p>Built with privacy, security, and user experience as core principles.</p>
+          </div>
+
+          <div className="trust-grid">
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">🔒</div>
+              <h3>100% Private</h3>
+              <p>All files are processed locally in your browser. Nothing is uploaded to our servers.</p>
             </article>
-          ))}
-        </div>
-      </section>
-
-      {/* Trust & Security Section */}
-      <section className="feature-section trust-section">
-        <div className="section-heading">
-          <h2>Why Users Trust MultiTool</h2>
-          <p>Built with privacy, security, and user experience as core principles.</p>
-        </div>
-
-        <div className="trust-grid">
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">🔒</div>
-            <h3>100% Private</h3>
-            <p>All files are processed locally in your browser. Nothing is uploaded to our servers.</p>
-          </article>
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">⚡</div>
-            <h3>Lightning Fast</h3>
-            <p>Instant processing without waiting for uploads or server responses. Get results immediately.</p>
-          </article>
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">💰</div>
-            <h3>100% Free</h3>
-            <p>No subscriptions, no hidden fees, no premium tiers. Everything is completely free forever.</p>
-          </article>
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">🌐</div>
-            <h3>Works Everywhere</h3>
-            <p>Runs on any modern browser, any device. Windows, Mac, Linux, iOS, Android - no installation needed.</p>
-          </article>
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">👥</div>
-            <h3>Built for Real Workflows</h3>
-            <p>Designed for students, professionals, and businesses who need quick, reliable tools for everyday document tasks.</p>
-          </article>
-          <article className="trust-card glass-panel">
-            <div className="trust-icon">🛠️</div>
-            <h3>Constantly Improving</h3>
-            <p>Regular updates with new tools and features based on user feedback and needs.</p>
-          </article>
-        </div>
-      </section>
-
-      {/* Statistics Section */}
-      <section className="feature-section stats-section">
-        <div className="section-heading">
-          <h2>By The Numbers</h2>
-          <p>MultiTool impact and reach across our user base.</p>
-        </div>
-
-        <div className="stats-grid">
-          <article className="stat-card glass-panel">
-            <h3 className="stat-number">50+</h3>
-            <p>Professional Tools</p>
-          </article>
-          <article className="stat-card glass-panel">
-            <h3 className="stat-number">0</h3>
-            <p>Files Stored on Servers</p>
-          </article>
-          <article className="stat-card glass-panel">
-            <h3 className="stat-number">100%</h3>
-            <p>Browser-Based Processing</p>
-          </article>
-          <article className="stat-card glass-panel">
-            <h3 className="stat-number">24/7</h3>
-            <p>Service Availability</p>
-          </article>
-        </div>
-      </section>
-
-      {/* About Us CTA */}
-      <section className="feature-section about-cta-section">
-        <article className="about-cta glass-panel gradient-border">
-          <h2>About MultiTool</h2>
-          <p>
-            Learn more about our mission to provide free, fast, and reliable tools for everyone.
-            Discover our values, team, and commitment to quality.
-          </p>
-          <Link to="/about-us" className="btn-primary">
-            Learn More About Us
-          </Link>
-        </article>
-      </section>
-
-      <section className="feature-section">
-        <div className="section-heading">
-          <h2>FAQ</h2>
-          <p>Quick answers about the PDF tools, text tools, and link generator available on this website.</p>
-        </div>
-
-        <div className="faq-list">
-          {homeFaqs.map((item) => (
-            <article key={item.question} className="faq-card glass-panel">
-              <h3>{item.question}</h3>
-              <p>{item.answer}</p>
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">⚡</div>
+              <h3>Lightning Fast</h3>
+              <p>Instant processing without waiting for uploads or server responses. Get results immediately.</p>
             </article>
-          ))}
-        </div>
-      </section>
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">💰</div>
+              <h3>100% Free</h3>
+              <p>No subscriptions, no hidden fees, no premium tiers. Everything is completely free forever.</p>
+            </article>
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">🌐</div>
+              <h3>Works Everywhere</h3>
+              <p>Runs on any modern browser, any device. Windows, Mac, Linux, iOS, Android - no installation needed.</p>
+            </article>
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">👥</div>
+              <h3>Built for Real Workflows</h3>
+              <p>Designed for students, professionals, and businesses who need quick, reliable tools for everyday document tasks.</p>
+            </article>
+            <article className="trust-card glass-panel">
+              <div className="trust-icon">🛠️</div>
+              <h3>Constantly Improving</h3>
+              <p>Regular updates with new tools and features based on user feedback and needs.</p>
+            </article>
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── Statistics ────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section stats-section">
+          <div className="section-heading">
+            <h2>By The Numbers</h2>
+            <p>MultiTool impact and reach across our user base.</p>
+          </div>
+
+          <div className="stats-grid">
+            <article className="stat-card glass-panel">
+              <h3 className="stat-number">50+</h3>
+              <p>Professional Tools</p>
+            </article>
+            <article className="stat-card glass-panel">
+              <h3 className="stat-number">0</h3>
+              <p>Files Stored on Servers</p>
+            </article>
+            <article className="stat-card glass-panel">
+              <h3 className="stat-number">100%</h3>
+              <p>Browser-Based Processing</p>
+            </article>
+            <article className="stat-card glass-panel">
+              <h3 className="stat-number">24/7</h3>
+              <p>Service Availability</p>
+            </article>
+          </div>
+        </section>
+      </FadeUp>
+
+      {/* ── About CTA ─────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section about-cta-section">
+          <article className="about-cta glass-panel gradient-border">
+            <h2>About MultiTool</h2>
+            <p>
+              Learn more about our mission to provide free, fast, and reliable tools for everyone.
+              Discover our values, team, and commitment to quality.
+            </p>
+            <Link to="/about-us" className="btn-primary">
+              Learn More About Us
+            </Link>
+          </article>
+        </section>
+      </FadeUp>
+
+      {/* ── FAQ ───────────────────────────────────────────────────────────── */}
+      <FadeUp>
+        <section className="feature-section">
+          <div className="section-heading">
+            <h2>FAQ</h2>
+            <p>Quick answers about the PDF tools, text tools, and link generator available on this website.</p>
+          </div>
+
+          <div className="faq-list">
+            {homeFaqs.map((item) => (
+              <article key={item.question} className="faq-card glass-panel">
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </FadeUp>
     </div>
   );
 };

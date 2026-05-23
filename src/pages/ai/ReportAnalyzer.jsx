@@ -12,12 +12,16 @@ import {
   Download,
   Image as ImageIcon,
   Trash2,
+  Clock,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import SeoHead from '../../components/seo/SEOHead';
 import './ReportAnalyzer.css';
+import { useAiRateLimit } from '../../hooks/useAiRateLimit';
+import { AiLoginGate, AiRateLimitBanner } from '../../components/shared/AiRateLimitGate';
 
 const ReportAnalyzer = () => {
+  const rateLimit   = useAiRateLimit('report-analyzer');
   const fileInputRef = useRef(null);
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -147,6 +151,12 @@ const ReportAnalyzer = () => {
       return;
     }
 
+    // Client-side rate gate
+    if (!rateLimit.consume()) {
+      toast.error(`Hourly limit reached. Resets in ${rateLimit.resetIn}.`);
+      return;
+    }
+
     setIsAnalyzing(true);
     setError(null);
     setAnalysis(null);
@@ -271,6 +281,9 @@ Generated: ${new Date().toLocaleString()}
         description="AI-powered report analysis tool. Upload medical or blood test reports to get instant analysis with human-readable summaries and health tips."
       />
 
+      {/* Login gate — must be signed in to use this AI tool */}
+      {!rateLimit.isLoggedIn && <AiLoginGate toolName="Report Analyzer" />}
+
       <div className="report-analyzer-container">
         <div className="report-analyzer-header">
           <h1 className="text-gradient">Medical & Blood Report Analyzer</h1>
@@ -350,15 +363,23 @@ Generated: ${new Date().toLocaleString()}
               </div>
             )}
 
+            <AiRateLimitBanner hook={rateLimit} />
+
             <button
               className="btn-analyze"
               onClick={analyzeReport}
-              disabled={!file || isAnalyzing}
+              disabled={!file || isAnalyzing || !rateLimit.allowed}
+              style={{ opacity: !rateLimit.allowed ? 0.5 : 1, cursor: !rateLimit.allowed ? 'not-allowed' : 'pointer' }}
             >
               {isAnalyzing ? (
                 <>
                   <Loader size={18} className="spin" />
                   Analyzing...
+                </>
+              ) : !rateLimit.allowed ? (
+                <>
+                  <Clock size={18} />
+                  Limit reached · resets in {rateLimit.resetIn}
                 </>
               ) : (
                 <>

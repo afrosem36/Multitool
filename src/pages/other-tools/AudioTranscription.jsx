@@ -12,6 +12,8 @@ import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
 import { useAuth } from '../../context/AuthContext';
 import { callAI, buildImproveTextPrompt, buildQaAnalysisPrompt, parseQaReport } from './audioAiHelpers';
+import { useAiRateLimit } from '../../hooks/useAiRateLimit';
+import { AiLoginGate, AiRateLimitBanner, AiRateLimitBadge } from '../../components/shared/AiRateLimitGate';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_FILE_MB        = 500;
@@ -1036,6 +1038,7 @@ const AnimatedAudioWave = ({ size = 48, className }) => (
 export default function AudioTranscription() {
   const { user, apiFetch } = useAuth();
   const location           = useLocation();
+  const rateLimit          = useAiRateLimit('audio-transcription');
 
   // Upload state
   const [file, setFile]           = useState(null);
@@ -1147,7 +1150,13 @@ export default function AudioTranscription() {
   // ── Main pipeline ──────────────────────────────────────────────────────────
   const runPipeline = useCallback(async () => {
     if (!file) return;
+    // Login is mandatory — show gate if not logged in
     if (!user) { setShowLoginModal(true); return; }
+    // Client-side rate limit check
+    if (!rateLimit.consume()) {
+      toast.error(`Transcription limit reached. Resets in ${rateLimit.resetIn}.`);
+      return;
+    }
 
     abortRef.current = false;
     setPipelineError(null);
@@ -1361,6 +1370,9 @@ export default function AudioTranscription() {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight:'100vh', fontFamily:"'Inter', system-ui, sans-serif" }}>
+      {/* Login gate — must be logged in to use this tool */}
+      {!user && <AiLoginGate toolName="AI Transcription" />}
+
       <ToolHeader
         title="AI Transcription"
         description="Professional audio transcription with AI pipeline — speaker recognition, translation, and QA analysis"
@@ -1571,25 +1583,30 @@ export default function AudioTranscription() {
             {/* Credits balance */}
             {user && <CreditsBar credits={credits} onRefresh={fetchCredits} />}
 
+            {/* Rate limit banner */}
+            <AiRateLimitBanner hook={rateLimit} />
+
             {/* Start button */}
             <button
-              onClick={canStart ? runPipeline : isPipelineRunning ? () => { abortRef.current = true; } : undefined}
-              disabled={!file && !isPipelineRunning}
-              title={creditsExhausted ? 'Daily limit reached — resets at midnight' : undefined}
+              onClick={canStart && rateLimit.allowed ? runPipeline : isPipelineRunning ? () => { abortRef.current = true; } : undefined}
+              disabled={(!file && !isPipelineRunning) || (!isPipelineRunning && !rateLimit.allowed)}
+              title={creditsExhausted ? 'Daily limit reached — resets at midnight' : !rateLimit.allowed ? `Limit reached. Resets in ${rateLimit.resetIn}` : undefined}
               style={{ width:'100%', padding:'0.9rem', borderRadius:12, border:'none',
-                cursor: isPipelineRunning ? 'pointer' : canStart ? 'pointer' : 'not-allowed',
+                cursor: isPipelineRunning ? 'pointer' : (canStart && rateLimit.allowed) ? 'pointer' : 'not-allowed',
                 fontWeight:700, fontSize:'0.95rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
                 background: isPipelineRunning ? 'rgba(239,68,68,0.15)' :
-                           creditsExhausted  ? 'rgba(239,68,68,0.08)' :
+                           (!rateLimit.allowed || creditsExhausted) ? 'rgba(239,68,68,0.08)' :
                            !file             ? 'rgba(255,255,255,0.06)' :
                            'linear-gradient(135deg,#6366f1,#a78bfa)',
                 color: isPipelineRunning ? '#f87171' :
-                       creditsExhausted  ? '#f87171' :
+                       (!rateLimit.allowed || creditsExhausted) ? '#f87171' :
                        !file             ? 'var(--text-secondary)' : '#fff',
                 transition:'all 0.2s',
-                boxShadow: canStart && !isPipelineRunning ? '0 4px 20px rgba(99,102,241,0.3)' : 'none' }}>
+                boxShadow: (canStart && rateLimit.allowed && !isPipelineRunning) ? '0 4px 20px rgba(99,102,241,0.3)' : 'none' }}>
               {isPipelineRunning ? (
                 <><motion.div animate={{ rotate:360 }} transition={{ repeat:Infinity, duration:1 }}><Loader size={18} /></motion.div> Stop Pipeline</>
+              ) : !rateLimit.allowed ? (
+                <><Lock size={18} /> Limit Reached · Resets in {rateLimit.resetIn}</>
               ) : creditsExhausted ? (
                 <><Lock size={18} /> No Credits Left</>
               ) : (

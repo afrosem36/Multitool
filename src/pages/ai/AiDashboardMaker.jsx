@@ -26,6 +26,8 @@ import {
 } from 'recharts';
 import { API_BASE_URL } from '../../config';
 import { useAuth } from '../../context/AuthContext';
+import { useAiRateLimit } from '../../hooks/useAiRateLimit';
+import { AiLoginGate, AiRateLimitBanner, AiRateLimitBadge } from '../../components/shared/AiRateLimitGate';
 import { useDashboardStore } from '../../store/dashboardStore';
 
 // ── Engines ──────────────────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ import { generateInsights } from '../../engines/insightEngine';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = ['#6366f1','#10b981','#f59e0b','#3b82f6','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316'];
-const FREE_DASHBOARD_LIMIT = 5;
+const FREE_DASHBOARD_LIMIT = 3;
 
 const DARK  = { page:'#07070f', card:'#0d0d1a', card2:'#111122', border:'rgba(255,255,255,0.07)', text:'#e2e8f0', sub:'#64748b', input:'rgba(255,255,255,0.05)', hover:'rgba(255,255,255,0.04)', glass:'rgba(13,13,26,0.85)' };
 const LIGHT = { page:'#f0f4ff', card:'#ffffff',  card2:'#f8faff', border:'rgba(0,0,0,0.08)',       text:'#0f172a', sub:'#64748b', input:'rgba(0,0,0,0.04)',        hover:'rgba(0,0,0,0.03)',       glass:'rgba(255,255,255,0.9)' };
@@ -225,7 +227,7 @@ function AuthGateBanner({ T, onLogin }) {
       <div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}>
         <Shield size={14} style={{ color:'#818cf8' }}/>
         <span style={{ fontSize:'.82rem', color:T.sub }}>
-          <strong style={{ color:'#a5b4fc' }}>Sign in</strong> to save dashboards · Free users get {FREE_DASHBOARD_LIMIT} dashboards
+          <strong style={{ color:'#a5b4fc' }}>Sign in required</strong> · Each account gets {FREE_DASHBOARD_LIMIT} dashboards total
         </span>
       </div>
       <button onClick={onLogin}
@@ -1062,6 +1064,7 @@ function DataTable({ rows, headers, T }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function AiDashboardMaker() {
   const { user } = useAuth();
+  const rateLimit = useAiRateLimit('dashboard-maker');
   const store = useDashboardStore();
   const T = store.theme === 'dark' ? DARK : LIGHT;
 
@@ -1154,6 +1157,19 @@ export default function AiDashboardMaker() {
   // ── Dashboard generation ────────────────────────────────────────────────────
   const generateDashboard = async () => {
     if (store.loading) return;
+
+    // Login mandatory
+    if (!user) {
+      toast.error('Please sign in to generate dashboards');
+      return;
+    }
+
+    // Total dashboard limit (3 for non-admin users)
+    if (!rateLimit.consume()) {
+      toast.error(`Dashboard limit reached (${rateLimit.maxCalls} total). You cannot create more.`);
+      return;
+    }
+
     store.setLoading(true);
     store.setGenStage(0);
     store.setStep('generating');
@@ -1309,6 +1325,9 @@ export default function AiDashboardMaker() {
 
   return (
     <div style={{ minHeight:'100vh', background:T.page, color:T.text, fontFamily:'system-ui,sans-serif' }}>
+      {/* Login gate — must be signed in */}
+      {!user && <AiLoginGate toolName="AI Dashboard Maker" />}
+
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
         ::-webkit-scrollbar{width:5px;height:5px}
@@ -1485,11 +1504,13 @@ export default function AiDashboardMaker() {
               </div>
             </div>
 
-            {!user && (
-              <div style={{ marginBottom:'.75rem' }}>
-                <AuthGateBanner T={T} onLogin={() => window.location.href = '/login'}/>
+            {/* Show dashboard usage badge + limit banner for logged-in users */}
+            {user && (
+              <div style={{ marginBottom: '.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AiRateLimitBadge hook={rateLimit} />
               </div>
             )}
+            <AiRateLimitBanner hook={rateLimit} />
 
             {recent.length > 0 && (
               <div style={{ marginTop:'1.25rem' }}>

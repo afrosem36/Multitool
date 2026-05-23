@@ -57,7 +57,7 @@ export const Login = () => {
     setIsLoading(false);
     
     if (result.success) {
-      const from = location.state?.from || '/dashboard';
+      const from = location.state?.from || '/';
       navigate(from);
     } else {
       setError(result.error);
@@ -127,7 +127,7 @@ export const Login = () => {
             const result = await loginWithGoogle(token);
             setIsLoading(false);
             if (result.success) {
-              const from = location.state?.from || '/dashboard';
+              const from = location.state?.from || '/';
               navigate(from);
             } else {
               setError(result.error);
@@ -171,7 +171,7 @@ export const Signup = () => {
     setIsLoading(false);
     
     if (result.success) {
-      const from = location.state?.from || '/dashboard';
+      const from = location.state?.from || '/';
       navigate(from);
     } else {
       setError(result.error);
@@ -250,7 +250,7 @@ export const Signup = () => {
             const result = await loginWithGoogle(token);
             setIsLoading(false);
             if (result.success) {
-              const from = location.state?.from || '/dashboard';
+              const from = location.state?.from || '/';
               navigate(from);
             } else {
               setError(result.error);

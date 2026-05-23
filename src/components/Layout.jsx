@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
@@ -52,8 +52,6 @@ function getTimeAgo(dateString) {
 const Layout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  const [navbarVisible, setNavbarVisible] = useState(false);
-  const navHoveredRef = useRef(false);
   const [lastUpdated, setLastUpdated] = useState('');
   const location = useLocation();
 
@@ -75,43 +73,6 @@ const Layout = () => {
       setIsSidebarOpen(false);
     }
   }, [location.pathname]);
-
-  // Navbar auto-hide: show on hover at top edge; hide after 7 seconds of inactivity.
-  // navHoveredRef prevents hiding while navbar is hovered.
-  useEffect(() => {
-    let rafId = null;
-    let hideTimeoutId = null;
-
-    const resetHideTimer = () => {
-      if (hideTimeoutId) clearTimeout(hideTimeoutId);
-      hideTimeoutId = setTimeout(() => {
-        if (!navHoveredRef.current) {
-          setNavbarVisible(false);
-        }
-      }, 7000);
-    };
-
-    const handleMouseMove = (e) => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        if (e.clientY <= 20) {
-          setNavbarVisible(true);
-          resetHideTimer();
-        } else if (e.clientY > 90 && !navHoveredRef.current) {
-          if (hideTimeoutId) clearTimeout(hideTimeoutId);
-          setNavbarVisible(false);
-        }
-      });
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (hideTimeoutId) clearTimeout(hideTimeoutId);
-    };
-  }, []);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
@@ -136,7 +97,7 @@ const Layout = () => {
   );
 
   return (
-    <div className={`layout${navbarVisible ? '' : ' layout--nav-hidden'}`}>
+    <div className="layout">
       {/* ── Global animated grid background ── */}
       <div className="bg-boxes-root">
         <Boxes />
@@ -148,11 +109,7 @@ const Layout = () => {
       <Navbar
         onToggleSidebar={toggleSidebar}
         isSidebarOpen={isSidebarOpen}
-        visible={navbarVisible}
-        onNavHover={(hovered) => {
-          navHoveredRef.current = hovered;
-          if (hovered) setNavbarVisible(true);
-        }}
+        visible={true}
       />
       
       <div className="layout-shell">
