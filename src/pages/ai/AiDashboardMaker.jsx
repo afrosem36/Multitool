@@ -734,11 +734,22 @@ function DataTable({ rows, headers, T }) {
 
 // ─── Share Modal ──────────────────────────────────────────────────────────────
 const CHART_TYPE_LABELS = {
-  bar: 'Bar', horizontalBar: 'Horizontal Bar', stackedBar: 'Stacked Bar', line: 'Line',
-  area: 'Area', pie: 'Pie', donut: 'Donut', composed: 'Composed', scatter: 'Scatter',
-  radar: 'Radar', table: 'Table', heatmap: 'Heatmap', treemap: 'Treemap', funnel: 'Funnel',
-  gauge: 'Gauge', radialBar: 'Radial Bar', waterfall: 'Waterfall', histogram: 'Histogram',
-  correlationMatrix: 'Correlation Matrix', calendarHeatmap: 'Calendar Heatmap',
+  bar: 'Bar (Clustered Column)', horizontalBar: 'Horizontal Bar',
+  stackedBar: 'Stacked Bar', stackedBar100: '100% Stacked Bar',
+  line: 'Line', lineMarkers: 'Line with Markers', steppedLine: 'Stepped Line', smoothLine: 'Smooth Line',
+  area: 'Area', stackedArea: 'Stacked Area', stackedArea100: '100% Stacked Area',
+  composed: 'Combo (Line & Column)', ribbon: 'Ribbon',
+  waterfall: 'Waterfall', breakdownWaterfall: 'Breakdown Waterfall',
+  pie: 'Pie', explodedPie: 'Exploded Pie', donut: 'Donut', multiRingDonut: 'Multi-ring Donut',
+  treemap: 'Treemap', funnel: 'Funnel',
+  scatter: 'Scatter', bubble: 'Bubble', dotPlot: 'Dot Plot',
+  histogram: 'Histogram', correlationMatrix: 'Correlation Matrix',
+  heatmap: 'Heatmap', calendarHeatmap: 'Calendar Heatmap',
+  card: 'Card (Single Value)', multiRowCard: 'Multi-row Card', kpiTrendCard: 'KPI Trend Card',
+  gauge: 'Gauge', radialBar: 'Radial Gauge', linearGauge: 'Linear Gauge',
+  table: 'Table', conditionalTable: 'Conditional Table', matrix: 'Matrix',
+  bullet: 'Bullet', tornado: 'Tornado', slope: 'Slope', sunburst: 'Sunburst',
+  radar: 'Radar', filledRadar: 'Filled Radar',
 };
 
 function getColumnSets(headers, analysis) {
@@ -753,14 +764,17 @@ function getColumnSets(headers, analysis) {
 }
 
 function chartTypeInvalidReason(type, cols) {
-  if (['line', 'area', 'calendarHeatmap'].includes(type) && cols.date.length < 1) return 'Needs a date column';
-  if (type === 'scatter' && cols.numeric.length < 2) return 'Needs 2 numeric columns';
+  if (['line', 'area', 'lineMarkers', 'steppedLine', 'smoothLine', 'stackedArea', 'stackedArea100', 'ribbon', 'calendarHeatmap'].includes(type) && cols.date.length < 1) return 'Needs a date column';
+  if (['scatter', 'bubble', 'dotPlot'].includes(type) && cols.numeric.length < 2) return 'Needs 2 numeric columns';
   if (type === 'correlationMatrix' && cols.numeric.length < 3) return 'Needs 3 numeric columns';
-  if (['histogram', 'waterfall'].includes(type) && cols.numeric.length < 1) return 'Needs a numeric column';
-  if (['heatmap', 'stackedBar'].includes(type) && cols.category.length < 2) return 'Needs 2 category/status columns';
-  if (type === 'funnel' && cols.status.length < 1) return 'Needs a status/stage column';
-  if (['gauge', 'radialBar'].includes(type) && cols.percent.length < 1 && !(cols.numeric.length && cols.target.length)) return 'Needs percent/rate or target columns';
-  if (['pie', 'donut', 'treemap', 'radar'].includes(type) && cols.category.length < 1) return 'Needs a category column';
+  if (['histogram', 'waterfall', 'breakdownWaterfall'].includes(type) && cols.numeric.length < 1) return 'Needs a numeric column';
+  if (['heatmap', 'stackedBar', 'stackedBar100', 'stackedArea', 'stackedArea100', 'ribbon', 'tornado', 'multiRingDonut'].includes(type) && cols.category.length < 2) return 'Needs 2 category/status columns';
+  if (['funnel', 'conversionFunnel'].includes(type) && cols.status.length < 1) return 'Needs a status/stage column';
+  if (['gauge', 'radialBar', 'linearGauge'].includes(type) && cols.percent.length < 1 && !(cols.numeric.length && cols.target.length)) return 'Needs percent/rate or target columns';
+  if (type === 'bullet' && (cols.numeric.length < 1 || cols.target.length < 1)) return 'Needs a numeric + target column';
+  if (['pie', 'explodedPie', 'donut', 'treemap', 'sunburst', 'radar', 'filledRadar'].includes(type) && cols.category.length < 1) return 'Needs a category column';
+  if (['card', 'multiRowCard', 'kpiTrendCard'].includes(type) && cols.numeric.length < 1) return 'Needs a numeric column';
+  if (type === 'slope' && cols.category.length < 1) return 'Needs a category column';
   return '';
 }
 
@@ -1499,30 +1513,24 @@ export default function AiDashboardMaker() {
     if (!currentDashboard || !effectiveAnalysis) return '';
     const safeHeaders = effectiveAnalysis.headers || store.headers || [];
     const safeRows = store.rows || [];
-    const base = generateAIBlueprintPrompt({
+    const existing = {
+      tabs: (currentDashboard.plan?.tabs || []).map(t => ({
+        tabId: t.id,
+        tabName: t.title,
+        chartIds: (t.charts || []).map(c => c.id || c.title),
+        chartTypes: (t.charts || []).map(c => c.type),
+      })),
+      chartIds: currentChartIds,
+    };
+    return generateAIBlueprintPrompt({
       headers: safeHeaders,
       analysis: effectiveAnalysis,
       sampleRows: safeRows.slice(0, 5),
       rowCount: safeRows.length,
       detectedDomain: effectiveAnalysis.domain || 'generic',
       userPrompt: store.userPrompt,
+      existing,
     });
-    const existing = (currentDashboard.plan?.tabs || []).map(t => ({
-      tabId: t.id,
-      tabName: t.title,
-      chartIds: (t.charts || []).map(c => c.id || c.title),
-      chartTypes: (t.charts || []).map(c => c.type),
-    }));
-    return `${base}
-
-IMPORTANT IMPROVEMENT MODE:
-- Return ONLY additional tabs/charts/insights/recommendedActions that are missing.
-- Do not repeat any existing chart id/title.
-- Do not request full data or calculate values.
-- Prefer missing advanced analysis opportunities.
-- Existing report structure: ${JSON.stringify(existing)}
-- Existing chart ids: ${currentChartIds.join(', ')}
-- Return the same JSON blueprint shape, but include only new/additional tabs or charts.`;
   }, [store, effectiveAnalysis, currentChartIds]);
 
   const copyImprovePrompt = async () => {

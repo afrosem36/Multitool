@@ -28,7 +28,7 @@ function loadDashboards(userId) {
 function saveDashboards(userId, list) {
   try {
     localStorage.setItem(storageKey(userId), JSON.stringify(list.slice(0, 20)));
-  } catch {}
+  } catch { /* localStorage write best-effort */ }
 }
 
 function loadPlanCache() {
@@ -49,7 +49,7 @@ function savePlanCache(cache) {
     const entries = Object.entries(cache).sort(([, a], [, b]) => (b.t || 0) - (a.t || 0));
     const trimmed = Object.fromEntries(entries.slice(0, PLAN_CACHE_MAX));
     localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(trimmed));
-  } catch {}
+  } catch { /* localStorage write best-effort */ }
 }
 
 export const useDashboardStore = create((set, get) => ({
@@ -149,7 +149,7 @@ export const useDashboardStore = create((set, get) => ({
   },
 
   clearPlanCache() {
-    try { localStorage.removeItem(PLAN_CACHE_KEY); } catch {}
+    try { localStorage.removeItem(PLAN_CACHE_KEY); } catch { /* ignore */ }
     set({ planCache: {} });
   },
 

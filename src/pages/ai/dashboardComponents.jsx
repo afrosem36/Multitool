@@ -54,12 +54,22 @@ export function buildChartData(spec, rows, analysis) {
   if (type === 'calendarHeatmap') return buildCalendarHeatmap(rows, xCol || analysis?.primaryDateCol, valueCol, aggregation);
   if (type === 'histogram') return buildHistogram(rows, valueCol || yCol || xCol, limit);
   if (type === 'heatmap') return buildHeatmapData(rows, xCol, groupBy || yCol, valueCol, aggregation, limit);
-  if (type === 'stackedBar') return buildStackedBarData(rows, xCol, groupBy || spec.stackBy || analysis?.primaryStatusCol, valueCol, aggregation, limit);
+  if (type === 'stackedBar' || type === 'stackedArea') return buildStackedBarData(rows, xCol, groupBy || spec.stackBy || analysis?.primaryStatusCol, valueCol, aggregation, limit);
+  if (type === 'stackedBar100' || type === 'stackedArea100') return buildStacked100Data(rows, xCol, groupBy || spec.stackBy || analysis?.primaryStatusCol, valueCol, aggregation, limit);
+  if (type === 'ribbon') return buildStackedBarData(rows, xCol, groupBy || spec.stackBy || analysis?.primaryStatusCol, valueCol, aggregation, limit);
   if (type === 'funnel') return buildFunnelData(rows, xCol || analysis?.primaryStatusCol, valueCol, aggregation, limit);
-  if (type === 'gauge' || type === 'radialBar') return buildGaugeData(rows, spec, analysis);
-  if (type === 'waterfall') return buildWaterfallData(rows, spec, analysis);
-  if (type === 'scatter') return buildScatterData(rows, xCol, yCol || valueCol, limit);
-  if (type === 'table') return buildTableData(rows, xCol, valueCol, aggregation, limit);
+  if (type === 'gauge' || type === 'radialBar' || type === 'linearGauge') return buildGaugeData(rows, spec, analysis);
+  if (type === 'waterfall' || type === 'breakdownWaterfall') return buildWaterfallData(rows, spec, analysis);
+  if (type === 'scatter' || type === 'dotPlot') return buildScatterData(rows, xCol, yCol || valueCol, limit);
+  if (type === 'bubble') return buildBubbleData(rows, xCol, yCol, valueCol, limit);
+  if (type === 'table' || type === 'conditionalTable' || type === 'matrix') return buildTableData(rows, xCol, valueCol, aggregation, limit);
+  if (type === 'sunburst') return buildSunburstData(rows, xCol, groupBy, valueCol, aggregation, limit);
+  if (type === 'tornado') return buildTornadoData(rows, xCol, groupBy || spec.stackBy, valueCol, aggregation, limit);
+  if (type === 'bullet') return buildBulletData(rows, spec, analysis);
+  if (type === 'slope') return buildSlopeData(rows, xCol, groupBy || spec.stackBy, valueCol, aggregation, limit);
+  if (type === 'card' || type === 'multiRowCard') return buildCardData(rows, spec, analysis, aggregation);
+  if (type === 'kpiTrendCard') return buildKpiTrendData(rows, xCol || analysis?.primaryDateCol, valueCol, aggregation);
+  if (type === 'multiRingDonut') return buildMultiRingDonutData(rows, xCol, groupBy, valueCol, aggregation, limit);
 
   if (spec.timeSeries && (xCol || analysis?.primaryDateCol)) {
     return buildDateTrends(rows, xCol || analysis.primaryDateCol, valueCol || null, spec.timeGroupBy || 'month');
@@ -69,23 +79,106 @@ export function buildChartData(spec, rows, analysis) {
 }
 
 export const ADVANCED_CHART_TYPES = [
-  'bar', 'horizontalBar', 'stackedBar', 'line', 'area', 'pie', 'donut', 'composed',
-  'scatter', 'radar', 'table', 'heatmap', 'treemap', 'funnel', 'gauge', 'radialBar',
-  'waterfall', 'histogram', 'correlationMatrix', 'calendarHeatmap', 'kpiTrendCard',
+  // Comparison & trends
+  'bar', 'horizontalBar', 'stackedBar', 'stackedBar100',
+  'line', 'lineMarkers', 'steppedLine', 'smoothLine',
+  'area', 'stackedArea', 'stackedArea100',
+  'composed', 'ribbon', 'waterfall', 'breakdownWaterfall',
+  // Part-to-whole
+  'pie', 'explodedPie', 'donut', 'multiRingDonut', 'treemap', 'funnel',
+  // Distribution & relationships
+  'scatter', 'bubble', 'dotPlot', 'histogram', 'correlationMatrix',
+  'heatmap', 'calendarHeatmap',
+  // KPI / cards / gauges
+  'card', 'multiRowCard', 'kpiTrendCard', 'gauge', 'radialBar', 'linearGauge',
+  // Tables
+  'table', 'conditionalTable', 'matrix',
+  // Other professional
+  'bullet', 'tornado', 'slope', 'sunburst', 'radar', 'filledRadar',
 ];
 
 export function normalizeChartType(type) {
   const raw = String(type || 'bar').trim();
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
   const map = {
     hbar: 'horizontalBar',
     horizontalbar: 'horizontalBar',
+    clusteredbar: 'bar',
+    clusteredcolumn: 'bar',
+    columnchart: 'bar',
+    column: 'bar',
     stackedbar: 'stackedBar',
+    stackedcolumn: 'stackedBar',
+    stackedbar100: 'stackedBar100',
+    stackedcolumn100: 'stackedBar100',
+    '100stackedbar': 'stackedBar100',
+    '100stackedcolumn': 'stackedBar100',
+    fullstackedbar: 'stackedBar100',
+    linewithmarkers: 'lineMarkers',
+    linemarkers: 'lineMarkers',
+    steppedline: 'steppedLine',
+    smoothline: 'smoothLine',
+    stackedarea: 'stackedArea',
+    stackedarea100: 'stackedArea100',
+    fullstackedarea: 'stackedArea100',
+    combo: 'composed',
+    combochart: 'composed',
+    linecolumncombo: 'composed',
+    linestackedcolumn: 'composed',
+    lineclusteredcolumn: 'composed',
+    ribbonchart: 'ribbon',
+    waterfallchart: 'waterfall',
+    breakdownwaterfall: 'breakdownWaterfall',
+    standardpie: 'pie',
+    explodedpie: 'explodedPie',
+    pieexploded: 'explodedPie',
+    standarddonut: 'donut',
+    multiringdonut: 'multiRingDonut',
+    nesteddonut: 'multiRingDonut',
+    standardtreemap: 'treemap',
+    hierarchicaltreemap: 'treemap',
+    standardfunnel: 'funnel',
+    conversionfunnel: 'funnel',
+    standardscatter: 'scatter',
+    bubblechart: 'bubble',
+    standardbubble: 'bubble',
+    dotplot: 'dotPlot',
+    standarddotplot: 'dotPlot',
+    singlevaluecard: 'card',
+    newcard: 'card',
+    standardmultirow: 'multiRowCard',
+    standardmultirowcard: 'multiRowCard',
+    kpivisual: 'kpiTrendCard',
+    trendkpi: 'kpiTrendCard',
+    targetkpi: 'kpiTrendCard',
+    radialgauge: 'radialBar',
     radialbar: 'radialBar',
+    lineargauge: 'linearGauge',
+    standardtable: 'table',
+    conditionalformattedtable: 'conditionalTable',
+    conditionaltable: 'conditionalTable',
+    standardmatrix: 'matrix',
+    steppedlayoutmatrix: 'matrix',
+    drilldownmatrix: 'matrix',
+    pivot: 'matrix',
+    pivottable: 'matrix',
+    bulletchart: 'bullet',
+    horizontalbullet: 'bullet',
+    verticalbullet: 'bullet',
+    tornadochart: 'tornado',
+    slopechart: 'slope',
+    standardsunburst: 'sunburst',
+    drilldownsunburst: 'sunburst',
+    standardradar: 'radar',
+    filledradar: 'filledRadar',
     correlationmatrix: 'correlationMatrix',
     calendarheatmap: 'calendarHeatmap',
+    tableheatmap: 'heatmap',
+    frequencyhistogram: 'histogram',
+    densityhistogram: 'histogram',
     kpitrendcard: 'kpiTrendCard',
   };
-  return map[raw.toLowerCase()] || raw;
+  return map[key] || raw;
 }
 
 function normalizeAggregation(agg) {
@@ -283,6 +376,112 @@ function buildTableData(rows, xCol, valueCol, aggregation = 'count', limit = 25)
   return aggregateForChart(rows, xCol, valueCol || null, aggregation, limit);
 }
 
+// 100%-normalized stacked bar/area — same shape as stackedBar but rescaled per row.
+function buildStacked100Data(rows, xCol, stackCol, valueCol, aggregation = 'count', limit = 12) {
+  const raw = buildStackedBarData(rows, xCol, stackCol, valueCol, aggregation, limit);
+  return raw.map(r => {
+    const sum = Object.entries(r)
+      .filter(([k]) => k !== 'name')
+      .reduce((s, [, v]) => s + (Number(v) || 0), 0);
+    if (!sum) return r;
+    const next = { name: r.name };
+    Object.entries(r).forEach(([k, v]) => {
+      if (k !== 'name') next[k] = Math.round((Number(v) || 0) / sum * 1000) / 10;
+    });
+    return next;
+  });
+}
+
+function buildBubbleData(rows, xCol, yCol, sizeCol, limit = 200) {
+  if (!xCol || !yCol) return [];
+  return rows.map((r, i) => ({
+    name: r.Name || r.name || `Row ${i + 1}`,
+    x: parseNumber(r[xCol]),
+    y: parseNumber(r[yCol]),
+    z: sizeCol ? Math.max(20, parseNumber(r[sizeCol]) || 0) : 60,
+  })).filter(d => d.x !== null && d.y !== null).slice(0, Math.min(500, limit || 200));
+}
+
+function buildSunburstData(rows, outerCol, innerCol, valueCol, aggregation = 'count', limit = 12) {
+  if (!outerCol) return [];
+  const outerGroups = buildGroupedRows(rows, outerCol, limit);
+  return outerGroups.map(([outer, outerRows]) => {
+    const inner = innerCol
+      ? buildGroupedRows(outerRows, innerCol, 8).map(([k, rs]) => ({ name: k, value: valueForAggregation(rs, valueCol, aggregation) }))
+      : [];
+    return {
+      name: outer,
+      value: valueForAggregation(outerRows, valueCol, aggregation),
+      children: inner,
+    };
+  });
+}
+
+function buildTornadoData(rows, xCol, splitCol, valueCol, aggregation = 'count', limit = 12) {
+  if (!xCol) return [];
+  const cats = buildGroupedRows(rows, xCol, limit);
+  if (!splitCol) {
+    return cats.map(([k, rs]) => ({ name: k, positive: valueForAggregation(rs, valueCol, aggregation), negative: 0 }));
+  }
+  const splits = buildGroupedRows(rows, splitCol, 2).map(([k]) => k);
+  const [a, b] = splits;
+  return cats.map(([k, rs]) => ({
+    name: k,
+    [a]: valueForAggregation(rs.filter(r => String(r[splitCol] ?? '').trim() === a), valueCol, aggregation),
+    [b]: b ? -1 * valueForAggregation(rs.filter(r => String(r[splitCol] ?? '').trim() === b), valueCol, aggregation) : 0,
+  }));
+}
+
+function buildBulletData(rows, spec, analysis) {
+  const actualCol = spec.valueColumn || spec.yCol || spec.yAxis || analysis?.primaryAmountCol;
+  const targetCol = (analysis?.headers || []).find(h => /target|goal|quota|planned/i.test(h));
+  if (!actualCol) return [];
+  const actual = rows.reduce((s, r) => s + (parseNumber(r[actualCol]) || 0), 0);
+  const target = targetCol ? rows.reduce((s, r) => s + (parseNumber(r[targetCol]) || 0), 0) : actual * 1.2;
+  return [{ name: spec.title || actualCol, actual, target, name1: actualCol, name2: targetCol || 'Target' }];
+}
+
+function buildSlopeData(rows, xCol, splitCol, valueCol, aggregation = 'sum', limit = 10) {
+  if (!xCol) return [];
+  const cats = buildGroupedRows(rows, xCol, 2).map(([k]) => k);
+  if (cats.length < 2) return [];
+  if (!splitCol) {
+    return cats.map(c => ({ name: c, value: valueForAggregation(rows.filter(r => String(r[xCol] ?? '').trim() === c), valueCol, aggregation) }));
+  }
+  const series = buildGroupedRows(rows, splitCol, limit).map(([k]) => k);
+  return cats.map(c => {
+    const row = { name: c };
+    series.forEach(s => {
+      const matches = rows.filter(r => String(r[xCol] ?? '').trim() === c && String(r[splitCol] ?? '').trim() === s);
+      row[s] = valueForAggregation(matches, valueCol, aggregation);
+    });
+    return row;
+  });
+}
+
+function buildCardData(rows, spec, analysis, aggregation) {
+  const cols = (analysis?.headers || [])
+    .filter(h => analysis.colMeta?.[h]?.dataType === 'number')
+    .slice(0, 6);
+  if (spec.type === 'card') {
+    const col = spec.valueColumn || spec.yCol || cols[0];
+    return col ? [{ name: col, value: valueForAggregation(rows, col, aggregation) }] : [];
+  }
+  // multiRowCard
+  return cols.map(c => ({ name: c, value: valueForAggregation(rows, c, aggregation === 'count' ? 'sum' : aggregation) }));
+}
+
+function buildKpiTrendData(rows, dateCol, valueCol) {
+  if (!dateCol) return [];
+  return buildDateTrends(rows, dateCol, valueCol || null, 'month');
+}
+
+function buildMultiRingDonutData(rows, outerCol, innerCol, valueCol, aggregation = 'count', limit = 10) {
+  const outer = collapseSmallCategories(aggregateForChart(rows, outerCol, valueCol || null, aggregation, limit + 10), limit, 'donut');
+  const inner = innerCol ? collapseSmallCategories(aggregateForChart(rows, innerCol, valueCol || null, aggregation, limit + 10), limit, 'donut') : [];
+  return [{ ring: 'outer', items: outer }, { ring: 'inner', items: inner }];
+}
+
 // ─── KpiCard ─────────────────────────────────────────────────────────────────
 export function KpiCard({ kpi, T }) {
   const pos = kpi.change !== null && kpi.change > 0;
@@ -385,26 +584,114 @@ function CalendarHeatmap({ data, T, fmtY }) {
   );
 }
 
-function TableChart({ data, T, fmtY }) {
+function TableChart({ data, T, fmtY, conditional = false }) {
   if (!data?.length) return <EmptyChart T={T}/>;
   const cols = Object.keys(data[0]).slice(0, 6);
+  const numericMax = conditional
+    ? Math.max(1, ...data.flatMap(r => cols.map(c => Number.isFinite(Number(r[c])) ? Math.abs(Number(r[c])) : 0)))
+    : 1;
   return (
     <div style={{ height:'100%', overflow:'auto', border:`1px solid ${T.border}`, borderRadius:8 }}>
       <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'.72rem' }}>
         <thead>
-          <tr>{cols.map(c => <th key={c} style={{ position:'sticky', top:0, background:T.card2, color:T.sub, textAlign:'left', padding:'.45rem .55rem', borderBottom:`1px solid ${T.border}` }}>{c}</th>)}</tr>
+          <tr>{cols.map(c => <th key={c} style={{ position:'sticky', top:0, background:T.card2, color:T.sub, textAlign:'left', padding:'.45rem .55rem', borderBottom:`1px solid ${T.border}`, fontWeight:700, fontSize:'.65rem', textTransform:'uppercase', letterSpacing:'.04em' }}>{c}</th>)}</tr>
         </thead>
         <tbody>
-          {data.slice(0, 40).map((r, i) => (
+          {data.slice(0, 60).map((r, i) => (
             <tr key={i}>
               {cols.map(c => {
                 const v = r[c];
-                return <td key={c} style={{ padding:'.42rem .55rem', borderBottom:`1px solid ${T.border}`, color:T.text, whiteSpace:'nowrap' }}>{typeof v === 'number' ? fmtY(v) : String(v ?? '')}</td>;
+                const isNum = typeof v === 'number';
+                const intensity = conditional && isNum ? Math.min(1, Math.abs(v) / numericMax) : 0;
+                const bg = conditional && isNum ? `rgba(99,102,241,${0.05 + intensity * 0.4})` : 'transparent';
+                return <td key={c} style={{ padding:'.42rem .55rem', borderBottom:`1px solid ${T.border}`, color:T.text, whiteSpace:'nowrap', background: bg, fontWeight: conditional && isNum ? 600 : 400 }}>{isNum ? fmtY(v) : String(v ?? '')}</td>;
               })}
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function LinearGaugeViz({ data, T, fmtY }) {
+  const pct = Math.max(0, Math.min(100, Number(data?.[0]?.value) || 0));
+  const color = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', justifyContent:'center', gap:'.85rem', padding:'.5rem .25rem' }}>
+      <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between' }}>
+        <span style={{ fontSize:'2.2rem', fontWeight:800, color: T.text }}>{pct.toFixed(1)}%</span>
+        <span style={{ fontSize:'.72rem', color: T.sub, fontWeight:600 }}>of target</span>
+      </div>
+      <div style={{ height:18, background: T.hover, borderRadius:99, overflow:'hidden', boxShadow:'inset 0 1px 3px rgba(0,0,0,.2)' }}>
+        <div style={{ width: `${pct}%`, height:'100%', background: `linear-gradient(90deg, ${color}, ${color}cc)`, borderRadius:99, transition:'width .6s' }}/>
+      </div>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'.65rem', color: T.sub }}>
+        <span>0%</span><span>50%</span><span>100%</span>
+      </div>
+      <div style={{ marginTop:'.2rem', fontSize:'.7rem', color: T.sub, fontWeight:600 }}>
+        {fmtY?.(Number(data?.[0]?.value) || 0)}
+      </div>
+    </div>
+  );
+}
+
+function BulletViz({ data, T, fmtY }) {
+  if (!data?.length) return <EmptyChart T={T}/>;
+  const { actual, target, name1, name2 } = data[0];
+  const max = Math.max(actual, target) * 1.2;
+  const actualPct = (actual / max) * 100;
+  const targetPct = (target / max) * 100;
+  const status = actual >= target ? '#10b981' : actual >= target * 0.75 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', justifyContent:'center', gap:'.6rem', padding:'.4rem .25rem' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+        <div>
+          <div style={{ fontSize:'1.6rem', fontWeight:800, color: T.text, lineHeight:1 }}>{fmtY(actual)}</div>
+          <div style={{ fontSize:'.66rem', color: T.sub, marginTop:'.18rem' }}>{name1} (actual)</div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:'.95rem', fontWeight:700, color: T.sub }}>{fmtY(target)}</div>
+          <div style={{ fontSize:'.66rem', color: T.sub }}>{name2} (target)</div>
+        </div>
+      </div>
+      <div style={{ position:'relative', height:30, background: T.hover, borderRadius:6, overflow:'hidden', border:`1px solid ${T.border}` }}>
+        <div style={{ position:'absolute', left:0, top:0, height:'100%', width:'33%', background:'rgba(239,68,68,0.18)' }}/>
+        <div style={{ position:'absolute', left:'33%', top:0, height:'100%', width:'34%', background:'rgba(245,158,11,0.16)' }}/>
+        <div style={{ position:'absolute', left:'67%', top:0, height:'100%', width:'33%', background:'rgba(16,185,129,0.16)' }}/>
+        <div style={{ position:'absolute', left:0, top:8, height:14, width:`${actualPct}%`, background: status, borderRadius:4, transition:'width .5s' }}/>
+        <div style={{ position:'absolute', left:`${targetPct}%`, top:0, height:'100%', width:3, background: T.text, transform:'translateX(-1px)' }}/>
+      </div>
+      <div style={{ fontSize:'.7rem', color: T.sub, fontWeight:600 }}>
+        {actual >= target ? '✓ Target met' : `${((actual / target) * 100).toFixed(1)}% of target`}
+      </div>
+    </div>
+  );
+}
+
+function SingleValueCard({ data, T, fmtY, title }) {
+  const item = data?.[0] || { value: 0, name: title || 'Value' };
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'flex-start', gap:'.4rem',
+      background:'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.04))',
+      border:`1px solid rgba(99,102,241,0.18)`, borderRadius:12, padding:'1rem 1.2rem' }}>
+      <div style={{ fontSize:'.72rem', color: T.sub, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em' }}>{item.name}</div>
+      <div style={{ fontSize:'2.4rem', fontWeight:800, color: T.text, lineHeight:1 }}>{fmtY(item.value)}</div>
+    </div>
+  );
+}
+
+function MultiRowCard({ data, T, fmtY }) {
+  if (!data?.length) return <EmptyChart T={T}/>;
+  return (
+    <div style={{ height:'100%', overflow:'auto', display:'flex', flexDirection:'column', gap:'.45rem', padding:'.25rem' }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'.6rem .85rem', background: T.hover, border:`1px solid ${T.border}`, borderRadius:10 }}>
+          <div style={{ fontSize:'.74rem', color: T.sub, fontWeight:600 }}>{d.name}</div>
+          <div style={{ fontSize:'1rem', color: T.text, fontWeight:800 }}>{fmtY(d.value)}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -440,7 +727,7 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
   const ttStyle = { background:T.card, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, fontSize:'.73rem' };
   const axTick  = { fill:T.sub, fontSize:10 };
   const common  = { data: chartData, margin:{ top:5, right:10, left:-10, bottom:5 } };
-  const isAdvanced = ['heatmap','correlationMatrix','calendarHeatmap','gauge','table','kpiTrendCard'].includes(spec.type);
+  const isAdvanced = ['heatmap','correlationMatrix','calendarHeatmap','gauge','radialBar','linearGauge','table','conditionalTable','matrix','kpiTrendCard','card','multiRowCard','sunburst','multiRingDonut','bullet'].includes(spec.type);
   const chartHeight = initSpec.width === 'full' || initSpec.size === 'large' || initSpec.size === 'wide' ? 292 : 238;
 
   const chart = (() => {
@@ -634,6 +921,201 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
           </div>
         );
       }
+      // ─── New Power BI-style visuals ───────────────────────────────────────
+      case 'stackedBar100': return (
+        <ReBar {...common} stackOffset="expand">
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={v => `${Math.round(v * 100)}%`}/>
+          <Tooltip contentStyle={ttStyle} formatter={(v) => [`${Number(v).toFixed(1)}%`]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Bar key={k} dataKey={k} stackId="a" fill={COLORS[i%COLORS.length]} radius={i === keys.length - 1 ? [4,4,0,0] : [0,0,0,0]}/>)}
+        </ReBar>
+      );
+      case 'lineMarkers': return (
+        <ReLine {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Line key={k} type="monotone" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={2.5} dot={{ r:3, fill: COLORS[i%COLORS.length] }} activeDot={{ r:5 }}/>)}
+        </ReLine>
+      );
+      case 'steppedLine': return (
+        <ReLine {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Line key={k} type="stepAfter" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={2.5} dot={false}/>)}
+        </ReLine>
+      );
+      case 'smoothLine': return (
+        <ReLine {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Line key={k} type="natural" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={3} dot={false}/>)}
+        </ReLine>
+      );
+      case 'stackedArea': return (
+        <ReArea {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Area key={k} type="monotone" stackId="a" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} fill={COLORS[i%COLORS.length]} fillOpacity={0.55}/>)}
+        </ReArea>
+      );
+      case 'stackedArea100': return (
+        <ReArea {...common} stackOffset="expand">
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={v => `${Math.round(v * 100)}%`}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [`${Number(v).toFixed(1)}%`]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Area key={k} type="monotone" stackId="a" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={1} fill={COLORS[i%COLORS.length]} fillOpacity={0.65}/>)}
+        </ReArea>
+      );
+      case 'ribbon': return (
+        <ReArea {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Area key={k} type="monotone" stackId="a" dataKey={k} stroke="#fff" strokeWidth={0.6} fill={COLORS[i%COLORS.length]} fillOpacity={0.85}/>)}
+        </ReArea>
+      );
+      case 'breakdownWaterfall': return (
+        <ReComposed {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false}/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Bar dataKey="positive" stackId="wf" fill="#10b981" radius={[4,4,0,0]}/>
+          <Bar dataKey="negative" stackId="wf" fill="#ef4444" radius={[4,4,0,0]}/>
+          <Line type="monotone" dataKey="end" stroke="#6366f1" strokeWidth={2.5} dot={{ r:3 }}/>
+        </ReComposed>
+      );
+      case 'explodedPie': return (
+        <RePie>
+          <Pie data={chartData} cx="50%" cy="50%" outerRadius={82} dataKey="value" nameKey="name"
+            paddingAngle={6}
+            label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
+            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i%COLORS.length]} stroke={T.card} strokeWidth={3}/>)}
+          </Pie>
+          <Tooltip contentStyle={ttStyle}/>
+        </RePie>
+      );
+      case 'multiRingDonut': {
+        const outer = chartData.find(r => r.ring === 'outer')?.items || [];
+        const inner = chartData.find(r => r.ring === 'inner')?.items || [];
+        return (
+          <RePie>
+            <Pie data={outer} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={92} paddingAngle={1}>
+              {outer.map((_, i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+            </Pie>
+            {inner.length > 0 && (
+              <Pie data={inner} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={64} paddingAngle={1}>
+                {inner.map((_, i) => <Cell key={i} fill={COLORS[(i+3)%COLORS.length]}/>)}
+              </Pie>
+            )}
+            <Tooltip contentStyle={ttStyle}/>
+          </RePie>
+        );
+      }
+      case 'bubble': return (
+        <ReScatter margin={{ top:5, right:10, left:-10, bottom:5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="x" type="number" tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <YAxis dataKey="y" type="number" tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} cursor={{ strokeDasharray:'3 3' }}/>
+          <Scatter data={chartData} fill={COLORS[0]} fillOpacity={0.6}>
+            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+          </Scatter>
+        </ReScatter>
+      );
+      case 'dotPlot': return (
+        <ReScatter margin={{ top:5, right:10, left:-10, bottom:5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false}/>
+          <XAxis dataKey="x" type="number" tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <YAxis dataKey="y" type="number" tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle}/>
+          <Scatter data={chartData} fill={COLORS[2]} shape="circle"/>
+        </ReScatter>
+      );
+      case 'tornado': {
+        const dynKeys = Object.keys(chartData[0] || {}).filter(k => k !== 'name');
+        return (
+          <ReBar layout="vertical" data={chartData} stackOffset="sign" margin={{ top:5, right:14, left:10, bottom:5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+            <XAxis type="number" tick={axTick} tickLine={false} axisLine={false} tickFormatter={v => fmtY(Math.abs(v))}/>
+            <YAxis type="category" dataKey="name" width={120} tick={{ ...axTick, fontSize:9 }} tickLine={false} axisLine={false}/>
+            <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(Math.abs(v))]}/>
+            <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+            {dynKeys.map((k, i) => <Bar key={k} dataKey={k} stackId="t" fill={COLORS[i%COLORS.length]} radius={[2,2,2,2]}/>)}
+          </ReBar>
+        );
+      }
+      case 'slope': return (
+        <ReLine {...common}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="name" tick={axTick} tickLine={false} axisLine={false}/>
+          <YAxis tick={axTick} tickLine={false} axisLine={false} tickFormatter={fmtY}/>
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+          <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          {keys.map((k,i) => <Line key={k} type="linear" dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={2.5} dot={{ r:4 }}/>)}
+        </ReLine>
+      );
+      case 'filledRadar': {
+        const metrics = keys.slice(0, 6);
+        return (
+          <ReRadar cx="50%" cy="50%" outerRadius={86} data={chartData.slice(0, 12)}>
+            <PolarGrid stroke={T.border}/>
+            <PolarAngleAxis dataKey="name" tick={{ fill:T.sub, fontSize:9 }}/>
+            <PolarRadiusAxis tick={false} axisLine={false}/>
+            <Tooltip contentStyle={ttStyle} formatter={v => [fmtY(v)]}/>
+            {metrics.map((k, i) => (
+              <Radar key={k} name={k} dataKey={k} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} fill={COLORS[i%COLORS.length]} fillOpacity={0.45}/>
+            ))}
+            <Legend wrapperStyle={{ color:T.sub, fontSize:10 }}/>
+          </ReRadar>
+        );
+      }
+      case 'sunburst': {
+        const flat = [];
+        chartData.forEach((o, i) => {
+          flat.push({ name: o.name, value: o.value, parent: null, color: COLORS[i % COLORS.length] });
+          (o.children || []).forEach((c, j) => flat.push({ name: `${o.name} › ${c.name}`, value: c.value, parent: o.name, color: COLORS[(i + j + 1) % COLORS.length] }));
+        });
+        const outer = flat.filter(d => d.parent);
+        const inner = flat.filter(d => !d.parent);
+        return (
+          <RePie>
+            <Pie data={inner} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={36} outerRadius={62} paddingAngle={1}>
+              {inner.map((d, i) => <Cell key={i} fill={d.color}/>)}
+            </Pie>
+            {outer.length > 0 && (
+              <Pie data={outer} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={68} outerRadius={94} paddingAngle={1}>
+                {outer.map((d, i) => <Cell key={i} fill={d.color}/>)}
+              </Pie>
+            )}
+            <Tooltip contentStyle={ttStyle}/>
+          </RePie>
+        );
+      }
+      case 'linearGauge': return <LinearGaugeViz data={chartData} T={T} fmtY={fmtY}/>;
+      case 'bullet': return <BulletViz data={chartData} T={T} fmtY={fmtY}/>;
+      case 'card': return <SingleValueCard data={chartData} T={T} fmtY={fmtY} title={initSpec.title}/>;
+      case 'multiRowCard': return <MultiRowCard data={chartData} T={T} fmtY={fmtY}/>;
+      case 'conditionalTable': return <TableChart data={chartData} T={T} fmtY={fmtY} conditional/>;
+      case 'matrix': return <TableChart data={chartData} T={T} fmtY={fmtY}/>;
       default: return null;
     }
   })();

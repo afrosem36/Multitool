@@ -25,9 +25,27 @@ import { buildMultiTabPlan } from './tabPlanner.js';
 export const BLUEPRINT_VERSION = '1.0';
 
 export const SUPPORTED_CHART_TYPES = [
-  'bar', 'horizontalBar', 'stackedBar', 'line', 'area', 'pie', 'donut', 'composed',
-  'scatter', 'radar', 'table', 'heatmap', 'treemap', 'funnel', 'gauge', 'radialBar',
-  'waterfall', 'histogram', 'correlationMatrix', 'calendarHeatmap', 'kpiTrendCard',
+  // Comparison & Trends
+  'bar', 'clusteredBar', 'stackedBar', 'stackedBar100',
+  'horizontalBar', 'clusteredColumn', 'stackedColumn', 'stackedColumn100',
+  'line', 'lineMarkers', 'steppedLine', 'smoothLine',
+  'area', 'stackedArea', 'stackedArea100',
+  'composed', 'comboLineColumn', 'ribbon',
+  'waterfall', 'breakdownWaterfall',
+  // Part-to-whole
+  'pie', 'explodedPie', 'donut', 'multiRingDonut',
+  'treemap', 'funnel', 'conversionFunnel',
+  // Distribution & relationships
+  'scatter', 'bubble', 'dotPlot',
+  'histogram', 'correlationMatrix', 'heatmap', 'calendarHeatmap',
+  // KPI, cards & gauges
+  'card', 'multiRowCard', 'kpiTrendCard',
+  'gauge', 'radialBar', 'linearGauge',
+  // Tables / matrices
+  'table', 'conditionalTable', 'matrix',
+  // Other professional visuals
+  'bullet', 'tornado', 'slope', 'sunburst',
+  'radar', 'filledRadar',
 ];
 export const SUPPORTED_AGGREGATIONS = ['sum', 'count', 'average', 'min', 'max', 'unique_count'];
 export const SUPPORTED_DOMAINS = ['sales', 'support', 'calls', 'logistics', 'finance', 'hr', 'education', 'crm', 'operations', 'generic'];
@@ -90,6 +108,12 @@ export const BLUEPRINT_SCHEMA = {
  * Build the strict prompt to send to ChatGPT/Gemini for blueprint generation.
  * Returns a single string ready for prompt:= chatgpt.com/?q=<encoded>
  */
+/**
+ * Build the strict prompt to send to ChatGPT/Gemini for blueprint generation.
+ *
+ * If `existing` is provided (has tabs/chartIds), the prompt switches to
+ * IMPROVEMENT MODE — returning only additional tabs/charts/insights to merge.
+ */
 export function generateAIBlueprintPrompt({
   headers = [],
   analysis = {},
@@ -99,6 +123,7 @@ export function generateAIBlueprintPrompt({
   userPrompt = '',
   availableChartTypes = SUPPORTED_CHART_TYPES,
   availableAggregations = SUPPORTED_AGGREGATIONS,
+  existing = null, // optional: { tabs:[{tabId,tabName,chartIds[],chartTypes[]}], chartIds:[] }
 }) {
   const colMeta = analysis.colMeta || {};
 
@@ -116,46 +141,87 @@ export function generateAIBlueprintPrompt({
   const sampleStr = JSON.stringify(sampleRows.slice(0, 5));
   const schemaStr = JSON.stringify(BLUEPRINT_SCHEMA, null, 2);
 
-  return `You are a dashboard architect. Your job is to produce a strict JSON BLUEPRINT for a Power BI–style multi-tab dashboard.
+  const improvementMode = existing && (existing.tabs?.length || existing.chartIds?.length);
+  const improvementBlock = improvementMode ? `
 
-RULES — read carefully:
-- Do NOT calculate any values. The app will compute everything locally.
+IMPROVEMENT MODE — A dashboard already exists:
+- Return ONLY *additional* tabs/charts/insights/recommendedActions that are missing.
+- Do NOT repeat any existing chart id or near-duplicate title.
+- Prefer missing analysis types: risk, funnel, correlation, quality, calendar heatmap, treemap, forecast.
+- It is OK to add charts to existing tabs by using the same tabId — the app will merge them.
+- Existing tabs / chart ids the app already has:
+${JSON.stringify(existing, null, 2)}
+` : '';
+
+  return `You are a senior BI analyst and dashboard architect (Power BI / Tableau / Microsoft Fabric level).
+Your job is to produce a strict JSON BLUEPRINT for a multi-tab analytical report.
+
+HARD RULES — read carefully:
+- Do NOT calculate any values. The app computes every chart and KPI locally.
 - Do NOT invent columns. Use ONLY the column names listed below, exactly as-written.
-- Return ONLY valid JSON. No markdown, no code fences, no commentary before or after.
-- Available chart types: ${availableChartTypes.join(', ')}
+- Return ONLY valid JSON — no markdown, no code fences, no prose before or after.
+- Available chart types (use these exact names): ${availableChartTypes.join(', ')}
 - Available aggregations: ${availableAggregations.join(', ')}
-- Use useful business names for tabs (e.g. "Agent Performance", not "Tab 2").
+- Use clear business names for tabs (e.g. "Agent Performance", not "Tab 2").
 - Keep summaries short and professional.
-- Create a "forecasting" tab ONLY if a date column AND a numeric metric both exist.
-- Create a "risk" tab ONLY if it adds genuine value.
 - Do not create duplicate or near-duplicate charts.
-- Pie charts: only for low-cardinality (<10) category/status distributions.
-- Scatter charts: require numeric xAxis and numeric yAxis.
-- Line/area: prefer a date-like xAxis when available.
-- Role: act as a senior BI analyst and dashboard architect, not only a chart generator.
-- Goal: design a complete Power BI-style analytical report with tabs, KPIs, insights, risks and recommended actions.
-- Aim for minimum 5 tabs, 12 charts, and 6 KPIs when the dataset genuinely supports it.
-- Put 2-4 insights and 2 recommended actions on each analytical tab when meaningful.
-- Include at least one valid advanced chart where possible: heatmap, funnel, treemap, gauge, histogram, correlationMatrix, calendarHeatmap.
-- Do not create charts just to fill numbers. Only create charts that are valid for the listed headers and column types.
-- Heatmap: use category/date/status columns for xAxis and yAxis.
-- Treemap: use category contribution.
-- Funnel: use status/stage lifecycle columns.
-- Gauge/radialBar: use percent/rate columns or target vs achieved style columns.
-- Histogram: use numeric distributions.
-- CorrelationMatrix: only if at least 3 numeric columns exist.
-- CalendarHeatmap: only if a date column exists.
+- Pie/donut: only for low-cardinality (<10) category/status distributions.
+- Scatter / bubble: require numeric xAxis AND yAxis.
+- Line/area/stackedArea/lineMarkers/steppedLine/smoothLine: prefer a date-like xAxis when available.
+- A funnel/conversionFunnel/journey tab should be created whenever a status/stage/lifecycle column exists.
+- A risk tab only if it adds genuine value (overdue, pending, failed, low performers, outliers).
+- A forecasting tab only if a date column AND a numeric metric both exist.
+- Aim for at least 5 tabs, 12 charts and 6 KPIs when the dataset supports it.
+- Each analytical tab should have 2-4 insights and 2-3 recommendedActions when meaningful.
+- Include at least one advanced visual where valid: heatmap, funnel, treemap, gauge, histogram, correlationMatrix, calendarHeatmap, waterfall, bullet, tornado.
 
-ANALYSIS COVERAGE:
-A. Executive overview: high-level KPIs, total count, total amount, average, unique count, key status breakdown.
-B. Performance analysis: agent/user/employee/guide/team-wise performance, top/bottom performers, contribution percentage, ranking.
-C. Trend analysis: daily/weekly/monthly trends, growth/decline, peak and low periods when date columns exist.
-D. Distribution analysis: status, category, region, product, source, amount/duration/TAT distributions.
-E. Risk and anomaly analysis: overdue/pending/failed statuses, low performers, high TAT, inactive records, unusually high/low values, outliers.
-F. Quality analysis: missing values, duplicate IDs, inconsistent statuses, blank important columns, invalid dates or amounts.
-G. Correlation analysis: only when multiple numeric columns exist.
-H. Funnel/Journey analysis: only when status/stage columns exist.
-I. Forecasting: only when date + numeric metric exist; use moving-average language and do not fake forecasts if insufficient.
+CHART VOCABULARY (Power BI-style — use the lowerCamelCase id):
+Comparison & trends:
+  bar, clusteredBar, stackedBar, stackedBar100, horizontalBar,
+  line, lineMarkers, steppedLine, smoothLine,
+  area, stackedArea, stackedArea100,
+  composed (= line & column combo), ribbon,
+  waterfall, breakdownWaterfall
+Part-to-whole:
+  pie, explodedPie, donut, multiRingDonut, treemap, funnel, conversionFunnel
+Distribution & relationships:
+  scatter, bubble, dotPlot, histogram, correlationMatrix, heatmap, calendarHeatmap
+KPI / cards / gauges:
+  card (single value), multiRowCard (list), kpiTrendCard (value + sparkline),
+  gauge, radialBar, linearGauge
+Tables / matrices:
+  table, conditionalTable, matrix
+Other pro visuals:
+  bullet, tornado, slope, sunburst, radar, filledRadar
+
+CHART RULES:
+- heatmap: xAxis + yAxis must be category/date/status columns.
+- treemap / sunburst: require category xAxis (numeric/count value).
+- funnel / conversionFunnel: require status/stage/lifecycle column.
+- gauge / radialBar / linearGauge: percent column OR numeric column with a target-style column present.
+- histogram: numeric column required.
+- correlationMatrix: requires at least 3 numeric columns.
+- calendarHeatmap: requires a date column.
+- waterfall / breakdownWaterfall: meaningful numeric column.
+- bubble: numeric x, numeric y, numeric size.
+- bullet: numeric actual + target-style column.
+- tornado: paired comparison across one dimension.
+- slope: two time points or two categories per series.
+- multiRingDonut: 2 hierarchical category columns.
+- conditionalTable / matrix: tabular detail with measure.
+- card / multiRowCard / kpiTrendCard: numeric KPI columns.
+- ribbon: time series with category breakdown.
+
+ANALYSIS COVERAGE — try to cover these when valid:
+A. Executive overview: high-level KPIs, totals, averages, unique counts, key status breakdown.
+B. Performance: agent / employee / team / product / region rankings, top + bottom performers, contribution %.
+C. Trend: daily/weekly/monthly trends, growth/decline, peaks and low periods.
+D. Distribution: status, category, region, product, source, amount/duration/TAT distributions.
+E. Risk & anomalies: overdue, pending, failed, low performers, high TAT, inactive records, outliers.
+F. Quality: missing values, duplicate IDs, inconsistent statuses, invalid dates/amounts.
+G. Correlation: only when multiple numeric columns exist.
+H. Funnel / Journey: lead-to-sale, ticket open-to-closed, admission-to-completion, payment due-to-paid, shipment created-to-delivered — whenever stage/status columns exist.
+I. Forecasting: only when date + numeric metric exist. Describe as moving-average projection.
 J. Recommended actions: business-friendly action points for managers and teams.
 
 DATASET CONTEXT:
@@ -168,7 +234,7 @@ ${columnLines}
 
 SAMPLE ROWS (first 5 — for context only, do NOT echo back):
 ${sampleStr}
-
+${improvementBlock}
 RETURN EXACTLY THIS JSON SHAPE:
 ${schemaStr}
 
@@ -379,15 +445,98 @@ function validateKpi(kpi, headerSet, colMeta) {
 function normalizeChartTypeName(type) {
   const raw = String(type || '').trim();
   const aliases = {
+    // Bar/column aliases
     hbar: 'horizontalBar',
     horizontalbar: 'horizontalBar',
+    clusteredbar: 'bar',
+    clusteredcolumn: 'bar',
+    columnchart: 'bar',
+    column: 'bar',
     stackedbar: 'stackedBar',
+    stackedcolumn: 'stackedBar',
+    'stackedbar100': 'stackedBar100',
+    '100stackedbar': 'stackedBar100',
+    '100stackedcolumn': 'stackedBar100',
+    stackedcolumn100: 'stackedBar100',
+    fullstackedbar: 'stackedBar100',
+    // Line aliases
+    linewithmarkers: 'lineMarkers',
+    linemarkers: 'lineMarkers',
+    steppedline: 'steppedLine',
+    smoothline: 'smoothLine',
+    // Area aliases
+    stackedarea: 'stackedArea',
+    stackedarea100: 'stackedArea100',
+    fullstackedarea: 'stackedArea100',
+    // Combo
+    combo: 'composed',
+    combochart: 'composed',
+    linecolumncombo: 'composed',
+    linestackedcolumn: 'composed',
+    lineclusteredcolumn: 'composed',
+    ribbonchart: 'ribbon',
+    // Waterfall
+    waterfallchart: 'waterfall',
+    breakdownwaterfall: 'breakdownWaterfall',
+    // Pie/donut
+    standardpie: 'pie',
+    explodedpie: 'explodedPie',
+    pieexploded: 'explodedPie',
+    standarddonut: 'donut',
+    multiringdonut: 'multiRingDonut',
+    nesteddonut: 'multiRingDonut',
+    // Treemap/funnel
+    standardtreemap: 'treemap',
+    hierarchicaltreemap: 'treemap',
+    standardfunnel: 'funnel',
+    conversionfunnel: 'funnel',
+    // Scatter/bubble/dot
+    standardscatter: 'scatter',
+    bubblechart: 'bubble',
+    standardbubble: 'bubble',
+    dotplot: 'dotPlot',
+    standarddotplot: 'dotPlot',
+    // KPI / cards
+    singlevaluecard: 'card',
+    newcard: 'card',
+    standardmultirow: 'multiRowCard',
+    standardmultirowcard: 'multiRowCard',
+    kpivisual: 'kpiTrendCard',
+    trendkpi: 'kpiTrendCard',
+    targetkpi: 'kpiTrendCard',
+    // Gauge
+    radialgauge: 'radialBar',
     radialbar: 'radialBar',
+    lineargauge: 'linearGauge',
+    // Tables
+    standardtable: 'table',
+    conditionalformattedtable: 'conditionalTable',
+    conditionaltable: 'conditionalTable',
+    standardmatrix: 'matrix',
+    steppedlayoutmatrix: 'matrix',
+    drilldownmatrix: 'matrix',
+    pivot: 'matrix',
+    pivottable: 'matrix',
+    // Misc
+    bulletchart: 'bullet',
+    horizontalbullet: 'bullet',
+    verticalbullet: 'bullet',
+    tornadochart: 'tornado',
+    slopechart: 'slope',
+    standardsunburst: 'sunburst',
+    drilldownsunburst: 'sunburst',
+    standardradar: 'radar',
+    filledradar: 'filledRadar',
+    // Existing
     correlationmatrix: 'correlationMatrix',
     calendarheatmap: 'calendarHeatmap',
+    tableheatmap: 'heatmap',
+    frequencyhistogram: 'histogram',
+    densityhistogram: 'histogram',
     kpitrendcard: 'kpiTrendCard',
   };
-  return aliases[raw.toLowerCase()] || raw;
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+  return aliases[key] || raw;
 }
 
 function isNumericCol(col, colMeta) {
@@ -430,10 +579,10 @@ function validateChart(chart, headerSet, colMeta) {
   if (groupBy && !headerSet.has(groupBy)) return { ok: false, reason: `groupBy "${groupBy}" not in headers` };
   if (!SUPPORTED_AGGREGATIONS.includes(aggregation)) return { ok: false, reason: `invalid aggregation "${aggregation}"` };
 
-  // Scatter requires numeric x AND y
-  if (chartType === 'scatter') {
+  // Scatter / bubble / dotPlot require numeric x AND y
+  if (['scatter', 'bubble', 'dotPlot'].includes(chartType)) {
     if (!isNumericCol(xAxis, colMeta) || !isNumericCol(yAxis, colMeta)) {
-      return { ok: false, reason: 'scatter chart requires numeric xAxis AND yAxis' };
+      return { ok: false, reason: `${chartType} requires numeric xAxis AND yAxis` };
     }
   }
   if (chartType === 'heatmap') {
@@ -441,21 +590,39 @@ function validateChart(chart, headerSet, colMeta) {
     if (!isCategoryCol(xAxis, colMeta) && !isDateCol(xAxis, colMeta)) return { ok: false, reason: 'heatmap xAxis should be category/date/status' };
     if (!isCategoryCol(yAxis, colMeta) && !isDateCol(yAxis, colMeta)) return { ok: false, reason: 'heatmap yAxis should be category/date/status' };
   }
-  if (chartType === 'treemap' && !isCategoryCol(xAxis, colMeta)) return { ok: false, reason: 'treemap requires a category xAxis' };
-  if (chartType === 'funnel') {
+  if (['treemap', 'sunburst'].includes(chartType) && !isCategoryCol(xAxis, colMeta)) return { ok: false, reason: `${chartType} requires a category xAxis` };
+  if (['funnel', 'conversionFunnel'].includes(chartType)) {
     const st = colMeta[xAxis]?.semanticType || '';
     if (!(st === ST.STATUS || /status|stage|step|lifecycle|journey/i.test(xAxis))) return { ok: false, reason: 'funnel requires a status/stage column' };
   }
-  if (['gauge', 'radialBar'].includes(chartType)) {
+  if (['gauge', 'radialBar', 'linearGauge'].includes(chartType)) {
     const gaugeCol = yAxis || valueColumn;
     const hasTargetStyle = [...headerSet].some(h => /target|goal|quota|planned/i.test(h));
-    if (gaugeCol && !isNumericCol(gaugeCol, colMeta)) return { ok: false, reason: 'gauge/radialBar needs a numeric percent/rate/value column' };
-    if (!gaugeCol && !hasTargetStyle) return { ok: false, reason: 'gauge/radialBar needs a percent column or target-style column' };
+    if (gaugeCol && !isNumericCol(gaugeCol, colMeta)) return { ok: false, reason: 'gauge needs a numeric percent/rate/value column' };
+    if (!gaugeCol && !hasTargetStyle) return { ok: false, reason: 'gauge needs a percent or target-style column' };
   }
   if (chartType === 'histogram' && !isNumericCol(yAxis || valueColumn || xAxis, colMeta)) return { ok: false, reason: 'histogram requires a numeric column' };
   if (chartType === 'correlationMatrix' && Object.keys(colMeta).filter(c => isNumericCol(c, colMeta)).length < 3) return { ok: false, reason: 'correlationMatrix requires at least 3 numeric columns' };
   if (chartType === 'calendarHeatmap' && !isDateCol(xAxis, colMeta)) return { ok: false, reason: 'calendarHeatmap requires a date xAxis' };
-  if (chartType === 'waterfall' && !isNumericCol(yAxis || valueColumn, colMeta)) return { ok: false, reason: 'waterfall requires a meaningful numeric yAxis/valueColumn' };
+  if (['waterfall', 'breakdownWaterfall'].includes(chartType) && !isNumericCol(yAxis || valueColumn, colMeta)) return { ok: false, reason: 'waterfall requires a meaningful numeric yAxis/valueColumn' };
+  if (chartType === 'bullet') {
+    const actual = yAxis || valueColumn;
+    const hasTarget = [...headerSet].some(h => /target|goal|quota|planned/i.test(h));
+    if (!actual || !isNumericCol(actual, colMeta)) return { ok: false, reason: 'bullet requires a numeric actual column' };
+    if (!hasTarget) return { ok: false, reason: 'bullet requires a target/goal/quota column' };
+  }
+  if (chartType === 'tornado') {
+    if (!yAxis || !isNumericCol(yAxis, colMeta)) return { ok: false, reason: 'tornado requires a numeric yAxis' };
+  }
+  if (['stackedBar100', 'stackedArea', 'stackedArea100'].includes(chartType)) {
+    if (!groupBy && !chart.secondaryYAxis) return { ok: false, reason: `${chartType} requires a groupBy/secondary category column to stack by` };
+  }
+  if (['card', 'multiRowCard', 'kpiTrendCard'].includes(chartType)) {
+    const v = valueColumn || yAxis;
+    if (!v || (!isNumericCol(v, colMeta) && aggregation !== 'count' && aggregation !== 'unique_count')) {
+      return { ok: false, reason: `${chartType} needs a numeric value column or count aggregation` };
+    }
+  }
 
   // Sum/avg/min/max require numeric yAxis
   if (['sum', 'average', 'min', 'max'].includes(aggregation)) {

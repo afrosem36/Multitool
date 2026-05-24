@@ -16,13 +16,13 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   Brain, Sparkles, Cpu, MessageSquare, ClipboardPaste,
   CheckCircle, AlertTriangle, Zap, RefreshCw, ExternalLink,
-  Wand2, Eye, Layers, ListChecks, X,
+  Wand2, Eye,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
   generateAIBlueprintPrompt, openChatGPTWithBlueprintPrompt, openGeminiWithBlueprintPrompt,
   parseAIBlueprint, validateAIBlueprint, createLocalSmartBlueprint,
-  hashDatasetSignature, getCachedBlueprint, setCachedBlueprint,
+  hashDatasetSignature, setCachedBlueprint,
 } from '../../engines/blueprintSchema';
 
 // Modes ────────────────────────────────────────────────────────────────────────
@@ -188,10 +188,11 @@ function ValidationStatsPanel({ validation, T, source }) {
  *  loading           — parent says it's building
  */
 export default function BlueprintXPanel({
-  analysis, rows, headers, userPrompt, columnHelp,
+  analysis, rows, headers: _headers, userPrompt, columnHelp,
   onUserPromptChange, onColumnHelpChange,
   onGenerateBlueprint, loading, T,
 }) {
+  void _headers;
   const [activeMode, setActiveMode] = useState('blueprintx');
   const [pastedText, setPastedText] = useState('');
   const [validation, setValidation] = useState(null);   // { valid, errors, warnings, stats, cleanedBlueprint }
@@ -283,7 +284,6 @@ export default function BlueprintXPanel({
   }, [rows, analysis, userPrompt, onGenerateBlueprint]);
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const active = MODES.find(m => m.id === activeMode);
 
   return (
     <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:'1.15rem 1.25rem',
@@ -410,7 +410,7 @@ export default function BlueprintXPanel({
           <div style={{ fontSize:'.72rem', color:T.sub, lineHeight:1.5,
             padding:'.55rem .75rem', background:'rgba(129,140,248,0.05)',
             border:'1px solid rgba(129,140,248,0.15)', borderRadius:9 }}>
-            <strong style={{ color:'#a5b4fc' }}>Heads up:</strong> This uses the app's backend AI credits.
+            <strong style={{ color:'#a5b4fc' }}>Heads up:</strong> This uses the app&apos;s backend AI credits.
             Fallback order: <strong>Gemini 3.1 Flash Lite</strong> → <strong>OpenAI gpt-4.1-mini</strong> → <strong>Groq llama-3.3-70b</strong>.
             If all three fail, the app falls back to Local Smart Builder automatically.
           </div>
