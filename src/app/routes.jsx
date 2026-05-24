@@ -96,6 +96,7 @@ const AiChat                 = React.lazy(() => import('../pages/ai/AiChat'));
 const AnimatedAIChatDemo     = React.lazy(() => import('../pages/ai/AnimatedAIChatDemo'));
 const ReportAnalyzer         = React.lazy(() => import('../pages/ai/ReportAnalyzer'));
 const AiDashboardMaker       = React.lazy(() => import('../pages/ai/AiDashboardMaker'));
+const SharedReportView       = React.lazy(() => import('../pages/ai/SharedReportView'));
 
 const ForgotPassword         = React.lazy(() => import('../pages/auth/ForgotPassword'));
 const ResetPassword          = React.lazy(() => import('../pages/auth/ResetPassword'));
@@ -130,6 +131,7 @@ export function AppRoutes() {
         <Route path="/ai-chat-demo" element={<AnimatedAIChatDemo />} />
         <Route path="/ai/report-analyzer" element={<ReportAnalyzer />} />
         <Route path="/ai/dashboard-maker" element={<AiDashboardMaker />} />
+        <Route path="/report/share/:token" element={<SharedReportView />} />
 
         {/* ── Layout-wrapped routes ── */}
         <Route element={<Layout />}>

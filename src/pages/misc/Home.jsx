@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, useReducedMotion } from 'framer-motion';
 import { ArrowRight, BookOpen, ShieldCheck, Sparkles, Star, TrendingUp, Zap, FileText, Image, Cpu } from 'lucide-react';
 import { aiTools, imageTools, linkTools, pdfTools, textTools } from '../../data/toolCatalog';
 import { homeFaqs } from '../../seo/seoConfig';
@@ -9,6 +9,8 @@ import { useFavorites } from '../../hooks/useFavorites';
 import { TiltCard } from '../../components/ui/TiltCard';
 import SEOHead from '../../components/seo/SEOHead';
 import '../styles/Home.css';
+
+const MotionLink = motion.create(Link);
 
 // ── Scroll-triggered section wrapper ─────────────────────────────────────────
 function FadeUp({ children, delay = 0, className, style }) {
@@ -37,8 +39,85 @@ const STATS = [
   { value: '∞',    label: 'Always Free',    icon: Sparkles },
 ];
 
+const HERO_TITLE_LINES = [
+  [
+    { text: 'Your' },
+    { text: 'complete' },
+    { text: 'toolkit', accent: true },
+  ],
+  [
+    { text: 'for' },
+    { text: 'everyday' },
+    { text: 'work' },
+  ],
+];
+
 const Home = () => {
   const { isFavorite, toggleFavorite } = useFavorites();
+  const shouldReduceMotion = useReducedMotion();
+
+  const heroContainer = {
+    hidden: {},
+    visible: {
+      transition: {
+        staggerChildren: shouldReduceMotion ? 0 : 0.1,
+        delayChildren: shouldReduceMotion ? 0 : 0.08,
+      },
+    },
+  };
+
+  const heroReveal = {
+    hidden: {
+      opacity: shouldReduceMotion ? 1 : 0,
+      y: shouldReduceMotion ? 0 : 22,
+      filter: shouldReduceMotion ? 'blur(0px)' : 'blur(16px)',
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      filter: 'blur(0px)',
+      transition: {
+        duration: shouldReduceMotion ? 0.01 : 0.82,
+        ease: [0.16, 1, 0.3, 1],
+      },
+    },
+  };
+
+  const heroWord = {
+    hidden: {
+      opacity: shouldReduceMotion ? 1 : 0,
+      y: shouldReduceMotion ? 0 : 34,
+      filter: shouldReduceMotion ? 'blur(0px)' : 'blur(10px)',
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      filter: 'blur(0px)',
+      transition: {
+        duration: shouldReduceMotion ? 0.01 : 0.72,
+        ease: [0.16, 1, 0.3, 1],
+      },
+    },
+  };
+
+  const statReveal = {
+    hidden: {
+      opacity: shouldReduceMotion ? 1 : 0,
+      y: shouldReduceMotion ? 0 : 18,
+      scale: shouldReduceMotion ? 1 : 0.96,
+      filter: shouldReduceMotion ? 'blur(0px)' : 'blur(8px)',
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        duration: shouldReduceMotion ? 0.01 : 0.52,
+        ease: [0.16, 1, 0.3, 1],
+      },
+    },
+  };
 
   const advantages = [
     {
@@ -89,71 +168,94 @@ const Home = () => {
       />
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <section className="hero-section text-center">
-        {/* Pill badge */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85, y: -10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
-          className="hero-badge"
-        >
-          <span className="hero-badge-dot" />
-          ✨ AI-Powered · 50+ Tools · Always Free
-        </motion.div>
-
-        <motion.h1
-          className="hero-title"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.65, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-        >
-          Your complete <span className="text-gradient">toolkit</span> for<br className="hero-br" /> everyday work
-        </motion.h1>
-
-        <motion.p
-          className="hero-subtitle"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.22, ease: 'easeOut' }}
-        >
-          Merge PDFs, convert images, generate SQL with AI, transcribe audio, and 50+ more tools —
-          all free, all in your browser, nothing to install.
-        </motion.p>
+      <section className="hero-section text-center" aria-labelledby="home-hero-title">
+        <div className="hero-background" aria-hidden="true">
+          <motion.div
+            className="hero-aurora hero-aurora-one"
+            animate={shouldReduceMotion ? undefined : { x: [0, 18, -10, 0], y: [0, -16, 8, 0], scale: [1, 1.06, 0.98, 1] }}
+            transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="hero-aurora hero-aurora-two"
+            animate={shouldReduceMotion ? undefined : { x: [0, -16, 12, 0], y: [0, 14, -10, 0], scale: [1, 0.97, 1.05, 1] }}
+            transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <div className="hero-grid" />
+          <div className="hero-vignette" />
+        </div>
 
         <motion.div
-          className="hero-actions"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.32, ease: 'easeOut' }}
+          className="hero-content"
+          variants={heroContainer}
+          initial="hidden"
+          animate="visible"
         >
-          <Link to="/explore" className="btn-hero-primary">
-            Explore All Tools <ArrowRight size={18} />
-          </Link>
-          <Link to="/ai-tools" className="btn-hero-secondary">
-            <Sparkles size={16} /> Try AI Tools
-          </Link>
-        </motion.div>
+          <motion.div className="hero-badge" variants={heroReveal}>
+            <span className="hero-badge-dot" />
+            <Sparkles size={14} aria-hidden="true" />
+            <span>AI-powered workflow suite</span>
+            <span className="hero-badge-divider" />
+            <span>50+ browser tools</span>
+          </motion.div>
 
-        {/* Stats row */}
-        <motion.div
-          className="hero-stats"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.46 }}
-        >
-          {STATS.map(({ value, label, icon: Icon }, i) => (
-            <motion.div
-              key={label}
-              className="hero-stat"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.5 + i * 0.07 }}
+          <motion.h1 id="home-hero-title" className="hero-title" variants={heroContainer}>
+            {HERO_TITLE_LINES.map((line, lineIndex) => (
+              <span className="hero-title-line" key={`hero-line-${lineIndex}`}>
+                {line.map((word) => (
+                  <motion.span
+                    className={word.accent ? 'hero-word hero-gradient-word' : 'hero-word'}
+                    variants={heroWord}
+                    key={`${lineIndex}-${word.text}`}
+                  >
+                    {word.text}
+                  </motion.span>
+                ))}
+              </span>
+            ))}
+          </motion.h1>
+
+          <motion.p className="hero-subtitle" variants={heroReveal}>
+            Merge PDFs, convert images, generate SQL with AI, transcribe audio, and 50+ more tools.
+            All free, all in your browser, nothing to install.
+          </motion.p>
+
+          <motion.div className="hero-actions" variants={heroReveal}>
+            <MotionLink
+              to="/explore"
+              className="btn-hero-primary"
+              whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.015 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 28 }}
             >
-              <div className="hero-stat-icon"><Icon size={14} /></div>
-              <span className="hero-stat-value">{value}</span>
-              <span className="hero-stat-label">{label}</span>
-            </motion.div>
-          ))}
+              <span>Explore All Tools</span>
+              <ArrowRight size={18} />
+            </MotionLink>
+            <MotionLink
+              to="/ai-tools"
+              className="btn-hero-secondary"
+              whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.015 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+            >
+              <Sparkles size={16} />
+              <span>Try AI Tools</span>
+            </MotionLink>
+          </motion.div>
+
+          <motion.div className="hero-stats" variants={heroContainer}>
+            {STATS.map(({ value, label, icon: Icon }, i) => (
+              <motion.div
+                key={label}
+                className="hero-stat"
+                variants={statReveal}
+                custom={i}
+              >
+                <div className="hero-stat-icon"><Icon size={15} /></div>
+                <span className="hero-stat-value">{value}</span>
+                <span className="hero-stat-label">{label}</span>
+              </motion.div>
+            ))}
+          </motion.div>
         </motion.div>
       </section>
 

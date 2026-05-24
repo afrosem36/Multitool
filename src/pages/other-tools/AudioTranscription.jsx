@@ -1239,7 +1239,7 @@ export default function AudioTranscription() {
         try {
           const translated = await callAI(
             buildTranslationPrompt(cleaned, outputLanguage),
-            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
+            { apiFetch, onProvider: p => setProviderNote(({ gemini: 'Gemini 3.1 Flash Lite', openai: 'OpenAI', groq: 'Groq Llama' }[p] || p)) }
           );
           setTranslatedTranscript(translated);
         } catch (err) {
@@ -1257,7 +1257,7 @@ export default function AudioTranscription() {
         try {
           const qaText = await callAI(
             buildQaAnalysisPrompt(cleaned, qaParams, totalQAMarks),
-            { apiFetch, onProvider: p => setProviderNote(({ puter: 'Puter AI', gemini: 'Gemini Flash', openai: 'OpenAI' }[p] || p)) }
+            { apiFetch, onProvider: p => setProviderNote(({ gemini: 'Gemini 3.1 Flash Lite', openai: 'OpenAI', groq: 'Groq Llama' }[p] || p)) }
           );
           const report = parseQaReport(qaText);
           setQaReport(report);

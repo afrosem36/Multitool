@@ -3,6 +3,7 @@ import {
   RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock,
   Zap, Brain, Database, Activity, TrendingUp, ChevronRight,
   Wifi, WifiOff, Server, Globe, Cpu, BarChart2, Shield,
+  Layers, Calendar, CalendarDays, Flame,
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { useAuth } from '../../context/AuthContext';
@@ -17,7 +18,13 @@ const PROVIDER_META = {
   groq:   { color: '#f97316', bg: 'rgba(249,115,22,0.1)',   border: 'rgba(249,115,22,0.25)'   },
   gemini: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',   border: 'rgba(59,130,246,0.25)'   },
   openai: { color: '#10b981', bg: 'rgba(16,185,129,0.1)',   border: 'rgba(16,185,129,0.25)'   },
-  puter:  { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)',   border: 'rgba(139,92,246,0.25)'   },
+};
+
+// Known free-tier API quotas per provider (daily request limits)
+const PROVIDER_QUOTA = {
+  groq:   { dailyReq: 14400, tier: 'Free',      note: '14,400 req/day · 6K RPM',          limitType: 'requests' },
+  gemini: { dailyReq: 1500,  tier: 'Free',      note: '1,500 req/day · 1M TPM',            limitType: 'requests' },
+  openai: { dailyReq: null,  tier: 'Paid',      note: 'Pay-per-use · no daily cap',        limitType: 'cost'     },
 };
 
 function fmtLatency(ms) {
@@ -25,10 +32,15 @@ function fmtLatency(ms) {
   if (ms < 1000)  return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
-
 function fmtTime(iso) {
   if (!iso) return '—';
   try { return new Date(iso).toLocaleTimeString(); } catch { return '—'; }
+}
+function fmtNum(n) {
+  if (n == null || n === 0) return '0';
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000)    return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -56,9 +68,65 @@ function StatusBadge({ status, size = 'md' }) {
   );
 }
 
+// ─── Toggle Switch ────────────────────────────────────────────────────────────
+function ToggleSwitch({ enabled, onChange }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(!enabled); }}
+      title={enabled ? 'Click to disable' : 'Click to enable'}
+      style={{
+        position: 'relative', display: 'inline-flex', alignItems: 'center',
+        width: 38, height: 21, borderRadius: 11, border: 'none',
+        background: enabled ? '#10b981' : 'rgba(255,255,255,0.1)',
+        cursor: 'pointer', padding: 0, flexShrink: 0,
+        transition: 'background .2s', boxShadow: enabled ? '0 0 8px rgba(16,185,129,0.4)' : 'none',
+      }}>
+      <span style={{
+        position: 'absolute', left: enabled ? 19 : 2,
+        width: 17, height: 17, borderRadius: '50%', background: '#fff',
+        transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+      }}/>
+    </button>
+  );
+}
+
+// ─── Quota Bar ────────────────────────────────────────────────────────────────
+function QuotaBar({ used, limit, color }) {
+  if (!limit) return null;
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : color;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '.22rem' }}>
+        <span style={{ fontSize: '.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          Daily API Quota
+        </span>
+        <span style={{ fontSize: '.65rem', fontWeight: 700,
+          color: pct >= 90 ? '#f87171' : pct >= 70 ? '#fbbf24' : '#94a3b8' }}>
+          {fmtNum(used)} / {fmtNum(limit)} · {pct}%
+        </span>
+      </div>
+      <div style={{ height: 7, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${pct}%`, borderRadius: 4,
+          background: pct >= 90
+            ? 'linear-gradient(90deg,#ef4444,#dc2626)'
+            : pct >= 70
+            ? 'linear-gradient(90deg,#f59e0b,#d97706)'
+            : `linear-gradient(90deg,${color},${color}bb)`,
+          transition: 'width .6s cubic-bezier(.4,0,.2,1)',
+          boxShadow: pct > 0 ? `0 0 8px ${barColor}55` : 'none',
+        }}/>
+      </div>
+    </div>
+  );
+}
+
 // ─── Provider Card ────────────────────────────────────────────────────────────
-function ProviderCard({ provider, isDisabled, onToggle }) {
-  const meta = PROVIDER_META[provider.key] || PROVIDER_META.groq;
+function ProviderCard({ provider, isDisabled, onToggle, usage }) {
+  const meta  = PROVIDER_META[provider.key] || PROVIDER_META.groq;
+  const quota = PROVIDER_QUOTA[provider.key] || {};
+
   const borderColor = isDisabled                          ? 'rgba(255,255,255,0.06)'
                     : provider.status === 'ok'           ? 'rgba(16,185,129,0.35)'
                     : provider.status === 'rate_limited' ? 'rgba(245,158,11,0.35)'
@@ -66,15 +134,18 @@ function ProviderCard({ provider, isDisabled, onToggle }) {
                     : provider.status === 'browser_only' ? 'rgba(139,92,246,0.25)'
                     : 'rgba(255,255,255,0.07)';
 
+  const todayUsed  = usage?.today  ?? 0;
+  const weekUsed   = usage?.week   ?? 0;
+  const monthUsed  = usage?.month  ?? 0;
+
   return (
     <div style={{ background: '#0d0d1a', border: `1px solid ${borderColor}`,
-      borderRadius: 14, padding: '1.1rem 1.25rem', transition: 'all .2s',
-      opacity: isDisabled ? 0.45 : 1, position: 'relative' }}>
+      borderRadius: 16, padding: '1.15rem 1.25rem', transition: 'all .2s',
+      opacity: isDisabled ? 0.45 : 1, position: 'relative', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
 
-      {/* Disabled overlay label */}
       {isDisabled && (
         <div style={{ position: 'absolute', top: '50%', left: '50%',
-          transform: 'translate(-50%,-50%)', background: 'rgba(0,0,0,0.55)',
+          transform: 'translate(-50%,-50%)', background: 'rgba(0,0,0,0.6)',
           border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8,
           padding: '.2rem .75rem', fontSize: '.72rem', fontWeight: 700,
           color: '#94a3b8', letterSpacing: '.08em', pointerEvents: 'none', zIndex: 1 }}>
@@ -82,55 +153,92 @@ function ProviderCard({ provider, isDisabled, onToggle }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '.75rem' }}>
+      {/* ── Header row ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: meta.bg,
-            border: `1px solid ${meta.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, background: meta.bg,
+            border: `1px solid ${meta.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Server size={16} style={{ color: meta.color }}/>
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '.9rem', color: '#e2e8f0' }}>{provider.name}</div>
-            <div style={{ fontSize: '.68rem', color: '#64748b', marginTop: '.05rem' }}>{provider.model}</div>
+            <div style={{ fontWeight: 700, fontSize: '.9rem', color: '#e2e8f0', lineHeight: 1.2 }}>{provider.name}</div>
+            <div style={{ fontSize: '.66rem', color: '#475569', marginTop: '.1rem', fontFamily: 'monospace' }}>{provider.model}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.55rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <StatusBadge status={isDisabled ? 'no_key' : provider.status}/>
           <ToggleSwitch enabled={!isDisabled} onChange={() => onToggle(provider.key)}/>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginBottom: '.65rem' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem',
-          background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 8,
-          padding: '.2rem .55rem', fontSize: '.68rem', color: meta.color, fontWeight: 600 }}>
-          <Zap size={10}/> {provider.role}
-        </div>
-        {provider.priority === 0 && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem',
-            background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
-            borderRadius: 8, padding: '.2rem .55rem', fontSize: '.68rem', color: '#a78bfa' }}>
-            Free · No backend cost
-          </div>
-        )}
+      {/* ── Role + tier badges ── */}
+      <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem',
+          background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 7,
+          padding: '.18rem .5rem', fontSize: '.67rem', color: meta.color, fontWeight: 600 }}>
+          <Zap size={9}/> {provider.role}
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem',
+          background: quota.tier === 'Free' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
+          border: `1px solid ${quota.tier === 'Free' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
+          borderRadius: 7, padding: '.18rem .5rem', fontSize: '.67rem',
+          color: quota.tier === 'Free' ? '#34d399' : '#fbbf24', fontWeight: 600 }}>
+          {quota.tier === 'Free' ? '✦ Free' : '💳 Paid'}
+        </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem' }}>
+      {/* ── Quota bar (only for providers with daily request limits) ── */}
+      {quota.dailyReq && (
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 10,
+          padding: '.6rem .75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <QuotaBar used={todayUsed} limit={quota.dailyReq} color={meta.color}/>
+          <div style={{ marginTop: '.3rem', fontSize: '.62rem', color: '#334155' }}>
+            {quota.note}
+          </div>
+        </div>
+      )}
+
+      {/* ── For pay-per-use or free/unlimited providers ── */}
+      {!quota.dailyReq && (
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 10,
+          padding: '.5rem .75rem', border: '1px solid rgba(255,255,255,0.05)',
+          fontSize: '.68rem', color: '#475569' }}>
+          {quota.note}
+        </div>
+      )}
+
+      {/* ── Today / Week / Month usage stats ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '.35rem' }}>
         {[
-          { label: 'Latency', value: fmtLatency(provider.latencyMs) },
-          { label: 'Last Check', value: fmtTime(provider.checkedAt) },
-        ].map(({ label, value }) => (
+          { label: 'Today',    value: fmtNum(todayUsed), Icon: Flame,       color: '#f87171' },
+          { label: 'Week',     value: fmtNum(weekUsed),  Icon: CalendarDays, color: '#60a5fa' },
+          { label: 'Month',    value: fmtNum(monthUsed), Icon: Calendar,    color: '#a78bfa' },
+          { label: 'Latency',  value: fmtLatency(provider.latencyMs), Icon: Activity, color: '#34d399' },
+        ].map(({ label, value, Icon, color }) => (
           <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8,
-            padding: '.35rem .6rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ fontSize: '.6rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.12rem' }}>{label}</div>
-            <div style={{ fontSize: '.82rem', fontWeight: 700, color: '#e2e8f0' }}>{value}</div>
+            padding: '.35rem .4rem', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+            <Icon size={11} style={{ color, marginBottom: '.15rem' }}/>
+            <div style={{ fontSize: '.8rem', fontWeight: 800, color: '#e2e8f0', lineHeight: 1 }}>{value}</div>
+            <div style={{ fontSize: '.58rem', color: '#475569', marginTop: '.12rem',
+              textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
           </div>
         ))}
       </div>
 
+      {/* ── Last check + error ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: '.63rem', color: '#334155' }}>
+          Last check: <span style={{ color: '#475569' }}>{fmtTime(provider.checkedAt)}</span>
+        </div>
+        {provider.status === 'rate_limited' && (
+          <span style={{ fontSize: '.63rem', color: '#fbbf24', fontWeight: 600 }}>⚠ Rate limited</span>
+        )}
+      </div>
+
       {provider.errorMsg && !isDisabled && (
-        <div style={{ marginTop: '.6rem', background: 'rgba(239,68,68,0.07)',
+        <div style={{ background: 'rgba(239,68,68,0.07)',
           border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8,
-          padding: '.35rem .65rem', fontSize: '.72rem', color: '#f87171' }}>
+          padding: '.3rem .6rem', fontSize: '.7rem', color: '#f87171' }}>
           ⚠ {provider.errorMsg}
         </div>
       )}
@@ -140,8 +248,8 @@ function ProviderCard({ provider, isDisabled, onToggle }) {
 
 // ─── Flow Row ─────────────────────────────────────────────────────────────────
 function FlowRow({ label, steps, note }) {
-  const colors = { groq: '#f97316', gemini: '#3b82f6', openai: '#10b981', puter: '#8b5cf6' };
-  const names  = { groq: 'Groq', gemini: 'Gemini Flash', openai: 'OpenAI', puter: 'Puter AI' };
+  const colors = { groq: '#f97316', gemini: '#3b82f6', openai: '#10b981' };
+  const names  = { groq: 'Groq Llama', gemini: 'Gemini 3.1 Flash Lite', openai: 'OpenAI' };
   return (
     <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
       borderRadius: 12, padding: '.8rem 1rem', display: 'flex', alignItems: 'center',
@@ -168,8 +276,8 @@ function FlowRow({ label, steps, note }) {
   );
 }
 
-// ─── Credit Bar ───────────────────────────────────────────────────────────────
-function CreditBar({ toolId, todayCount, monthCount, limit }) {
+// ─── Credit Bar (per tool) ────────────────────────────────────────────────────
+function CreditBar({ toolId, todayCount, weekCount, monthCount, limit }) {
   const meta  = TOOL_META[toolId] || { label: toolId, icon: Database, color: '#6366f1' };
   const Icon  = meta.icon;
   const pct   = limit ? Math.min(100, Math.round((todayCount / limit) * 100)) : null;
@@ -178,13 +286,13 @@ function CreditBar({ toolId, todayCount, monthCount, limit }) {
   return (
     <div style={{ background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.07)',
       borderRadius: 12, padding: '1rem 1.1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.65rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.6rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <Icon size={14} style={{ color: meta.color }}/>
           <span style={{ fontSize: '.82rem', fontWeight: 700, color: '#e2e8f0' }}>{meta.label}</span>
         </div>
         {limit && (
-          <span style={{ fontSize: '.72rem', color: pct >= 90 ? '#f87171' : '#64748b', fontWeight: 600 }}>
+          <span style={{ fontSize: '.7rem', color: pct >= 90 ? '#f87171' : '#64748b', fontWeight: 600 }}>
             {todayCount} / {limit} today
           </span>
         )}
@@ -193,47 +301,26 @@ function CreditBar({ toolId, todayCount, monthCount, limit }) {
       {limit && (
         <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden', marginBottom: '.6rem' }}>
           <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3,
-            background: barColor, transition: 'width .5s' }}/>
+            background: barColor, transition: 'width .5s',
+            boxShadow: pct > 0 ? `0 0 6px ${barColor}66` : 'none' }}/>
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '.4rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '.35rem' }}>
         {[
-          { label: 'Used Today',  value: todayCount },
+          { label: 'Today',       value: todayCount },
+          { label: 'This Week',   value: weekCount  },
           { label: 'This Month',  value: monthCount },
           { label: 'Daily Limit', value: limit ?? '∞' },
         ].map(({ label, value }) => (
           <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 7,
-            padding: '.3rem .5rem', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
-            <div style={{ fontSize: '.58rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
-            <div style={{ fontSize: '.9rem', fontWeight: 800, color: '#e2e8f0', marginTop: '.1rem' }}>{value}</div>
+            padding: '.3rem .4rem', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+            <div style={{ fontSize: '.58rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+            <div style={{ fontSize: '.88rem', fontWeight: 800, color: '#e2e8f0', marginTop: '.08rem' }}>{value}</div>
           </div>
         ))}
       </div>
     </div>
-  );
-}
-
-// ─── Toggle Switch ────────────────────────────────────────────────────────────
-function ToggleSwitch({ enabled, onChange }) {
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onChange(!enabled); }}
-      title={enabled ? 'Click to disable' : 'Click to enable'}
-      style={{
-        position: 'relative', display: 'inline-flex', alignItems: 'center',
-        width: 38, height: 21, borderRadius: 11, border: 'none',
-        background: enabled ? '#10b981' : 'rgba(255,255,255,0.1)',
-        cursor: 'pointer', padding: 0, flexShrink: 0,
-        transition: 'background .2s', boxShadow: enabled ? '0 0 8px rgba(16,185,129,0.4)' : 'none',
-      }}
-    >
-      <span style={{
-        position: 'absolute', left: enabled ? 19 : 2,
-        width: 17, height: 17, borderRadius: '50%', background: '#fff',
-        transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-      }}/>
-    </button>
   );
 }
 
@@ -258,17 +345,16 @@ function isDueForCheck() {
 
 export default function AiMonitorPanel() {
   const { token } = useAuth();
-  const [data, setData]         = useState(loadCachedData);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
+  const [data, setData]               = useState(loadCachedData);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState(null);
+  const [disabled, setDisabled]       = useState(loadDisabled);
   const [lastRefresh, setLastRefresh] = useState(() => {
     try {
       const ts = Number(localStorage.getItem(LAST_CHECK_KEY) || 0);
       return ts ? new Date(ts).toLocaleString() : null;
     } catch { return null; }
   });
-  const [puterStatus, setPuterStatus] = useState('checking');
-  const [disabled, setDisabled] = useState(loadDisabled);
   const [nextCheck, setNextCheck] = useState(() => {
     try {
       const last = Number(localStorage.getItem(LAST_CHECK_KEY) || 0);
@@ -298,11 +384,10 @@ export default function AiMonitorPanel() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const now  = Date.now();
-      // Update provider latency data without resetting the 24h schedule
-      setData(prev => prev ? { ...prev, providers: json.providers } : json);
+      setData(prev => prev ? { ...prev, providers: json.providers, credits: json.credits } : json);
       setLastRefresh(new Date(now).toLocaleString());
       localStorage.setItem(CACHED_DATA_KEY, JSON.stringify(
-        data ? { ...data, providers: json.providers } : json
+        data ? { ...data, providers: json.providers, credits: json.credits } : json
       ));
     } catch (err) {
       setError(err.message);
@@ -311,7 +396,7 @@ export default function AiMonitorPanel() {
     }
   }, [apiFetch, data]);
 
-  const refresh = useCallback(async (force = false) => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -331,44 +416,65 @@ export default function AiMonitorPanel() {
     }
   }, [apiFetch]);
 
-  // Check Puter availability (browser-only)
-  useEffect(() => {
-    const hasPuter = typeof window !== 'undefined' && !!(window.puter?.ai?.chat);
-    setPuterStatus(hasPuter ? 'ok' : 'browser_only');
-  }, []);
-
-  // Run once on mount if no data yet or 24h have passed; then poll every hour
-  // to detect when the day boundary is crossed without a manual refresh.
+  // Auto-refresh every 24h
   useEffect(() => {
     if (isDueForCheck()) refresh();
     const id = setInterval(() => { if (isDueForCheck()) refresh(); }, 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Merge Puter status into providers
-  const providers = data?.providers?.map(p =>
-    p.key === 'puter' ? { ...p, status: puterStatus } : p
-  ) || [];
+  // ── Derived data ─────────────────────────────────────────────────────────────
+  const providers = data?.providers || [];
 
-  const todayMap  = Object.fromEntries((data?.credits?.today  || []).map(r => [r.tool_id, r.total]));
-  const monthMap  = Object.fromEntries((data?.credits?.month  || []).map(r => [r.tool_id, r.total]));
+  const todayMap  = Object.fromEntries((data?.credits?.today || []).map(r => [r.tool_id, Number(r.total)]));
+  const weekMap   = Object.fromEntries((data?.credits?.week  || []).map(r => [r.tool_id, Number(r.total)]));
+  const monthMap  = Object.fromEntries((data?.credits?.month || []).map(r => [r.tool_id, Number(r.total)]));
   const limits    = data?.credits?.limits || {};
 
+  // Per-provider AI call usage (tracked by system)
+  const providerToday = data?.credits?.providerToday || {};
+  const providerWeek  = data?.credits?.providerWeek  || {};
+  const providerMonth = data?.credits?.providerMonth || {};
+
+  // Build usage object per provider key
+  // Groq also serves transcription + text-to-sql tool calls
+  const providerUsage = (key) => {
+    const base = {
+      today: providerToday[key] || 0,
+      week:  providerWeek[key]  || 0,
+      month: providerMonth[key] || 0,
+    };
+    if (key === 'groq') {
+      // Add tool-level groq usage (transcription + sql)
+      const toolsToday = Object.entries(todayMap)
+        .filter(([tid]) => limits[tid]?.provider === 'groq')
+        .reduce((s, [, v]) => s + v, 0);
+      const toolsWeek  = Object.entries(weekMap)
+        .filter(([tid]) => limits[tid]?.provider === 'groq')
+        .reduce((s, [, v]) => s + v, 0);
+      const toolsMonth = Object.entries(monthMap)
+        .filter(([tid]) => limits[tid]?.provider === 'groq')
+        .reduce((s, [, v]) => s + v, 0);
+      return { today: base.today + toolsToday, week: base.week + toolsWeek, month: base.month + toolsMonth };
+    }
+    return base;
+  };
+
   const activeProviders = providers.filter(p => !disabled.includes(p.key));
-  const workingCount = activeProviders.filter(p => p.status === 'ok' || p.status === 'browser_only').length;
-  const errorCount   = activeProviders.filter(p => p.status === 'error').length;
+  const workingCount    = activeProviders.filter(p => p.status === 'ok').length;
+  const rateLimitedCount = activeProviders.filter(p => p.status === 'rate_limited').length;
 
   const S = {
-    card:   { background: '#111122', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '1.25rem 1.5rem' },
-    head:   { fontSize: '.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.9rem', display: 'flex', alignItems: 'center', gap: '.4rem' },
-    stat:   { background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '.85rem 1rem', textAlign: 'center' },
+    card: { background: '#111122', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '1.25rem 1.5rem' },
+    head: { fontSize: '.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.9rem', display: 'flex', alignItems: 'center', gap: '.4rem' },
+    stat: { background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '.85rem 1rem', textAlign: 'center' },
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-        @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes spin  { to{transform:rotate(360deg)} }
       `}</style>
 
       {/* ── Top Bar ── */}
@@ -378,7 +484,7 @@ export default function AiMonitorPanel() {
             <Brain size={20} style={{ color: '#818cf8' }}/> AI Services Monitor
           </div>
           <div style={{ fontSize: '.78rem', color: '#64748b', marginTop: '.2rem' }}>
-            Latency checked once per day · use Refresh Now to force a check
+            Latency checked once per day · Fallback chain: Gemini → OpenAI → Groq
             {lastRefresh && <span style={{ marginLeft: '.6rem', color: '#475569' }}>Last: {lastRefresh}</span>}
             {nextCheck   && <span style={{ marginLeft: '.6rem', color: '#334155' }}>· Next: {nextCheck.toLocaleString()}</span>}
           </div>
@@ -392,7 +498,7 @@ export default function AiMonitorPanel() {
             <Activity size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}/>
             {loading ? 'Testing…' : 'Test Latency'}
           </button>
-          <button onClick={() => refresh(true)} disabled={loading}
+          <button onClick={refresh} disabled={loading}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem',
               background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
               borderRadius: 9, padding: '.45rem 1rem', cursor: loading ? 'wait' : 'pointer',
@@ -413,10 +519,10 @@ export default function AiMonitorPanel() {
       {/* ── Summary Stats ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '.75rem' }}>
         {[
-          { label: 'Total Providers', value: providers.length || 4,                                                               color: '#818cf8', Icon: Server      },
-          { label: 'Working',         value: workingCount,                                                                              color: '#10b981', Icon: CheckCircle },
-          { label: 'Disabled',        value: disabled.length,                                                                           color: '#64748b', Icon: WifiOff     },
-          { label: 'Rate Limited',    value: activeProviders.filter(p => p.status === 'rate_limited').length,                           color: '#f59e0b', Icon: AlertTriangle },
+          { label: 'Total Providers', value: providers.length || 4,        color: '#818cf8', Icon: Server        },
+          { label: 'Working',         value: workingCount,                  color: '#10b981', Icon: CheckCircle   },
+          { label: 'Disabled',        value: disabled.length,               color: '#64748b', Icon: WifiOff       },
+          { label: 'Rate Limited',    value: rateLimitedCount,              color: '#f59e0b', Icon: AlertTriangle },
         ].map(({ label, value, color, Icon }) => (
           <div key={label} style={S.stat}>
             <Icon size={18} style={{ color, margin: '0 auto .4rem' }}/>
@@ -428,12 +534,12 @@ export default function AiMonitorPanel() {
 
       {/* ── Provider Status Cards ── */}
       <div style={S.card}>
-        <div style={S.head}><Wifi size={12}/> API Provider Status</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: '.85rem' }}>
+        <div style={S.head}><Wifi size={12}/> API Provider Status · Balance & Quota</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: '.9rem' }}>
           {loading && !data
             ? [0,1,2,3].map(i => (
-                <div key={i} style={{ height: 160, background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14,
+                <div key={i} style={{ height: 240, background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16,
                   animation: 'pulse 1.5s ease-in-out infinite' }}/>
               ))
             : providers.map(p => (
@@ -442,9 +548,22 @@ export default function AiMonitorPanel() {
                   provider={p}
                   isDisabled={disabled.includes(p.key)}
                   onToggle={toggleProvider}
+                  usage={providerUsage(p.key)}
                 />
               ))
           }
+        </div>
+
+        {/* Legend */}
+        <div style={{ marginTop: '1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap',
+          padding: '.6rem .75rem', background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10 }}>
+          <span style={{ fontSize: '.68rem', color: '#475569' }}>
+            <span style={{ color: '#f87171' }}>●</span> Quota bar = your app's calls to that provider today vs their free-tier daily limit
+          </span>
+          <span style={{ fontSize: '.68rem', color: '#475569' }}>
+            <span style={{ color: '#34d399' }}>●</span> Server runs full fallback chain — single client request triggers all retries
+          </span>
         </div>
       </div>
 
@@ -454,8 +573,8 @@ export default function AiMonitorPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
           <FlowRow
             label="General AI Tasks"
-            steps={(data?.flow?.general || ['puter','gemini','openai']).filter(s => !disabled.includes(s))}
-            note={disabled.some(d => ['puter','gemini','openai'].includes(d)) ? `⚠ ${disabled.filter(d => ['puter','gemini','openai'].includes(d)).join(', ')} disabled` : 'Text, QA, Analysis, Dashboard, Medical'}
+            steps={(data?.flow?.general || ['gemini','openai','groq']).filter(s => !disabled.includes(s))}
+            note={disabled.some(d => ['gemini','openai','groq'].includes(d)) ? `⚠ ${disabled.filter(d => ['gemini','openai','groq'].includes(d)).join(', ')} disabled` : 'Text, QA, Analysis, Dashboard, Medical'}
           />
           <FlowRow
             label="Text-to-SQL"
@@ -475,21 +594,18 @@ export default function AiMonitorPanel() {
             How fallback works
           </div>
           <div style={{ fontSize: '.75rem', color: '#64748b', lineHeight: 1.6 }}>
-            For general tasks: <strong style={{ color: '#a78bfa' }}>Puter AI</strong> is tried first (free, browser-based).
-            If unavailable, the request hits the backend which tries <strong style={{ color: '#60a5fa' }}>Gemini Flash</strong>,
-            then <strong style={{ color: '#34d399' }}>OpenAI gpt-4.1-mini</strong> as a final safety net.
+            For general tasks the backend tries <strong style={{ color: '#60a5fa' }}>Gemini 3.1 Flash Lite</strong> first,
+            falls back to <strong style={{ color: '#34d399' }}>OpenAI gpt-4.1-mini</strong>, then <strong style={{ color: '#fb923c' }}>Groq llama-3.3-70b</strong> as the final safety net.
             Transcription and SQL generation always use <strong style={{ color: '#fb923c' }}>Groq</strong> directly — no fallback.
           </div>
         </div>
       </div>
 
-      {/* ── Credit Usage ── */}
+      {/* ── Per-Tool Credit Usage ── */}
       <div style={S.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.9rem' }}>
-          <div style={S.head}><BarChart2 size={12}/> Credit & Usage Monitor</div>
-          <div style={{ fontSize: '.7rem', color: '#475569' }}>
-            Resets daily at UTC midnight
-          </div>
+          <div style={S.head}><BarChart2 size={12}/> User Credit Usage by Tool</div>
+          <div style={{ fontSize: '.7rem', color: '#475569' }}>Resets daily at UTC midnight</div>
         </div>
 
         {Object.keys(TOOL_META).length > 0 ? (
@@ -499,6 +615,7 @@ export default function AiMonitorPanel() {
                 key={toolId}
                 toolId={toolId}
                 todayCount={Number(todayMap[toolId] || 0)}
+                weekCount={Number(weekMap[toolId] || 0)}
                 monthCount={Number(monthMap[toolId] || 0)}
                 limit={limits[toolId]?.daily ?? null}
               />
@@ -508,31 +625,20 @@ export default function AiMonitorPanel() {
           <div style={{ color: '#475569', fontSize: '.82rem', textAlign: 'center', padding: '1rem' }}>No usage data yet.</div>
         )}
 
-        {/* Monthly summary */}
+        {/* Totals summary */}
         {data && (
-          <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '.5rem' }}>
+          <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '.5rem' }}>
             {[
-              {
-                label: 'Total Requests Today',
-                value: Object.values(todayMap).reduce((a, b) => a + Number(b), 0),
-                color: '#818cf8',
-              },
-              {
-                label: 'Total This Month',
-                value: Object.values(monthMap).reduce((a, b) => a + Number(b), 0),
-                color: '#34d399',
-              },
-              {
-                label: 'Active Tools',
-                value: Object.keys(todayMap).filter(k => todayMap[k] > 0).length,
-                color: '#60a5fa',
-              },
+              { label: 'Requests Today',  value: fmtNum(Object.values(todayMap).reduce((a,b) => a+Number(b), 0)),  color: '#f87171' },
+              { label: 'This Week',       value: fmtNum(Object.values(weekMap).reduce((a,b) => a+Number(b), 0)),   color: '#60a5fa' },
+              { label: 'This Month',      value: fmtNum(Object.values(monthMap).reduce((a,b) => a+Number(b), 0)),  color: '#a78bfa' },
+              { label: 'Active Tools',    value: Object.keys(todayMap).filter(k => todayMap[k] > 0).length,        color: '#34d399' },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ background: 'rgba(255,255,255,0.03)',
                 border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10,
                 padding: '.65rem .85rem', textAlign: 'center' }}>
                 <div style={{ fontSize: '1.35rem', fontWeight: 800, color }}>{value}</div>
-                <div style={{ fontSize: '.65rem', color: '#475569', marginTop: '.15rem', textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+                <div style={{ fontSize: '.63rem', color: '#475569', marginTop: '.15rem', textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
               </div>
             ))}
           </div>
@@ -544,10 +650,9 @@ export default function AiMonitorPanel() {
         <div style={S.head}><Shield size={12}/> API Key Audit</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
           {[
-            { key: 'GROQ_API_KEY',   provider: 'Groq',         purpose: 'Audio transcription · Text-to-SQL · Speaker diarization', configured: !!data && providers.find(p => p.key === 'groq')?.status !== 'no_key' },
+            { key: 'GROQ_API_KEY',   provider: 'Groq',         purpose: 'Audio transcription · Text-to-SQL · Speaker diarization', configured: !!data && providers.find(p => p.key === 'groq')?.status !== 'no_key'   },
             { key: 'GEMINI_API_KEY', provider: 'Google Gemini', purpose: 'Dashboard planning · QA analysis · General text tasks',    configured: !!data && providers.find(p => p.key === 'gemini')?.status !== 'no_key' },
-            { key: 'OPENAI_API_KEY', provider: 'OpenAI',        purpose: 'Final fallback for all general AI tasks (gpt-4.1-mini)',   configured: !!data && providers.find(p => p.key === 'openai')?.status !== 'no_key' },
-            { key: 'Puter AI',       provider: 'Puter',         purpose: 'Browser-based AI — free, no key required',                configured: true },
+            { key: 'OPENAI_API_KEY', provider: 'OpenAI',        purpose: 'Second fallback for general AI tasks (gpt-4.1-mini)',     configured: !!data && providers.find(p => p.key === 'openai')?.status !== 'no_key' },
           ].map(({ key, provider, purpose, configured }) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '.85rem',
               background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',

@@ -2624,7 +2624,7 @@ app.get('/api/admin/ai-status', requireAuth, async (c) => {
       : { status: 'no_key', checkedAt, latencyMs: null, errorMsg: 'GROQ_API_KEY not set' },
 
     geminiKey
-      ? pingOne(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+      ? pingOne(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiKey}`,
           { 'Content-Type': 'application/json' },
           { contents: [{ parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 3 } })
       : { status: 'no_key', checkedAt, latencyMs: null, errorMsg: 'GEMINI_API_KEY not set' },
@@ -2641,17 +2641,48 @@ app.get('/api/admin/ai-status', requireAuth, async (c) => {
   const today = getTodayUtcDate();
   const thisMonth = today.slice(0, 7); // "YYYY-MM"
 
-  let todayUsage = [], monthUsage = [];
+  // Week start = 6 days ago (last 7 days rolling)
+  const weekStart = (() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 6);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  let todayUsage = [], weekUsage = [], monthUsage = [];
+  let providerToday = {}, providerWeek = {}, providerMonth = {};
   try {
+    // Per-tool usage (all users)
     const todayRows = await db.prepare(
-      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date = ? GROUP BY tool_id`
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date = ? AND user_id != '__system__' GROUP BY tool_id`
     ).bind(today).all();
     todayUsage = todayRows.results || [];
 
+    const weekRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date >= ? AND user_id != '__system__' GROUP BY tool_id`
+    ).bind(weekStart).all();
+    weekUsage = weekRows.results || [];
+
     const monthRows = await db.prepare(
-      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date LIKE ? GROUP BY tool_id`
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE date LIKE ? AND user_id != '__system__' GROUP BY tool_id`
     ).bind(`${thisMonth}%`).all();
     monthUsage = monthRows.results || [];
+
+    // Per-provider usage (system-level tracking from AI calls)
+    const pTodayRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE user_id = '__system__' AND date = ? GROUP BY tool_id`
+    ).bind(today).all();
+    providerToday = Object.fromEntries((pTodayRows.results || []).map(r => [r.tool_id.replace('ai-', ''), Number(r.total)]));
+
+    const pWeekRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE user_id = '__system__' AND date >= ? GROUP BY tool_id`
+    ).bind(weekStart).all();
+    providerWeek = Object.fromEntries((pWeekRows.results || []).map(r => [r.tool_id.replace('ai-', ''), Number(r.total)]));
+
+    const pMonthRows = await db.prepare(
+      `SELECT tool_id, SUM(count) AS total FROM tool_quotas WHERE user_id = '__system__' AND date LIKE ? GROUP BY tool_id`
+    ).bind(`${thisMonth}%`).all();
+    providerMonth = Object.fromEntries((pMonthRows.results || []).map(r => [r.tool_id.replace('ai-', ''), Number(r.total)]));
+
   } catch (dbErr) {
     console.error('Admin AI status: DB query failed', dbErr.message);
   }
@@ -2672,7 +2703,7 @@ app.get('/api/admin/ai-status', requireAuth, async (c) => {
         ...groqResult,
       },
       {
-        key: 'gemini', name: 'Gemini Flash', model: 'gemini-2.5-flash',
+        key: 'gemini', name: 'Gemini 3.1 Flash Lite', model: 'gemini-3.1-flash-lite',
         role: 'General AI — 2nd fallback',
         priority: 2,
         ...geminiResult,
@@ -2683,24 +2714,20 @@ app.get('/api/admin/ai-status', requireAuth, async (c) => {
         priority: 3,
         ...openaiResult,
       },
-      {
-        key: 'puter', name: 'Puter AI', model: 'gpt-4o-mini',
-        role: 'General AI — 1st (browser-based, free)',
-        priority: 0,
-        status: 'browser_only',
-        checkedAt,
-        latencyMs: null,
-        errorMsg: null,
-      },
     ],
     credits: {
-      today:     todayUsage,
-      month:     monthUsage,
-      limits:    TOOL_LIMITS,
-      resetDate: `${today}T00:00:00Z`,
+      today:         todayUsage,
+      week:          weekUsage,
+      month:         monthUsage,
+      providerToday: providerToday,
+      providerWeek:  providerWeek,
+      providerMonth: providerMonth,
+      limits:        TOOL_LIMITS,
+      resetDate:     `${today}T00:00:00Z`,
+      weekStart,
     },
     flow: {
-      general:       ['puter', 'gemini', 'openai'],
+      general:       ['gemini', 'openai', 'groq'],
       textToSql:     ['groq'],
       transcription: ['groq'],
     },
@@ -2744,7 +2771,7 @@ function extractDashboardJSON(raw) {
 // Gemini call with timeout + retry + thinking disabled
 async function callGeminiDashboard(prompt, apiKey, opts = {}) {
   const { maxRetries = 2, timeoutMs = 20000 } = opts;
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
 
   const reqBody = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -2887,7 +2914,7 @@ async function callGroqFullPlan(prompt, apiKey, opts = {}) {
 
 async function callGeminiChat(messages, apiKey, opts = {}) {
   const { maxTokens = 2048, temperature = 0.3, timeoutMs = 18000 } = opts;
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
 
   const systemMsg = messages.find(m => m.role === 'system');
   const chatMsgs  = messages.filter(m => m.role !== 'system');
@@ -2947,11 +2974,37 @@ async function callOpenAIChat(messages, apiKey, opts = {}) {
   }
 }
 
-// Gemini → OpenAI gpt-4.1-mini fallback chain (server-side)
-// disabledProviders: string[] — keys to skip (e.g. ['gemini', 'openai'])
+// Groq llama-3.3-70b chat — generic chat (third-tier fallback)
+async function callGroqChat(messages, apiKey, opts = {}) {
+  const { maxTokens = 2048, temperature = 0.3, timeoutMs = 15000 } = opts;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature, max_tokens: maxTokens }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (resp.status === 429) return { ok: false, code: 'RATE_LIMITED' };
+    if (!resp.ok)            return { ok: false, code: 'API_ERROR' };
+    const data = await resp.json();
+    const text = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!text) return { ok: false, code: 'EMPTY_RESPONSE' };
+    return { ok: true, text };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, code: err.name === 'AbortError' ? 'TIMEOUT' : 'FETCH_ERROR' };
+  }
+}
+
+// Gemini → OpenAI → Groq fallback chain (server-side)
+// disabledProviders: string[] — keys to skip (e.g. ['gemini', 'openai', 'groq'])
 async function callAIProvider(messages, env, opts = {}) {
   const geminiKey = env.GEMINI_API_KEY;
   const openaiKey = env.OPENAI_API_KEY;
+  const groqKey   = env.GROQ_API_KEY;
   const disabled  = Array.isArray(opts.disabledProviders) ? opts.disabledProviders : [];
 
   if (geminiKey && !disabled.includes('gemini')) {
@@ -2968,6 +3021,14 @@ async function callAIProvider(messages, env, opts = {}) {
     dashLog('warn', 'openai_chat_failed', r.code);
   } else if (disabled.includes('openai')) {
     dashLog('info', 'openai_skipped', 'disabled by admin');
+  }
+
+  if (groqKey && !disabled.includes('groq')) {
+    const r = await callGroqChat(messages, groqKey, opts);
+    if (r.ok) return { text: r.text, source: 'groq' };
+    dashLog('warn', 'groq_chat_failed', r.code);
+  } else if (disabled.includes('groq')) {
+    dashLog('info', 'groq_skipped', 'disabled by admin');
   }
 
   return { text: null, source: null, error: 'All AI providers exhausted or disabled' };
@@ -2998,7 +3059,7 @@ app.get('/api/ai/health', async (c) => {
   );
 
   if (geminiKey) results.gemini = await ping(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiKey}`,
     { 'Content-Type': 'application/json' },
     { contents: [{ parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 3 } }
   );
@@ -3050,7 +3111,7 @@ Focus on:
       const ctrl  = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 25000);
       const res   = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiKey}`,
         {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3151,6 +3212,12 @@ app.post('/api/ai/generate', async (c) => {
   if (!result.text) {
     return c.json({ success: false, error: result.error || 'All AI providers failed' }, 502);
   }
+
+  // Track which provider served this request (non-blocking, system-level)
+  if (result.source) {
+    try { await incrementUserQuota(getDb(c.env), '__system__', `ai-${result.source}`); } catch {}
+  }
+
   return c.json({ success: true, text: result.text, source: result.source });
 });
 
@@ -3231,7 +3298,7 @@ app.post('/api/ai/dashboard-plan', async (c) => {
     ? `\nSUGGESTED_TITLE: "${groqMeta.dashboardTitle || ''}"\nSUGGESTED_SUBTITLE: "${groqMeta.subtitle || ''}"`
     : '';
 
-  const prompt = `You are a data visualization expert. Design an optimal BI dashboard for this dataset.
+  const prompt = `You are a senior BI dashboard designer (Power BI / Tableau style). Design a MULTI-TAB professional dashboard for this dataset.
 
 DATASET:
 - Total rows: ${safe.rowCount}
@@ -3244,32 +3311,55 @@ Return valid JSON only — no markdown, no explanation — using this exact sche
 {
   "title": "Dashboard title",
   "subtitle": "One-line description",
-  "insights": ["data observation 1", "data observation 2", "data observation 3"],
-  "charts": [
+  "domain": "sales_crm|finance|hr_payroll|ecommerce|logistics|healthcare|education|real_estate|telecom|support|calls|generic",
+  "insights": ["overall observation 1", "observation 2", "observation 3"],
+  "summary": "1-2 sentence executive summary",
+  "tabs": [
     {
-      "type": "bar|line|area|pie|hbar",
-      "title": "Chart title",
-      "description": "What this chart shows",
-      "xCol": "exact column name",
-      "yCol": "exact numeric column name or null for count charts",
-      "aggregation": "sum|count|avg",
-      "timeSeries": false,
-      "timeGroupBy": "month|week|day",
-      "limit": 15
+      "id": "overview",
+      "title": "Overview",
+      "description": "What this tab shows",
+      "summary": "1-sentence purpose of this tab",
+      "insights": ["tab-specific finding 1", "finding 2"],
+      "charts": [
+        {
+          "type": "bar|line|area|pie|hbar",
+          "title": "Chart title",
+          "description": "What this chart shows",
+          "xCol": "exact column name",
+          "yCol": "exact numeric column name or null for count charts",
+          "aggregation": "sum|count|avg",
+          "timeSeries": false,
+          "timeGroupBy": "month|week|day",
+          "limit": 15,
+          "width": "full|half"
+        }
+      ]
     }
   ]
 }
 
-Rules:
-- Column names must EXACTLY match (case-sensitive) the listed column names
-- Generate 3-5 charts that tell a meaningful business story
-- hbar (horizontal bar) for agent/person rankings
-- pie for status/category distributions with <12 unique values
-- area/line for date-based time series
-- bar for categorical comparisons
-- Set timeSeries:true and timeGroupBy:"month" for date columns
-- insights: concise data-driven observations from the sample
-- yCol can be null for count-based charts`.trim();
+DESIGN RULES:
+- Produce 4–7 tabs that tell a complete business story. Pick from common BI patterns based on the actual columns:
+  Sales/CRM   → Overview, Agent Performance, Category, Trend, Forecast, Status, Insights
+  Support     → Overview, Ticket Status, Agent Performance, TAT/SLA, Issue Category, Risk, Insights
+  Calls       → Overview, Agent Calling, Answered vs Unanswered, Duration, Trend, Low Performance, Insights
+  Finance     → Overview, Financial View, Category, Trend, Forecast, Risk, Insights
+  HR/Payroll  → Overview, Employee, Department, Compensation, Tenure, Insights
+  Logistics   → Overview, Status, Duration/TAT, Agent, Trend, Risk, Insights
+  Generic     → Overview, Category, Agent, Status, Trend, Forecast, Insights
+- Each tab should have 2–4 meaningful charts (not just 1).
+- Add a "forecast" tab ONLY if a date column AND a numeric measure both exist.
+- Add an "insights" tab as the last tab with charts:[] (UI renders it as a text/insights summary).
+- hbar for agent/person rankings; pie for ≤8-value status distributions; area/line for time series; bar for category comparisons.
+- Set timeSeries:true + timeGroupBy:"month" for date columns.
+- Column names must EXACTLY match the listed column names (case-sensitive).
+- yCol can be null for count-based charts.
+- NEVER invent column names that aren't in the list.
+- Use "width":"full" for hero/time-series charts, "half" for grid charts.
+- Keep tab titles short (1–3 words). Each tab.id must be a unique kebab-case slug.
+
+If you cannot produce tabs[], you may fall back to a flat "charts": [...] array — but tabs[] is strongly preferred.`.trim();
 
   dashLog('info', 'prompt_built', `len=${prompt.length}`);
 
@@ -3286,7 +3376,7 @@ Rules:
     dashLog('info', 'gemini_skipped', 'disabled by admin');
   }
 
-  // ── 5.5 Gemini failed/disabled → try OpenAI gpt-4.1-mini ─────────────────
+  // ── 5.5 Gemini failed → try OpenAI gpt-4.1-mini ──────────────────────────
   if (!planRawText) {
     const openaiKey = c.env.OPENAI_API_KEY;
     if (openaiKey && !dashDisabled.includes('openai')) {
@@ -3300,6 +3390,22 @@ Rules:
       else dashLog('warn', 'openai_failed', openaiResult.code);
     } else if (dashDisabled.includes('openai')) {
       dashLog('info', 'openai_skipped', 'disabled by admin');
+    }
+  }
+
+  // ── 5.7 OpenAI failed → try Groq llama as final AI fallback ──────────────
+  if (!planRawText) {
+    if (groqKey && !dashDisabled.includes('groq')) {
+      dashLog('info', 'groq_fallback', 'trying llama-3.3-70b for dashboard plan');
+      const groqResult = await callGroqChat(
+        [{ role: 'user', content: prompt }],
+        groqKey,
+        { maxTokens: 2048, temperature: 0.3, timeoutMs: 18000 }
+      );
+      if (groqResult.ok) { planRawText = groqResult.text; planSource = 'groq'; }
+      else dashLog('warn', 'groq_failed', groqResult.code);
+    } else if (dashDisabled.includes('groq')) {
+      dashLog('info', 'groq_skipped', 'disabled by admin');
     }
     if (!planRawText) {
       const { code, message, detail } = geminiResult?.error || {};
@@ -3326,29 +3432,291 @@ Rules:
     }, 502);
   }
 
-  // ── 7. Sanitize & enrich plan ─────────────────────────────────────────────
+  // ── 7. Sanitize & enrich plan (supports both new tabs[] and legacy charts[])
   plan.title    = (plan.title    || groqMeta?.dashboardTitle || 'Data Dashboard').slice(0, 80);
   plan.subtitle = (plan.subtitle || groqMeta?.subtitle || `${safe.rowCount} rows · ${safe.headers.length} columns`).slice(0, 120);
-  plan.insights = Array.isArray(plan.insights) ? plan.insights.slice(0, 5) : [];
-  plan.charts   = Array.isArray(plan.charts)   ? plan.charts : [];
+  plan.insights = Array.isArray(plan.insights) ? plan.insights.slice(0, 8) : [];
+  plan.summary  = typeof plan.summary === 'string' ? plan.summary.slice(0, 400) : '';
+  plan.domain   = typeof plan.domain === 'string' ? plan.domain.slice(0, 30) : undefined;
   plan.columnLabels = groqMeta?.columnLabels || {};
 
-  // Drop charts with invalid column references (yCol may be null for count charts)
   const validHeaders = new Set(safe.headers);
-  plan.charts = plan.charts.filter(ch => {
+  const validChart = (ch) => {
     const xOk = validHeaders.has(ch.xCol);
     const yOk = ch.yCol === null || ch.yCol === undefined || ch.yCol === '' || validHeaders.has(ch.yCol);
-    if (!xOk || !yOk) dashLog('info', 'chart_drop', `"${ch.title}" — invalid cols xCol=${ch.xCol} yCol=${ch.yCol}`);
     return xOk && yOk;
-  });
+  };
+  const normChart = (ch) => ({ ...ch, yCol: ch.yCol || null });
 
-  // Normalise yCol null variants
-  plan.charts = plan.charts.map(ch => ({ ...ch, yCol: ch.yCol || null }));
+  // NEW tabs[] path — preferred
+  if (Array.isArray(plan.tabs) && plan.tabs.length > 0) {
+    plan.tabs = plan.tabs.map((t, i) => {
+      const charts = Array.isArray(t.charts) ? t.charts.filter(validChart).map(normChart) : [];
+      return {
+        id: (t.id || `tab${i}`).toString().slice(0, 40),
+        title: (t.title || `Tab ${i + 1}`).toString().slice(0, 60),
+        description: (t.description || '').toString().slice(0, 200),
+        summary: (t.summary || '').toString().slice(0, 280),
+        insights: Array.isArray(t.insights) ? t.insights.slice(0, 5).map(s => String(s).slice(0, 200)) : [],
+        charts,
+      };
+    }).filter(t => t.charts.length > 0 || t.id === 'insights' || /insight|summary/i.test(t.title));
+    plan.charts = []; // tabs[] takes precedence; legacy charts[] cleared
+    dashLog('info', 'plan_tabs', `tabs=${plan.tabs.length}, totalCharts=${plan.tabs.reduce((s, t) => s + t.charts.length, 0)}`);
+  } else {
+    // LEGACY flat charts[] path — keep working
+    plan.charts = (Array.isArray(plan.charts) ? plan.charts : []).filter(validChart).map(normChart);
+    plan.tabs = []; // explicit empty so client knows to wrap
+    dashLog('info', 'plan_flat', `charts=${plan.charts.length}`);
+  }
 
   const elapsed = Date.now() - t0;
-  dashLog('info', 'complete', `charts=${plan.charts.length}, elapsed=${elapsed}ms, source=${planSource}`);
+  dashLog('info', 'complete', `tabs=${plan.tabs.length}, flatCharts=${plan.charts.length}, elapsed=${elapsed}ms, source=${planSource}`);
+
+  // Track which provider served this dashboard plan (non-blocking, system-level)
+  try { await incrementUserQuota(getDb(c.env), '__system__', `ai-${planSource}`); } catch {}
 
   return c.json({ success: true, plan, source: planSource });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHARED DASHBOARD REPORTS — public read-only snapshots
+// Routes:
+//   POST   /api/share/dashboard            (auth) create snapshot, return token
+//   GET    /api/share/dashboard/:token     (public) fetch snapshot if not expired
+//   DELETE /api/share/dashboard/:token     (auth) revoke (owner only)
+//   GET    /api/share/dashboard/mine       (auth) list this user's shares
+// Snapshot JSON lives in R2 under shared-reports/{token}.json
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SHARE_R2_PREFIX = 'shared-reports/';
+const SHARE_MAX_BYTES = 800 * 1024; // 800KB max snapshot size
+
+// URL-safe random token (~22 chars)
+function makeShareToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  // Base64-URL without padding
+  let s = btoa(String.fromCharCode(...bytes));
+  return s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Map an EXPIRY string to a millisecond offset
+const SHARE_EXPIRY_MS = {
+  '1h':   60 * 60 * 1000,
+  '24h':  24 * 60 * 60 * 1000,
+  '7d':    7 * 24 * 60 * 60 * 1000,
+  '30d':  30 * 24 * 60 * 60 * 1000,
+};
+
+// Lazy cleanup — drop oldest expired rows + their R2 blobs (best-effort, non-blocking)
+async function lazyCleanupExpiredShares(env, limit = 25) {
+  try {
+    const db = getDb(env);
+    const now = Date.now();
+    const rows = await db.prepare(
+      `SELECT token, r2_key FROM shared_reports WHERE expires_at < ? OR revoked = 1 LIMIT ?`
+    ).bind(now, limit).all();
+    const list = rows.results || [];
+    if (!list.length) return;
+    for (const r of list) {
+      try { await env.MY_BUCKET?.delete(r.r2_key); } catch {}
+    }
+    const placeholders = list.map(() => '?').join(',');
+    await db.prepare(`DELETE FROM shared_reports WHERE token IN (${placeholders})`)
+      .bind(...list.map(r => r.token)).run();
+  } catch (err) {
+    console.warn('[share] lazy cleanup failed:', err.message);
+  }
+}
+
+// CREATE — auth required
+app.post('/api/share/dashboard', async (c) => {
+  const user = c.get('user');
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  let body;
+  try { body = await c.req.json(); } catch {
+    return c.json({ success: false, error: 'Invalid JSON' }, 400);
+  }
+
+  const { snapshot, expiry } = body || {};
+  if (!snapshot || typeof snapshot !== 'object') {
+    return c.json({ success: false, error: 'snapshot object required' }, 400);
+  }
+  if (!SHARE_EXPIRY_MS[expiry]) {
+    return c.json({ success: false, error: 'Invalid expiry. Use 1h | 24h | 7d | 30d' }, 400);
+  }
+
+  // Size guard
+  const snapStr = JSON.stringify(snapshot);
+  if (snapStr.length > SHARE_MAX_BYTES) {
+    return c.json({
+      success: false,
+      error: `Snapshot too large (${Math.round(snapStr.length / 1024)} KB, max ${Math.round(SHARE_MAX_BYTES/1024)} KB)`,
+      code: 'TOO_LARGE',
+    }, 413);
+  }
+
+  // Validate the snapshot shape minimally — must look like a dashboard
+  if (!snapshot.title || (!Array.isArray(snapshot.tabs) && !Array.isArray(snapshot.charts))) {
+    return c.json({ success: false, error: 'Invalid dashboard snapshot' }, 400);
+  }
+
+  // Generate token, write R2, insert D1 row
+  const token   = makeShareToken();
+  const r2Key   = `${SHARE_R2_PREFIX}${token}.json`;
+  const now     = Date.now();
+  const expires = now + SHARE_EXPIRY_MS[expiry];
+
+  // Strip sensitive / unnecessary fields from snapshot before storing
+  const cleanSnapshot = {
+    title: String(snapshot.title || 'Shared Report').slice(0, 120),
+    subtitle: String(snapshot.subtitle || '').slice(0, 200),
+    domain: snapshot.domain || null,
+    confidence: snapshot.confidence || null,
+    fileName: String(snapshot.fileName || '').slice(0, 80),
+    rowCount: Number(snapshot.rowCount) || 0,
+    createdAt: now,
+    expiresAt: expires,
+    insights: Array.isArray(snapshot.insights) ? snapshot.insights.slice(0, 10) : [],
+    summary: typeof snapshot.summary === 'string' ? snapshot.summary.slice(0, 600) : '',
+    tabs: Array.isArray(snapshot.tabs) ? snapshot.tabs : [],
+    charts: Array.isArray(snapshot.charts) ? snapshot.charts : [],
+    kpis: Array.isArray(snapshot.kpis) ? snapshot.kpis : [],
+    builtChartsData: snapshot.builtChartsData || null,
+    agentData: Array.isArray(snapshot.agentData) ? snapshot.agentData.slice(0, 20) : null,
+    showTable: false,
+    headers: Array.isArray(snapshot.headers) ? snapshot.headers : [],
+  };
+
+  try {
+    if (!c.env.MY_BUCKET) {
+      return c.json({ success: false, error: 'R2 storage not configured' }, 500);
+    }
+    await c.env.MY_BUCKET.put(r2Key, JSON.stringify(cleanSnapshot), {
+      httpMetadata: { contentType: 'application/json' },
+    });
+  } catch (err) {
+    return c.json({ success: false, error: 'Failed to store snapshot: ' + err.message }, 500);
+  }
+
+  try {
+    const db = getDb(c.env);
+    await db.prepare(`
+      INSERT INTO shared_reports (token, owner_user_id, title, file_name, row_count, domain, r2_key, created_at, expires_at, view_count, revoked)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+    `).bind(
+      token, user.id,
+      cleanSnapshot.title, cleanSnapshot.fileName, cleanSnapshot.rowCount,
+      cleanSnapshot.domain, r2Key, now, expires
+    ).run();
+  } catch (err) {
+    // Roll back R2 write
+    try { await c.env.MY_BUCKET?.delete(r2Key); } catch {}
+    return c.json({ success: false, error: 'Failed to save share: ' + err.message }, 500);
+  }
+
+  // Fire-and-forget cleanup
+  lazyCleanupExpiredShares(c.env);
+
+  return c.json({
+    success: true,
+    token,
+    expiresAt: expires,
+    expiresIn: expiry,
+  });
+});
+
+// READ — public, no auth required (token-gated)
+app.get('/api/share/dashboard/:token', async (c) => {
+  const token = c.req.param('token');
+  if (!token || !/^[A-Za-z0-9_-]{8,64}$/.test(token)) {
+    return c.json({ success: false, error: 'Invalid token format', code: 'BAD_TOKEN' }, 400);
+  }
+
+  const db = getDb(c.env);
+  const row = await db.prepare(
+    `SELECT token, r2_key, expires_at, revoked, view_count FROM shared_reports WHERE token = ?`
+  ).bind(token).first();
+
+  if (!row) {
+    return c.json({ success: false, error: 'Report not found', code: 'NOT_FOUND' }, 404);
+  }
+
+  const now = Date.now();
+  if (row.revoked === 1) {
+    return c.json({ success: false, error: 'This report link has been revoked', code: 'REVOKED' }, 410);
+  }
+  if (now > Number(row.expires_at)) {
+    // Lazy delete expired
+    try { await c.env.MY_BUCKET?.delete(row.r2_key); } catch {}
+    try { await db.prepare(`DELETE FROM shared_reports WHERE token = ?`).bind(token).run(); } catch {}
+    return c.json({ success: false, error: 'This report link has expired', code: 'EXPIRED' }, 410);
+  }
+
+  if (!c.env.MY_BUCKET) {
+    return c.json({ success: false, error: 'Storage unavailable' }, 500);
+  }
+  const obj = await c.env.MY_BUCKET.get(row.r2_key);
+  if (!obj) {
+    try { await db.prepare(`DELETE FROM shared_reports WHERE token = ?`).bind(token).run(); } catch {}
+    return c.json({ success: false, error: 'Report snapshot missing', code: 'MISSING_BLOB' }, 410);
+  }
+  let snapshot;
+  try {
+    snapshot = JSON.parse(await obj.text());
+  } catch {
+    return c.json({ success: false, error: 'Snapshot corrupted' }, 500);
+  }
+
+  // Best-effort view counter (non-blocking)
+  try {
+    await db.prepare(`UPDATE shared_reports SET view_count = view_count + 1 WHERE token = ?`).bind(token).run();
+  } catch {}
+
+  return c.json({
+    success: true,
+    snapshot,
+    expiresAt: Number(row.expires_at),
+  });
+});
+
+// REVOKE — owner only
+app.delete('/api/share/dashboard/:token', async (c) => {
+  const user = c.get('user');
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+  const token = c.req.param('token');
+  if (!token) return c.json({ success: false, error: 'Token required' }, 400);
+
+  const db = getDb(c.env);
+  const row = await db.prepare(
+    `SELECT owner_user_id, r2_key FROM shared_reports WHERE token = ?`
+  ).bind(token).first();
+
+  if (!row) return c.json({ success: false, error: 'Not found' }, 404);
+  if (Number(row.owner_user_id) !== Number(user.id)) {
+    return c.json({ success: false, error: 'Forbidden' }, 403);
+  }
+
+  try { await c.env.MY_BUCKET?.delete(row.r2_key); } catch {}
+  await db.prepare(`DELETE FROM shared_reports WHERE token = ?`).bind(token).run();
+  return c.json({ success: true });
+});
+
+// LIST — owner's active shares (for management UI)
+app.get('/api/share/dashboard/mine/list', async (c) => {
+  const user = c.get('user');
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+  const db = getDb(c.env);
+  const now = Date.now();
+  const rows = await db.prepare(
+    `SELECT token, title, file_name, row_count, domain, created_at, expires_at, view_count
+       FROM shared_reports
+      WHERE owner_user_id = ? AND revoked = 0 AND expires_at > ?
+      ORDER BY created_at DESC LIMIT 50`
+  ).bind(user.id, now).all();
+  return c.json({ success: true, shares: rows.results || [] });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

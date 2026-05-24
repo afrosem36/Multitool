@@ -1,6 +1,6 @@
-// ─── AI Enhancement Helpers — Fallback: Gemini → OpenAI (backend) → Puter AI ──
-// Groq is reserved exclusively for audio transcription (Whisper).
-// All text analysis / QA / refinement uses the centralized /api/ai/generate endpoint.
+// ─── AI Enhancement Helpers — Backend chain: Gemini → OpenAI → Groq ──
+// All text analysis / QA / refinement uses the centralized /api/ai/generate endpoint
+// which runs the full Gemini → OpenAI → Groq llama-3.3-70b fallback server-side.
 
 function extractContent(value) {
   if (typeof value === 'string') return value.trim();
@@ -17,13 +17,13 @@ function extractContent(value) {
 function extractTextFromResponse(response) {
   if (typeof response === 'string') return response.trim();
 
-  // OpenAI / Groq / Puter choices array
+  // OpenAI / Groq choices array
   if (Array.isArray(response?.choices)) {
     const content = response.choices[0]?.message?.content;
     if (content != null) return extractContent(content);
   }
 
-  // Puter single-choice object  { message: { content } }
+  // Direct message wrapper
   if (response?.message?.content != null) return extractContent(response.message.content);
 
   // Flat content field
@@ -42,32 +42,11 @@ function getDisabledProviders() {
   try { return JSON.parse(localStorage.getItem('ai_disabled_providers') || '[]'); } catch { return []; }
 }
 
-// Flow: Puter AI (browser) → Gemini Flash → OpenAI gpt-4.1-mini
+// Flow: backend runs Gemini 3.1 Flash Lite → OpenAI gpt-4.1-mini → Groq llama-3.3-70b
 // Skips any provider the admin has toggled off in the AI Monitor panel.
 export async function callAI(messages, { apiFetch, onProvider }) {
   const disabled = getDisabledProviders();
 
-  // 1. Puter AI — free, browser-based, no backend cost
-  if (!disabled.includes('puter')) {
-    try {
-      const { puter } = await import('@heyputer/puter.js');
-      if (puter?.ai) {
-        const response = await puter.ai.chat(messages, { stream: false });
-        const text = extractTextFromResponse(response);
-        if (text?.trim()) {
-          onProvider?.('puter');
-          return text.trim();
-        }
-      }
-    } catch (puterErr) {
-      console.warn('[AI] Puter failed:', puterErr.message);
-    }
-  } else {
-    console.info('[AI] Puter skipped — disabled by admin');
-  }
-
-  // 2. Backend: Gemini Flash → OpenAI gpt-4.1-mini (server-side fallback chain)
-  // Pass disabled list so the backend also skips those providers
   try {
     const res = await apiFetch('/api/ai/generate', {
       method:  'POST',
