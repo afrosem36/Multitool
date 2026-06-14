@@ -41,6 +41,12 @@ const SQL_SNIPPETS = [
   { label: 'Monthly trend', apply: 'SELECT STRFTIME(\'%Y-%m\', "") AS month,\n  COUNT(*) AS records\nFROM ""\nGROUP BY month\nORDER BY month;', detail: 'date grouping' },
 ];
 
+function sqlIdentifierApply(name) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+    ? name
+    : `"${String(name).replace(/"/g, '""')}"`;
+}
+
 // ─── sql.js singleton ──────────────────────────────────────────────────────────
 const CDN_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
 const CDN_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.wasm';
@@ -1326,7 +1332,7 @@ export default function SqlPractice() {
         const table = tablesRef.current.find(t => t.name === aliases.get(aliasPrefix));
         const options = (table?.columns || [])
           .filter(c => c.toLowerCase().startsWith(colPrefix))
-          .map(c => ({ label: c, apply: `"${c}"`, type: 'property', detail: table.name, boost: 50 }));
+          .map(c => ({ label: c, apply: sqlIdentifierApply(c), type: 'property', detail: table.name, boost: 50 }));
         return { from: word.from + aliasPrefix.length + 1, options, validFor: /^[\w]*$/ };
       }
 
@@ -1337,12 +1343,12 @@ export default function SqlPractice() {
       for (const [alias, tbl] of aliases) opts.push({ label: alias, apply: `${alias}.`, type: 'variable', detail: `alias for ${tbl}`, boost: 35 });
       if (selCtx || ctx.explicit) {
         for (const t of tablesRef.current) {
-          for (const c of t.columns) opts.push({ label: c, apply: `"${c}"`, type: 'property', detail: t.name, boost: 25 });
+          for (const c of t.columns) opts.push({ label: c, apply: sqlIdentifierApply(c), type: 'property', detail: t.name, boost: 25 });
         }
       }
 
       // Context-specific suggestions
-      if (fromCtx || ctx.explicit) for (const t of tablesRef.current) opts.push({ label: t.name, apply: `"${t.name}"`, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 30 });
+      if (fromCtx || ctx.explicit) for (const t of tablesRef.current) opts.push({ label: t.name, apply: sqlIdentifierApply(t.name), type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 30 });
 
       // Keywords (lowest priority)
       for (const kw of SQL_KW) opts.push({ label: kw, type: 'keyword', boost: 1 });
