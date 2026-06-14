@@ -31,6 +31,10 @@ import RelatedTools from '../../components/shared/RelatedTools';
 const PAGE_SIZE = 50;
 const CHART_COLORS = ['#6366f1','#8b5cf6','#d946ef','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
 const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','FULL','CROSS','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','REPLACE','SUBSTR','INSTR','COALESCE','NULLIF','ABS','TYPEOF','CAST','HOUR','MINUTE','SECOND','MONTH','YEAR','DAY','QUARTER','WEEK','MONTHNAME','DAYNAME','DAYOFWEEK','DATEDIFF','DATEADD','DENSE_RANK','RANK','ROW_NUMBER','OVER','PARTITION','WITH','CREATE','TABLE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','DROP','ALTER','VIEW','INDEX','UNIQUE','PRIMARY','KEY','FOREIGN','REFERENCES','DEFAULT','AUTOINCREMENT','EXISTS','IF','IIF','NOT','ISNULL','NVL','CONCAT','LEFT','RIGHT','REVERSE','LPAD','RPAD','REPEAT','CEIL','CEILING','FLOOR','POWER','POW','SQRT','MOD','LOG','LOG10','EXP','SIGN','GREATEST','LEAST','PRINTF','DATE','TIME','DATETIME','CURRENT_DATE','CURRENT_TIMESTAMP','EXPLAIN','PRAGMA'];
+const SQL_PRACTICE_DB_NAME = 'sql-practice-storage-v1';
+const SQL_PRACTICE_STORE = 'snapshots';
+const SQL_PRACTICE_KEY = 'current-db';
+const SQL_PRACTICE_FALLBACK_KEY = 'sql-practice-db-snapshot-v1';
 const SQL_SNIPPETS = [
   { label: 'SELECT template', apply: 'SELECT *\nFROM ""\nLIMIT 10;', detail: 'query starter' },
   { label: 'GROUP BY aggregate', apply: 'SELECT "", COUNT(*) AS count\nFROM ""\nGROUP BY ""\nORDER BY count DESC;', detail: 'aggregate query' },
@@ -45,6 +49,10 @@ function sqlIdentifierApply(name) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
     ? name
     : `"${String(name).replace(/"/g, '""')}"`;
+}
+
+function quoteSqlIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
 }
 
 // ─── sql.js singleton ──────────────────────────────────────────────────────────
@@ -191,7 +199,14 @@ self.onmessage = async ({ data }) => {
       const elapsed = (performance.now() - t0).toFixed(1);
       const rowsModified = db.getRowsModified ? db.getRowsModified() : 0;
       const schema = getSchema();
-      self.postMessage({ type: 'result', res: res||[], elapsed, rowsModified, schema, msgId: data.msgId });
+      const snapshot = data.persist ? db.export() : null;
+      const payload = { type: 'result', res: res||[], elapsed, rowsModified, schema, msgId: data.msgId };
+      if (snapshot) {
+        payload.dbBuffer = snapshot.buffer;
+        self.postMessage(payload, [snapshot.buffer]);
+      } else {
+        self.postMessage(payload);
+      }
     } catch(e) { self.postMessage({ type: 'error', error: e.message, msgId: data.msgId }); }
   }
 };
@@ -230,6 +245,71 @@ let _enginePromise = null;
 function getSqlEngine() {
   if (!_enginePromise) _enginePromise = _loadEngine().catch(err => { _enginePromise = null; throw err; });
   return _enginePromise;
+}
+
+function openPracticeStore() {
+  if (typeof indexedDB === 'undefined') return Promise.reject(new Error('IndexedDB unavailable'));
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SQL_PRACTICE_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(SQL_PRACTICE_STORE);
+    req.onerror = () => reject(req.error || new Error('Could not open SQL practice storage'));
+    req.onsuccess = () => resolve(req.result);
+  });
+}
+
+function idbRequest(mode, action) {
+  return openPracticeStore().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(SQL_PRACTICE_STORE, mode);
+    const store = tx.objectStore(SQL_PRACTICE_STORE);
+    const req = action(store);
+    let result;
+    req.onerror = () => reject(req.error || new Error('SQL practice storage request failed'));
+    req.onsuccess = () => { result = req.result; };
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onerror = () => { db.close(); reject(tx.error || new Error('SQL practice storage transaction failed')); };
+  }));
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function savePersistedDb(bytesLike) {
+  const bytes = bytesLike instanceof Uint8Array
+    ? bytesLike.slice()
+    : new Uint8Array(bytesLike).slice();
+  try {
+    await idbRequest('readwrite', store => store.put(bytes.buffer, SQL_PRACTICE_KEY));
+    localStorage.removeItem(SQL_PRACTICE_FALLBACK_KEY);
+  } catch {
+    localStorage.setItem(SQL_PRACTICE_FALLBACK_KEY, bytesToBase64(bytes));
+  }
+}
+
+async function loadPersistedDb() {
+  try {
+    const stored = await idbRequest('readonly', store => store.get(SQL_PRACTICE_KEY));
+    if (stored) return stored instanceof ArrayBuffer ? new Uint8Array(stored) : new Uint8Array(stored.buffer || stored);
+  } catch { /* fall through to localStorage */ }
+  const fallback = localStorage.getItem(SQL_PRACTICE_FALLBACK_KEY);
+  return fallback ? base64ToBytes(fallback) : null;
+}
+
+async function clearPersistedDb() {
+  try { await idbRequest('readwrite', store => store.delete(SQL_PRACTICE_KEY)); } catch { /* ignore */ }
+  localStorage.removeItem(SQL_PRACTICE_FALLBACK_KEY);
 }
 
 function sqlNum(v) {
@@ -338,10 +418,10 @@ async function buildDb(tables) {
   const db = new SQL.Database();
   registerSqlFunctions(db);
   for (const t of tables) {
-    db.run(`CREATE TABLE IF NOT EXISTS "${t.name}" (${t.columns.map(c => `"${c}" TEXT`).join(', ')})`);
+    db.run(`CREATE TABLE IF NOT EXISTS ${quoteSqlIdentifier(t.name)} (${t.columns.map(c => `${quoteSqlIdentifier(c)} TEXT`).join(', ')})`);
     if (t.rows.length > 0) {
       const ph = t.columns.map(() => '?').join(', ');
-      const stmt = db.prepare(`INSERT INTO "${t.name}" VALUES (${ph})`);
+      const stmt = db.prepare(`INSERT INTO ${quoteSqlIdentifier(t.name)} VALUES (${ph})`);
       for (const row of t.rows) stmt.run(t.columns.map(c => {
         const v = row[c];
         return typeof v === 'string' ? v.trim() : String(v ?? '');
@@ -350,6 +430,30 @@ async function buildDb(tables) {
     }
   }
   return db;
+}
+
+function extractTablesFromDb(sourceDb) {
+  const tableResult = sourceDb.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+  if (!tableResult.length) return [];
+  return tableResult[0].values.map(([name]) => {
+    const pragma = sourceDb.exec(`PRAGMA table_info(${quoteSqlIdentifier(name)})`);
+    const columns = pragma.length ? pragma[0].values.map(row => row[1]) : [];
+    const rowsResult = columns.length ? sourceDb.exec(`SELECT * FROM ${quoteSqlIdentifier(name)}`) : [];
+    const rows = (rowsResult[0]?.values || []).map(values => {
+      const row = {};
+      columns.forEach((column, index) => { row[column] = values[index] ?? ''; });
+      return row;
+    });
+    return { name, columns, rows };
+  });
+}
+
+function isPersistentSql(sql) {
+  const cleaned = String(sql || '')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .trim();
+  return /^(CREATE|DROP|ALTER|INSERT|UPDATE|DELETE|REPLACE)\b/i.test(cleaned);
 }
 
 // ─── File parsing ──────────────────────────────────────────────────────────────
@@ -881,6 +985,7 @@ export default function SqlPractice() {
   const [error,          setError]          = useState('');
   const [loading,        setLoading]        = useState(false);
   const [uploading,      setUploading]      = useState(false);
+  const [restoringDb,    setRestoringDb]    = useState(true);
   const [execTime,       setExecTime]       = useState(null);
   const [activeTable,    setActiveTable]    = useState('');
   const [page,           setPage]           = useState(1);
@@ -985,6 +1090,38 @@ export default function SqlPractice() {
   // ── WASM warm-up ───────────────────────────────────────────────────────────────
   useEffect(() => { getSqlEngine().catch(() => {}); }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const bytes = await loadPersistedDb();
+        if (!bytes?.byteLength) return;
+        const SQL = await getSqlEngine();
+        const restoredDb = new SQL.Database(bytes);
+        registerSqlFunctions(restoredDb);
+        const restoredTables = extractTablesFromDb(restoredDb);
+        if (cancelled) {
+          restoredDb.close();
+          return;
+        }
+        dbRef.current = restoredDb;
+        workerReadyRef.current = false;
+        setTables(restoredTables);
+        setScratchMode(false);
+        const firstTable = restoredTables[0]?.name || '';
+        setActiveTable(firstTable);
+        setPreviewTable(firstTable);
+        if (firstTable && !queryRef.current) setQuery(`SELECT *\nFROM ${quoteSqlIdentifier(firstTable)}\nLIMIT 10;`);
+      } catch (e) {
+        console.warn('Could not restore SQL practice database', e);
+        await clearPersistedDb();
+      } finally {
+        if (!cancelled) setRestoringDb(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Cmd+K global shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
     const handler = e => {
@@ -1007,6 +1144,24 @@ export default function SqlPractice() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showHistory, showOverflow]);
 
+  const persistTablesSnapshot = useCallback(async (nextTables) => {
+    workerReadyRef.current = false;
+    if (!nextTables.length) {
+      if (dbRef.current) {
+        try { dbRef.current.close(); } catch { /* ignore */ }
+      }
+      dbRef.current = null;
+      await clearPersistedDb();
+      return;
+    }
+    const nextDb = await buildDb(nextTables);
+    if (dbRef.current && dbRef.current !== nextDb) {
+      try { dbRef.current.close(); } catch { /* ignore */ }
+    }
+    dbRef.current = nextDb;
+    await savePersistedDb(nextDb.export());
+  }, []);
+
   // ── File handling ───────────────────────────────────────────────────────────────
   const handleFiles = useCallback(async (files) => {
     if (!files?.length) return;
@@ -1019,18 +1174,17 @@ export default function SqlPractice() {
         if (idx >= 0) merged[idx] = t; else merged.push(t);
       }
       setTables(merged);
+      await persistTablesSnapshot(merged);
       setActiveTable(merged[0].name);
       setScratchMode(false);
-      dbRef.current = null;
-      workerReadyRef.current = false;
-      setQuery(`SELECT *\nFROM "${parsed[0].name}"\nLIMIT 10;`);
+      setQuery(`SELECT *\nFROM ${quoteSqlIdentifier(parsed[0].name)}\nLIMIT 10;`);
       toast.success(`Loaded ${parsed.map(t => t.name).join(', ')} — ready to query!`);
     } catch (e) {
       toast.error(e.message || 'Could not parse file');
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [persistTablesSnapshot]);
 
   const handleSampleData = useCallback(async () => {
     setUploading(true);
@@ -1040,18 +1194,17 @@ export default function SqlPractice() {
       const idx = merged.findIndex(x => x.name === t.name);
       if (idx >= 0) merged[idx] = t; else merged.push(t);
       setTables(merged);
+      await persistTablesSnapshot(merged);
       setActiveTable(t.name);
       setScratchMode(false);
-      dbRef.current = null;
-      workerReadyRef.current = false;
-      setQuery(`SELECT *\nFROM "${t.name}"\nLIMIT 10;`);
+      setQuery(`SELECT *\nFROM ${quoteSqlIdentifier(t.name)}\nLIMIT 10;`);
       toast.success(`Loaded sample pizza sales data — ready to query!`);
     } catch (e) {
       toast.error('Could not load sample data');
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [persistTablesSnapshot]);
 
   // ── Run SQL ─────────────────────────────────────────────────────────────────────
   const runQuery = useCallback(async (sqlOverride) => {
@@ -1065,7 +1218,7 @@ export default function SqlPractice() {
     if (clauseOnly) {
       const activeT = tablesRef.current.find(t => t.name === activeTableRef.current) || tablesRef.current[0];
       if (activeT) {
-        sql = `SELECT *\nFROM "${activeT.name}"\n${sql.trim()}`;
+        sql = `SELECT *\nFROM ${quoteSqlIdentifier(activeT.name)}\n${sql.trim()}`;
         setQuery(sql);
       }
     }
@@ -1098,14 +1251,40 @@ export default function SqlPractice() {
         workerReadyRef.current = true;
       }
 
+      const shouldPersist = isPersistentSql(sql);
       const execId = ++queryMsgIdRef.current;
-      const { res, elapsed, rowsModified, schema } = await send({ type: 'exec', sql, msgId: execId });
+      const { res, elapsed, rowsModified, schema, dbBuffer } = await send({ type: 'exec', sql, persist: shouldPersist, msgId: execId });
       if (execId !== queryMsgIdRef.current) return;
 
       setExecTime(elapsed);
 
       // Sync tables state from worker schema (DDL may have added/dropped tables)
-      if (schema) {
+      if (dbBuffer) {
+        await savePersistedDb(dbBuffer);
+        const SQL = await getSqlEngine();
+        const updatedDb = new SQL.Database(new Uint8Array(dbBuffer));
+        registerSqlFunctions(updatedDb);
+        const updatedTables = extractTablesFromDb(updatedDb);
+        if (dbRef.current && dbRef.current !== updatedDb) {
+          try { dbRef.current.close(); } catch { /* ignore */ }
+        }
+        dbRef.current = updatedDb;
+        setTables(updatedTables);
+        setActiveTable(at => {
+          const names = new Set(updatedTables.map(t => t.name));
+          const next = names.has(at) ? at : (updatedTables[0]?.name || '');
+          if (next) setPreviewTable(next);
+          else {
+            setPreviewTable('');
+            setPreviewData(null);
+            setPreviewError('');
+          }
+          setTimeout(() => {
+            if (next) runPreview(next, previewLimitRef.current);
+          }, 80);
+          return next;
+        });
+      } else if (schema) {
         setTables(prevTables => {
           const existing = new Map(prevTables.map(t => [t.name, t]));
           const newTables = schema.map(s => {
@@ -1225,14 +1404,16 @@ export default function SqlPractice() {
   const removeTable = useCallback((name) => {
     const updated = tablesRef.current.filter(t => t.name !== name);
     setTables(updated);
-    dbRef.current = null;
-    workerReadyRef.current = false;
+    persistTablesSnapshot(updated).catch(e => {
+      console.warn('Could not persist SQL practice table removal', e);
+      toast.error('Table removed, but browser storage could not be updated.');
+    });
     if (activeTable === name) {
       setActiveTable(updated[0]?.name || '');
-      setQuery(updated[0] ? `SELECT *\nFROM "${updated[0].name}"\nLIMIT 10;` : '');
+      setQuery(updated[0] ? `SELECT *\nFROM ${quoteSqlIdentifier(updated[0].name)}\nLIMIT 10;` : '');
     }
     if (!updated.length) setResults(null);
-  }, [activeTable]);
+  }, [activeTable, persistTablesSnapshot]);
 
   // ── Starter click ───────────────────────────────────────────────────────────────
   const runStarter = useCallback((sql) => {
@@ -1597,6 +1778,18 @@ export default function SqlPractice() {
   // ─────────────────────────────────────────────────────────────────────────────
   // ── UPLOAD SCREEN ────────────────────────────────────────────────────────────
   // ─────────────────────────────────────────────────────────────────────────────
+  if (restoringDb && !tables.length && !scratchMode) {
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
+        <ToolHeader title="SQL Practice" description="Restoring your saved browser database." icon={Database} toolId="sql-practice"/>
+        <div className="sp-panel" style={{ maxWidth:520, margin:'2.5rem auto', padding:'2rem', textAlign:'center' }}>
+          <RefreshCw size={24} style={{ animation:'spin 0.9s linear infinite', color:'#a5b4fc', marginBottom:'0.8rem' }}/>
+          <div style={{ color:'var(--text-primary)', fontWeight:700 }}>Restoring saved tables...</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!tables.length && !scratchMode) {
     return (
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
