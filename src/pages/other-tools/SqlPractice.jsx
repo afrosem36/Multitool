@@ -1299,6 +1299,7 @@ export default function SqlPractice() {
   // ── CodeMirror setup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!editorContainerRef.current || editorViewRef.current) return;
+    const sqlSupport = sqlLang();
 
     const customCompletion = ctx => {
       const word = ctx.matchBefore(/[\w.]*/);
@@ -1360,7 +1361,11 @@ export default function SqlPractice() {
       state: EditorState.create({
         doc: queryRef.current,
         extensions: [
-          sqlLang(), isDark ? oneDark : [], isDark ? CM_DARK_THEME : CM_LIGHT_THEME,
+          sqlSupport,
+          sqlSupport.language.data.of({
+            closeBrackets: { brackets: ['(', "'", '"'] },
+          }),
+          isDark ? oneDark : [], isDark ? CM_DARK_THEME : CM_LIGHT_THEME,
           lineNumbers(), highlightActiveLine(),
           closeBrackets(),
           ...buildGhostExt(tablesRef),
