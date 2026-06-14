@@ -1,15 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Database, Play, Upload, Trash2, Table, Clock,
-  BarChart2, Download, ChevronLeft, ChevronRight, ChevronRight as ChevronCollapse, X, Copy,
-  Check, RefreshCw, ExternalLink, Zap, Eye, Hash,
+  Database, Play, Upload, Table, Clock,
+  BarChart2, Download, ChevronLeft, ChevronRight, X, Copy,
+  RefreshCw, ExternalLink, Zap, Eye, Hash,
   Filter, TrendingUp, Search, ArrowUp, ArrowDown,
-  Command, MoreHorizontal, ChevronLeft as CollapseLeft,
+  Command, MoreHorizontal,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
-  ScatterChart, Scatter, ZAxis, ComposedChart,
+  ScatterChart, Scatter, ZAxis,
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -21,7 +21,7 @@ import {
 import { defaultKeymap } from '@codemirror/commands';
 import { sql as sqlLang } from '@codemirror/lang-sql';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-hot-toast';
 import ToolHeader from '../../components/shared/ToolHeader';
@@ -30,7 +30,16 @@ import RelatedTools from '../../components/shared/RelatedTools';
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
 const CHART_COLORS = ['#6366f1','#8b5cf6','#d946ef','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
-const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','FULL','CROSS','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','REPLACE','SUBSTR','INSTR','COALESCE','NULLIF','ABS','TYPEOF','CAST','HOUR','MINUTE','MONTH','YEAR','DAY','MONTHNAME','DAYNAME','DAYOFWEEK','DENSE_RANK','RANK','ROW_NUMBER','OVER','PARTITION','WITH','CREATE','TABLE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','DROP','ALTER','VIEW','INDEX','UNIQUE','PRIMARY','KEY','FOREIGN','REFERENCES','DEFAULT','AUTOINCREMENT','EXISTS','IF','NOT','ISNULL','NVL','CONCAT','LPAD','RPAD','PRINTF','DATE','TIME','DATETIME','CURRENT_DATE','CURRENT_TIMESTAMP','EXPLAIN','PRAGMA'];
+const SQL_KW = ['SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','DISTINCT','AS','JOIN','LEFT','RIGHT','INNER','FULL','CROSS','ON','COUNT','SUM','AVG','MIN','MAX','CASE','WHEN','THEN','ELSE','END','BETWEEN','UNION','ALL','ASC','DESC','ROUND','STRFTIME','LENGTH','UPPER','LOWER','TRIM','REPLACE','SUBSTR','INSTR','COALESCE','NULLIF','ABS','TYPEOF','CAST','HOUR','MINUTE','SECOND','MONTH','YEAR','DAY','QUARTER','WEEK','MONTHNAME','DAYNAME','DAYOFWEEK','DATEDIFF','DATEADD','DENSE_RANK','RANK','ROW_NUMBER','OVER','PARTITION','WITH','CREATE','TABLE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','DROP','ALTER','VIEW','INDEX','UNIQUE','PRIMARY','KEY','FOREIGN','REFERENCES','DEFAULT','AUTOINCREMENT','EXISTS','IF','IIF','NOT','ISNULL','NVL','CONCAT','LEFT','RIGHT','REVERSE','LPAD','RPAD','REPEAT','CEIL','CEILING','FLOOR','POWER','POW','SQRT','MOD','LOG','LOG10','EXP','SIGN','GREATEST','LEAST','PRINTF','DATE','TIME','DATETIME','CURRENT_DATE','CURRENT_TIMESTAMP','EXPLAIN','PRAGMA'];
+const SQL_SNIPPETS = [
+  { label: 'SELECT template', apply: 'SELECT *\nFROM ""\nLIMIT 10;', detail: 'query starter' },
+  { label: 'GROUP BY aggregate', apply: 'SELECT "", COUNT(*) AS count\nFROM ""\nGROUP BY ""\nORDER BY count DESC;', detail: 'aggregate query' },
+  { label: 'JOIN template', apply: 'SELECT a.*, b.*\nFROM "" a\nINNER JOIN "" b\n  ON a."" = b."";', detail: 'join query' },
+  { label: 'CASE expression', apply: 'CASE\n  WHEN  THEN \n  ELSE \nEND', detail: 'conditional value' },
+  { label: 'WITH CTE', apply: 'WITH base AS (\n  SELECT *\n  FROM ""\n)\nSELECT *\nFROM base;', detail: 'common table expression' },
+  { label: 'ROW_NUMBER window', apply: 'ROW_NUMBER() OVER (PARTITION BY "" ORDER BY "" DESC) AS row_num', detail: 'window function' },
+  { label: 'Monthly trend', apply: 'SELECT STRFTIME(\'%Y-%m\', "") AS month,\n  COUNT(*) AS records\nFROM ""\nGROUP BY month\nORDER BY month;', detail: 'date grouping' },
+];
 
 // ─── sql.js singleton ──────────────────────────────────────────────────────────
 const CDN_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
@@ -42,22 +51,105 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 let db = null;
 
+function num(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).replace(/[$,%\\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).trim();
+  const normalized = /^\\d{4}-\\d{1,2}-\\d{1,2}$/.test(s) ? s + 'T00:00:00Z' : s;
+  const d = new Date(normalized);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function datePart(part, v) {
+  const d = parseDate(v);
+  if (!d) return null;
+  const p = String(part || '').toLowerCase();
+  if (p === 'year' || p === 'yy' || p === 'yyyy') return d.getUTCFullYear();
+  if (p === 'quarter' || p === 'qq' || p === 'q') return Math.floor(d.getUTCMonth() / 3) + 1;
+  if (p === 'month' || p === 'mm' || p === 'm') return d.getUTCMonth() + 1;
+  if (p === 'day' || p === 'dd' || p === 'd') return d.getUTCDate();
+  if (p === 'hour' || p === 'hh') return d.getUTCHours();
+  if (p === 'minute' || p === 'mi' || p === 'n') return d.getUTCMinutes();
+  if (p === 'second' || p === 'ss' || p === 's') return d.getUTCSeconds();
+  if (p === 'weekday' || p === 'dow') return d.getUTCDay() + 1;
+  return null;
+}
+
+function addDate(part, amount, value) {
+  const d = parseDate(value);
+  const n = Number(amount);
+  if (!d || !Number.isFinite(n)) return null;
+  const p = String(part || '').toLowerCase();
+  if (p === 'year' || p === 'yy' || p === 'yyyy') d.setUTCFullYear(d.getUTCFullYear() + n);
+  else if (p === 'quarter' || p === 'qq' || p === 'q') d.setUTCMonth(d.getUTCMonth() + n * 3);
+  else if (p === 'month' || p === 'mm' || p === 'm') d.setUTCMonth(d.getUTCMonth() + n);
+  else if (p === 'hour' || p === 'hh') d.setUTCHours(d.getUTCHours() + n);
+  else if (p === 'minute' || p === 'mi' || p === 'n') d.setUTCMinutes(d.getUTCMinutes() + n);
+  else if (p === 'second' || p === 'ss' || p === 's') d.setUTCSeconds(d.getUTCSeconds() + n);
+  else d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function diffDate(args) {
+  const hasPart = args.length >= 3;
+  const part = hasPart ? String(args[0] || 'day').toLowerCase() : 'day';
+  const a = parseDate(args[hasPart ? 1 : 0]);
+  const b = parseDate(args[hasPart ? 2 : 1]);
+  if (!a || !b) return null;
+  const ms = b - a;
+  if (part === 'year') return b.getUTCFullYear() - a.getUTCFullYear();
+  if (part === 'month') return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  if (part === 'hour') return Math.trunc(ms / 3600000);
+  if (part === 'minute') return Math.trunc(ms / 60000);
+  if (part === 'second') return Math.trunc(ms / 1000);
+  return Math.trunc(ms / 86400000);
+}
+
 function regFns(d) {
   d.create_function('HOUR',      v => v ? +String(v).slice(11,13)||0 : null);
   d.create_function('MINUTE',    v => v ? +String(v).slice(14,16)||0 : null);
+  d.create_function('SECOND',    v => v ? +String(v).slice(17,19)||0 : null);
   d.create_function('MONTH',     v => v ? +String(v).slice(5,7)||0   : null);
   d.create_function('YEAR',      v => v ? +String(v).slice(0,4)||0   : null);
   d.create_function('DAY',       v => v ? +String(v).slice(8,10)||0  : null);
+  d.create_function('QUARTER',   v => { const d = parseDate(v); return d ? Math.floor(d.getUTCMonth() / 3) + 1 : null; });
+  d.create_function('WEEK',      v => { const d = parseDate(v); if(!d) return null; const first = Date.UTC(d.getUTCFullYear(),0,1); return Math.floor(((d - first) / 86400000 + new Date(first).getUTCDay()) / 7) + 1; });
+  d.create_function('DATEPART',  (part, v) => datePart(part, v));
   d.create_function('MONTHNAME', v => { if(!v) return null; return MONTHS[+String(v).slice(5,7)-1]||null; });
   d.create_function('DAYNAME',   v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:DAYS[t.getUTCDay()]; });
   d.create_function('DAYOFWEEK', v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:t.getUTCDay()+1; });
+  d.create_function('DATEDIFF',  (...args) => diffDate(args));
+  d.create_function('DATEADD',   (part, amount, value) => addDate(part, amount, value));
   // ISNULL / NVL compat
   d.create_function('ISNULL',    (v, def) => (v === null || v === undefined || v === '') ? def : v);
   d.create_function('NVL',       (v, def) => (v === null || v === undefined || v === '') ? def : v);
   d.create_function('IF',        (cond, a, b) => cond ? a : b);
+  d.create_function('IIF',       (cond, a, b) => cond ? a : b);
   d.create_function('CONCAT',    (...args) => args.map(v => v ?? '').join(''));
+  d.create_function('LEFT',      (s, n) => String(s ?? '').slice(0, Math.max(0, Number(n) || 0)));
+  d.create_function('RIGHT',     (s, n) => { const str = String(s ?? ''); return str.slice(Math.max(0, str.length - (Number(n) || 0))); });
+  d.create_function('REVERSE',   s => String(s ?? '').split('').reverse().join(''));
   d.create_function('LPAD',      (s, n, p) => String(s ?? '').padStart(n, p ?? ' '));
   d.create_function('RPAD',      (s, n, p) => String(s ?? '').padEnd(n, p ?? ' '));
+  d.create_function('REPEAT',    (s, n) => String(s ?? '').repeat(Math.max(0, Number(n) || 0)));
+  d.create_function('CEIL',      v => { const n = num(v); return n === null ? null : Math.ceil(n); });
+  d.create_function('CEILING',   v => { const n = num(v); return n === null ? null : Math.ceil(n); });
+  d.create_function('FLOOR',     v => { const n = num(v); return n === null ? null : Math.floor(n); });
+  d.create_function('POWER',     (a, b) => Math.pow(num(a) ?? 0, num(b) ?? 0));
+  d.create_function('POW',       (a, b) => Math.pow(num(a) ?? 0, num(b) ?? 0));
+  d.create_function('SQRT',      v => { const n = num(v); return n === null ? null : Math.sqrt(n); });
+  d.create_function('MOD',       (a, b) => { const x = num(a), y = num(b); return x === null || !y ? null : x % y; });
+  d.create_function('LOG',       v => { const n = num(v); return n && n > 0 ? Math.log(n) : null; });
+  d.create_function('LOG10',     v => { const n = num(v); return n && n > 0 ? Math.log10(n) : null; });
+  d.create_function('EXP',       v => { const n = num(v); return n === null ? null : Math.exp(n); });
+  d.create_function('SIGN',      v => { const n = num(v); return n === null ? null : Math.sign(n); });
+  d.create_function('GREATEST',  (...args) => { const vals = args.filter(v => v !== null && v !== undefined && v !== ''); return vals.length ? Math.max(...vals.map(v => num(v) ?? Number.NEGATIVE_INFINITY)) : null; });
+  d.create_function('LEAST',     (...args) => { const vals = args.filter(v => v !== null && v !== undefined && v !== ''); return vals.length ? Math.min(...vals.map(v => num(v) ?? Number.POSITIVE_INFINITY)) : null; });
 }
 
 // Return live schema from the worker DB (tables + columns + row counts)
@@ -134,19 +226,111 @@ function getSqlEngine() {
   return _enginePromise;
 }
 
-async function buildDb(tables) {
-  const SQL = await getSqlEngine();
-  const db = new SQL.Database();
+function sqlNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).replace(/[$,%\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseSqlDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).trim();
+  const d = new Date(/^\d{4}-\d{1,2}-\d{1,2}$/.test(s) ? `${s}T00:00:00Z` : s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function sqlDatePart(part, value) {
+  const d = parseSqlDate(value);
+  if (!d) return null;
+  const p = String(part || '').toLowerCase();
+  if (['year','yy','yyyy'].includes(p)) return d.getUTCFullYear();
+  if (['quarter','qq','q'].includes(p)) return Math.floor(d.getUTCMonth() / 3) + 1;
+  if (['month','mm','m'].includes(p)) return d.getUTCMonth() + 1;
+  if (['day','dd','d'].includes(p)) return d.getUTCDate();
+  if (['hour','hh'].includes(p)) return d.getUTCHours();
+  if (['minute','mi','n'].includes(p)) return d.getUTCMinutes();
+  if (['second','ss','s'].includes(p)) return d.getUTCSeconds();
+  if (['weekday','dow'].includes(p)) return d.getUTCDay() + 1;
+  return null;
+}
+
+function sqlDateAdd(part, amount, value) {
+  const d = parseSqlDate(value);
+  const n = Number(amount);
+  if (!d || !Number.isFinite(n)) return null;
+  const p = String(part || '').toLowerCase();
+  if (['year','yy','yyyy'].includes(p)) d.setUTCFullYear(d.getUTCFullYear() + n);
+  else if (['quarter','qq','q'].includes(p)) d.setUTCMonth(d.getUTCMonth() + n * 3);
+  else if (['month','mm','m'].includes(p)) d.setUTCMonth(d.getUTCMonth() + n);
+  else if (['hour','hh'].includes(p)) d.setUTCHours(d.getUTCHours() + n);
+  else if (['minute','mi','n'].includes(p)) d.setUTCMinutes(d.getUTCMinutes() + n);
+  else if (['second','ss','s'].includes(p)) d.setUTCSeconds(d.getUTCSeconds() + n);
+  else d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function sqlDateDiff(...args) {
+  const hasPart = args.length >= 3;
+  const part = hasPart ? String(args[0] || 'day').toLowerCase() : 'day';
+  const a = parseSqlDate(args[hasPart ? 1 : 0]);
+  const b = parseSqlDate(args[hasPart ? 2 : 1]);
+  if (!a || !b) return null;
+  const ms = b - a;
+  if (part === 'year') return b.getUTCFullYear() - a.getUTCFullYear();
+  if (part === 'month') return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  if (part === 'hour') return Math.trunc(ms / 3600000);
+  if (part === 'minute') return Math.trunc(ms / 60000);
+  if (part === 'second') return Math.trunc(ms / 1000);
+  return Math.trunc(ms / 86400000);
+}
+
+function registerSqlFunctions(db) {
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   db.create_function('HOUR',      v => v ? +String(v).slice(11,13)||0 : null);
   db.create_function('MINUTE',    v => v ? +String(v).slice(14,16)||0 : null);
+  db.create_function('SECOND',    v => v ? +String(v).slice(17,19)||0 : null);
   db.create_function('MONTH',     v => v ? +String(v).slice(5,7)||0   : null);
   db.create_function('YEAR',      v => v ? +String(v).slice(0,4)||0   : null);
   db.create_function('DAY',       v => v ? +String(v).slice(8,10)||0  : null);
+  db.create_function('QUARTER',   v => { const d = parseSqlDate(v); return d ? Math.floor(d.getUTCMonth() / 3) + 1 : null; });
+  db.create_function('WEEK',      v => { const d = parseSqlDate(v); if (!d) return null; const first = Date.UTC(d.getUTCFullYear(), 0, 1); return Math.floor(((d - first) / 86400000 + new Date(first).getUTCDay()) / 7) + 1; });
+  db.create_function('DATEPART',  (part, v) => sqlDatePart(part, v));
   db.create_function('MONTHNAME', v => { if(!v) return null; return MONTHS[+String(v).slice(5,7)-1]||null; });
   db.create_function('DAYNAME',   v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:DAYS[t.getUTCDay()]; });
   db.create_function('DAYOFWEEK', v => { if(!v) return null; const t=new Date(String(v)+'T00:00:00Z'); return isNaN(t)?null:t.getUTCDay()+1; });
+  db.create_function('DATEDIFF',  (...args) => sqlDateDiff(...args));
+  db.create_function('DATEADD',   (part, amount, value) => sqlDateAdd(part, amount, value));
+  db.create_function('ISNULL',    (v, def) => (v === null || v === undefined || v === '') ? def : v);
+  db.create_function('NVL',       (v, def) => (v === null || v === undefined || v === '') ? def : v);
+  db.create_function('IF',        (cond, a, b) => cond ? a : b);
+  db.create_function('IIF',       (cond, a, b) => cond ? a : b);
+  db.create_function('CONCAT',    (...args) => args.map(v => v ?? '').join(''));
+  db.create_function('LEFT',      (s, n) => String(s ?? '').slice(0, Math.max(0, Number(n) || 0)));
+  db.create_function('RIGHT',     (s, n) => { const str = String(s ?? ''); return str.slice(Math.max(0, str.length - (Number(n) || 0))); });
+  db.create_function('REVERSE',   s => String(s ?? '').split('').reverse().join(''));
+  db.create_function('LPAD',      (s, n, p) => String(s ?? '').padStart(n, p ?? ' '));
+  db.create_function('RPAD',      (s, n, p) => String(s ?? '').padEnd(n, p ?? ' '));
+  db.create_function('REPEAT',    (s, n) => String(s ?? '').repeat(Math.max(0, Number(n) || 0)));
+  db.create_function('CEIL',      v => { const n = sqlNum(v); return n === null ? null : Math.ceil(n); });
+  db.create_function('CEILING',   v => { const n = sqlNum(v); return n === null ? null : Math.ceil(n); });
+  db.create_function('FLOOR',     v => { const n = sqlNum(v); return n === null ? null : Math.floor(n); });
+  db.create_function('POWER',     (a, b) => Math.pow(sqlNum(a) ?? 0, sqlNum(b) ?? 0));
+  db.create_function('POW',       (a, b) => Math.pow(sqlNum(a) ?? 0, sqlNum(b) ?? 0));
+  db.create_function('SQRT',      v => { const n = sqlNum(v); return n === null ? null : Math.sqrt(n); });
+  db.create_function('MOD',       (a, b) => { const x = sqlNum(a), y = sqlNum(b); return x === null || !y ? null : x % y; });
+  db.create_function('LOG',       v => { const n = sqlNum(v); return n && n > 0 ? Math.log(n) : null; });
+  db.create_function('LOG10',     v => { const n = sqlNum(v); return n && n > 0 ? Math.log10(n) : null; });
+  db.create_function('EXP',       v => { const n = sqlNum(v); return n === null ? null : Math.exp(n); });
+  db.create_function('SIGN',      v => { const n = sqlNum(v); return n === null ? null : Math.sign(n); });
+  db.create_function('GREATEST',  (...args) => { const vals = args.filter(v => v !== null && v !== undefined && v !== ''); return vals.length ? Math.max(...vals.map(v => sqlNum(v) ?? Number.NEGATIVE_INFINITY)) : null; });
+  db.create_function('LEAST',     (...args) => { const vals = args.filter(v => v !== null && v !== undefined && v !== ''); return vals.length ? Math.min(...vals.map(v => sqlNum(v) ?? Number.POSITIVE_INFINITY)) : null; });
+}
+
+async function buildDb(tables) {
+  const SQL = await getSqlEngine();
+  const db = new SQL.Database();
+  registerSqlFunctions(db);
   for (const t of tables) {
     db.run(`CREATE TABLE IF NOT EXISTS "${t.name}" (${t.columns.map(c => `"${c}" TEXT`).join(', ')})`);
     if (t.rows.length > 0) {
@@ -286,6 +470,8 @@ function analyzeChart(results) {
     const ls = values.map(r => String(r[idx] ?? ''));
     return ls.reduce((s, l) => s + l.length, 0) / ls.length;
   };
+  const numericIndexes = columns.map((_, i) => isNumericCol(i) ? i : -1).filter(i => i >= 0);
+  const categoryIndexes = columns.map((_, i) => (!isNumericCol(i) && !isDateCol(i)) ? i : -1).filter(i => i >= 0);
 
   // 1. Stat cards: 1 row, 2-8 numeric cols
   if (rowCount === 1 && colCount >= 2 && colCount <= 8 && columns.every((_, i) => isNumericCol(i)))
@@ -302,6 +488,10 @@ function analyzeChart(results) {
   // 3. Scatter: 2 numeric cols
   if (colCount === 2 && isNumericCol(0) && isNumericCol(1))
     return { type: 'scatter', altTypes: [], caption: generateCaption('scatter', columns, values), autoShow: false, axisConfig: null };
+
+  // 3b. Bubble/scatter: 3 numeric cols
+  if (colCount === 3 && isNumericCol(0) && isNumericCol(1) && isNumericCol(2))
+    return { type: 'bubble', altTypes: ['scatter'], caption: generateCaption('scatter', columns, values), autoShow: true, axisConfig: { x: columns[0], y: columns[1], size: columns[2] } };
 
   // 4. Histogram: 1 numeric col, many distinct values
   if (colCount === 1 && isNumericCol(0)) {
@@ -329,7 +519,26 @@ function analyzeChart(results) {
 
   // 9. Stacked bar: cat + 2 numeric
   if (colCount === 3 && !isNumericCol(0) && isNumericCol(1) && isNumericCol(2))
-    return { type: 'stacked-bar', altTypes: ['bar'], caption: null, autoShow: true, axisConfig: { x: columns[0], y: columns[1], y2: columns[2] } };
+    return { type: 'stacked-bar', altTypes: ['multiline', 'bar'], caption: null, autoShow: true, axisConfig: { x: columns[0], y: columns[1], y2: columns[2] } };
+
+  // 10. Category/date + series + value, e.g. region/status/count or month/product/revenue.
+  if (colCount === 3 && numericIndexes.length === 1 && categoryIndexes.length >= 1) {
+    const valueIdx = numericIndexes[0];
+    const xIdx = isDateCol(0) || !isNumericCol(0) ? 0 : categoryIndexes[0];
+    const seriesIdx = [0, 1, 2].find(i => i !== xIdx && i !== valueIdx && !isNumericCol(i));
+    if (seriesIdx !== undefined) {
+      const type = isDateCol(xIdx) ? 'series-line' : 'grouped-bar';
+      const altTypes = isDateCol(xIdx) ? ['grouped-bar', 'stacked-series'] : ['stacked-series', 'series-line'];
+      return { type, altTypes, caption: null, autoShow: true, axisConfig: { x: columns[xIdx], series: columns[seriesIdx], y: columns[valueIdx] } };
+    }
+  }
+
+  // 11. Three columns with one label and two numeric measures, even when the label is date-like/categorical.
+  if (colCount === 3 && numericIndexes.length === 2) {
+    const xIdx = [0, 1, 2].find(i => !numericIndexes.includes(i)) ?? 0;
+    const [yIdx, y2Idx] = numericIndexes;
+    return { type: isDateCol(xIdx) ? 'multiline' : 'stacked-bar', altTypes: ['bar', 'multiline'], caption: null, autoShow: true, axisConfig: { x: columns[xIdx], y: columns[yIdx], y2: columns[y2Idx] } };
+  }
 
   return none;
 }
@@ -356,6 +565,21 @@ function chartData(results) {
     results.columns.forEach((col, i) => { obj[col] = isNaN(parseFloat(row[i])) ? (row[i] ?? '') : parseFloat(row[i]); });
     return obj;
   });
+}
+
+function seriesChartData(rows, axisConfig) {
+  if (!rows?.length || !axisConfig?.x || !axisConfig?.series || !axisConfig?.y) return { data: [], keys: [] };
+  const grouped = new Map();
+  const keys = new Set();
+  for (const row of rows) {
+    const x = String(row[axisConfig.x] ?? '');
+    const series = String(row[axisConfig.series] ?? 'Series');
+    const value = parseFloat(row[axisConfig.y]);
+    if (!grouped.has(x)) grouped.set(x, { [axisConfig.x]: x });
+    grouped.get(x)[series] = (grouped.get(x)[series] || 0) + (Number.isFinite(value) ? value : 0);
+    keys.add(series);
+  }
+  return { data: Array.from(grouped.values()), keys: Array.from(keys).slice(0, 12) };
 }
 
 // ─── Export helpers ────────────────────────────────────────────────────────────
@@ -472,6 +696,73 @@ function formatSQL(raw) {
   let s = raw.replace(/\s+/g, ' ').trim();
   for (const kw of KWS) s = s.replace(new RegExp(`(?<=[^\\w]|^)${kw}(?=[^\\w]|$)`, 'gi'), `\n${kw.toUpperCase()}`);
   return s.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+}
+
+function cleanSqlForRun(raw) {
+  const input = String(raw || '');
+  let out = '';
+  let quote = null;
+  let pendingSpace = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    const next = input[i + 1];
+
+    if (quote) {
+      out += ch;
+      if (ch === quote) {
+        if (next === quote && (quote === '\'' || quote === '"')) {
+          out += next;
+          i += 1;
+        } else {
+          quote = null;
+        }
+      }
+      continue;
+    }
+
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      if (pendingSpace && out && !out.endsWith('\n') && !/[ (,[=<>+\-*/%]$/.test(out)) out += ' ';
+      pendingSpace = false;
+      quote = ch;
+      out += ch;
+      continue;
+    }
+
+    if (ch === '-' && next === '-') {
+      if (pendingSpace && out && !out.endsWith('\n')) out += ' ';
+      pendingSpace = false;
+      while (i < input.length && input[i] !== '\n') {
+        out += input[i];
+        i += 1;
+      }
+      if (!out.endsWith('\n')) out += '\n';
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      pendingSpace = true;
+      if (ch === '\n' && !out.endsWith('\n')) {
+        out = out.replace(/[ \t]+$/g, '');
+        out += '\n';
+        pendingSpace = false;
+      }
+      continue;
+    }
+
+    if (pendingSpace && out && !out.endsWith('\n') && !/[ (,[=<>+\-*/%]$/.test(out) && !/[),.;=<>+\-*/%]/.test(ch)) {
+      out += ' ';
+    }
+    pendingSpace = false;
+    out += ch;
+  }
+
+  return out
+    .split('\n')
+    .map(line => line.trim())
+    .filter((line, idx, lines) => line || (idx > 0 && idx < lines.length - 1))
+    .join('\n')
+    .trim();
 }
 
 // ─── Relative time ─────────────────────────────────────────────────────────────
@@ -593,6 +884,7 @@ export default function SqlPractice() {
   const [previewLimit,   setPreviewLimit]   = useState(10);
   const [previewData,    setPreviewData]    = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError,   setPreviewError]   = useState('');
   const [previewTable,   setPreviewTable]   = useState('');
   // ── UI / chart state ────────────────────────────────────────────────────────────
   const [showChart,      setShowChart]      = useState(false);
@@ -600,8 +892,6 @@ export default function SqlPractice() {
   const [xAxis,          setXAxis]          = useState(null);
   const [yAxis,          setYAxis]          = useState(null);
   // ── Sidebar / toolbar state ─────────────────────────────────────────────────────
-  const [sidebarOpen,    setSidebarOpen]    = useState(() => localStorage.getItem('sql-sidebar-collapsed') !== 'true');
-  const [colSearch,      setColSearch]      = useState('');
   const [showHistory,    setShowHistory]    = useState(false);
   const [showOverflow,   setShowOverflow]   = useState(false);
   const [starterExpanded,setStarterExpanded]= useState(false);
@@ -638,7 +928,6 @@ export default function SqlPractice() {
   useEffect(() => { activeTableRef.current = activeTable; }, [activeTable]);
   useEffect(() => { queryRef.current       = query; },       [query]);
   useEffect(() => { previewLimitRef.current = previewLimit; }, [previewLimit]);
-  useEffect(() => { localStorage.setItem('sql-sidebar-collapsed', !sidebarOpen); }, [sidebarOpen]);
 
   // ── Theme observer ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -653,7 +942,7 @@ export default function SqlPractice() {
   const chartAnalysis= useMemo(() => analyzeChart(results), [results]);
   const cData        = useMemo(() => chartData(results), [results]);
   const colTypes     = useMemo(() => activeInfo ? getColumnTypes(activeInfo) : {}, [activeInfo]);
-  const filteredCols = useMemo(() => activeInfo ? activeInfo.columns.filter(c => c.toLowerCase().includes(colSearch.toLowerCase())) : [], [activeInfo, colSearch]);
+  const filteredCols = useMemo(() => activeInfo ? activeInfo.columns : [], [activeInfo]);
 
   const sortedValues = useMemo(() => {
     if (!results || !sortCol) return results?.values ?? [];
@@ -760,8 +1049,9 @@ export default function SqlPractice() {
 
   // ── Run SQL ─────────────────────────────────────────────────────────────────────
   const runQuery = useCallback(async (sqlOverride) => {
-    let sql = sqlOverride ?? queryRef.current;
+    let sql = cleanSqlForRun(sqlOverride ?? queryRef.current);
     if (!sql?.trim()) return;
+    if (sql !== queryRef.current) setQuery(sql);
 
     // Auto-fix partial queries that start with a clause keyword instead of SELECT/INSERT/etc.
     const trimmed = sql.trim().toUpperCase();
@@ -774,7 +1064,7 @@ export default function SqlPractice() {
       }
     }
 
-    const myId = ++queryMsgIdRef.current;
+    queryMsgIdRef.current += 1;
     setLoading(true); setError(''); setResults(null); setPage(1);
 
     try {
@@ -824,9 +1114,17 @@ export default function SqlPractice() {
           return newTables;
         });
         setActiveTable(at => {
-          const next = (!at && schema.length > 0) ? schema[0].name : at;
-          // Refresh preview after schema change (DDL added/dropped tables)
-          setTimeout(() => runPreview(next || schema[0]?.name, previewLimitRef.current), 80);
+          const names = new Set(schema.map(s => s.name));
+          const next = names.has(at) ? at : (schema[0]?.name || '');
+          if (next) setPreviewTable(next);
+          else {
+            setPreviewTable('');
+            setPreviewData(null);
+            setPreviewError('');
+          }
+          setTimeout(() => {
+            if (next) runPreview(next, previewLimitRef.current);
+          }, 80);
           return next;
         });
       }
@@ -873,6 +1171,7 @@ export default function SqlPractice() {
     if (!tableName) { setPreviewData(null); return; }
     const pid = ++previewMsgIdRef.current;
     setPreviewLoading(true);
+    setPreviewError('');
     try {
       const sql = `SELECT * FROM "${tableName}" LIMIT ${limit}`;
       let res;
@@ -893,9 +1192,10 @@ export default function SqlPractice() {
       if (pid !== previewMsgIdRef.current) return;
       if (res?.length) setPreviewData({ columns: res[0].columns, values: res[0].values, tableName });
       else setPreviewData({ columns: [], values: [], tableName });
-    } catch {
+    } catch (e) {
       if (pid !== previewMsgIdRef.current) return;
       setPreviewData(null);
+      setPreviewError(e?.message || 'Could not refresh data preview.');
     } finally {
       if (pid === previewMsgIdRef.current) setPreviewLoading(false);
     }
@@ -908,8 +1208,12 @@ export default function SqlPractice() {
 
   // Refresh preview when previewTable or previewLimit changes
   useEffect(() => {
-    if (previewTable) runPreview(previewTable, previewLimit);
-  }, [previewTable, previewLimit, runPreview]);
+    if (previewTable && tables.some(t => t.name === previewTable)) runPreview(previewTable, previewLimit);
+    else {
+      setPreviewData(null);
+      setPreviewError('');
+    }
+  }, [previewTable, previewLimit, runPreview, tables]);
 
   // ── Remove table ────────────────────────────────────────────────────────────────
   const removeTable = useCallback((name) => {
@@ -1018,12 +1322,27 @@ export default function SqlPractice() {
 
       const opts = [];
 
-      // Always show aliases and columns (highest priority)
-      for (const [alias, tbl] of aliases) opts.push({ label: alias, type: 'variable', detail: `alias for ${tbl}`, boost: 30 });
-      for (const t of tablesRef.current) for (const c of t.columns) opts.push({ label: c, type: 'property', detail: t.name, boost: 25 });
+      if (dotMatch && aliases.has(aliasPrefix)) {
+        const table = tablesRef.current.find(t => t.name === aliases.get(aliasPrefix));
+        const options = (table?.columns || [])
+          .filter(c => c.toLowerCase().startsWith(colPrefix))
+          .map(c => ({ label: c, apply: `"${c}"`, type: 'property', detail: table.name, boost: 50 }));
+        return { from: word.from + aliasPrefix.length + 1, options, validFor: /^[\w]*$/ };
+      }
+
+      // Snippets and higher-level query patterns.
+      for (const s of SQL_SNIPPETS) opts.push({ ...s, type: 'text', boost: 45 });
+
+      // Aliases and columns are most useful in expression contexts.
+      for (const [alias, tbl] of aliases) opts.push({ label: alias, apply: `${alias}.`, type: 'variable', detail: `alias for ${tbl}`, boost: 35 });
+      if (selCtx || ctx.explicit) {
+        for (const t of tablesRef.current) {
+          for (const c of t.columns) opts.push({ label: c, apply: `"${c}"`, type: 'property', detail: t.name, boost: 25 });
+        }
+      }
 
       // Context-specific suggestions
-      if (fromCtx) for (const t of tablesRef.current) opts.push({ label: t.name, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 20 });
+      if (fromCtx || ctx.explicit) for (const t of tablesRef.current) opts.push({ label: t.name, apply: `"${t.name}"`, type: 'class', detail: `${t.rows?.length ?? ''} rows`, boost: 30 });
 
       // Keywords (lowest priority)
       for (const kw of SQL_KW) opts.push({ label: kw, type: 'keyword', boost: 1 });
@@ -1037,12 +1356,14 @@ export default function SqlPractice() {
         extensions: [
           sqlLang(), isDark ? oneDark : [], isDark ? CM_DARK_THEME : CM_LIGHT_THEME,
           lineNumbers(), highlightActiveLine(),
+          closeBrackets(),
           ...buildGhostExt(tablesRef),
           autocompletion({ override: [customCompletion], activateOnTyping: true, maxRenderedOptions: 14 }),
           keymap.of([
-            ...defaultKeymap, ...completionKeymap,
+            ...closeBracketsKeymap, ...completionKeymap, ...defaultKeymap,
             { key: 'Ctrl-Enter', run: () => { runQueryRef.current?.(); return true; } },
             { key: 'Mod-Enter',  run: () => { runQueryRef.current?.(); return true; } },
+            { key: 'Shift-Enter', run: () => { runQueryRef.current?.(); return true; } },
           ]),
           EditorView.updateListener.of(u => { if (u.docChanged) setQuery(u.state.doc.toString()); }),
         ],
@@ -1110,12 +1431,57 @@ export default function SqlPractice() {
       return (
         <ScatterChart margin={{ top:5, right:16, left:0, bottom:5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-          <XAxis dataKey={col0} name={col0} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
-          <YAxis dataKey={col1} name={col1} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <XAxis dataKey={axX} name={axX} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <YAxis dataKey={axY} name={axY} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
           <ZAxis range={[40, 40]}/>
           <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ strokeDasharray:'3 3' }}/>
           <Scatter data={cData} fill="#6366f1" fillOpacity={0.75}/>
         </ScatterChart>
+      );
+    }
+    if (type === 'bubble') {
+      const sizeKey = chartAnalysis.axisConfig?.size ?? results.columns[2];
+      return (
+        <ScatterChart margin={{ top:5, right:16, left:0, bottom:5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+          <XAxis dataKey={axX} name={axX} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <YAxis dataKey={axY} name={axY} tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <ZAxis dataKey={sizeKey} range={[45, 420]} name={sizeKey}/>
+          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ strokeDasharray:'3 3' }}/>
+          <Scatter data={cData} fill="#6366f1" fillOpacity={0.65}/>
+        </ScatterChart>
+      );
+    }
+    if (type === 'grouped-bar' || type === 'stacked-series') {
+      const { data, keys } = seriesChartData(cData, chartAnalysis.axisConfig);
+      if (!data.length || !keys.length) return null;
+      return (
+        <BarChart data={data} margin={{ top:5, right:16, left:0, bottom:28 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+          <XAxis dataKey={chartAnalysis.axisConfig.x} tick={{ fill:'#64748b', fontSize:11 }} angle={-30} textAnchor="end" interval={0}/>
+          <YAxis tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={v => fmtNum(+v)}/>
+          <Legend/>
+          {keys.map((key, i) => (
+            <Bar key={key} dataKey={key} stackId={type === 'stacked-series' ? 'series' : undefined} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={type === 'stacked-series' ? [0,0,0,0] : [4,4,0,0]}/>
+          ))}
+        </BarChart>
+      );
+    }
+    if (type === 'series-line') {
+      const { data, keys } = seriesChartData(cData, chartAnalysis.axisConfig);
+      if (!data.length || !keys.length) return null;
+      return (
+        <LineChart data={data} margin={{ top:5, right:16, left:0, bottom:28 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+          <XAxis dataKey={chartAnalysis.axisConfig.x} tick={{ fill:'#64748b', fontSize:11 }} angle={-30} textAnchor="end" interval="preserveStartEnd"/>
+          <YAxis tick={{ fill:'#64748b', fontSize:11 }} tickFormatter={fmtNum}/>
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={v => fmtNum(+v)}/>
+          <Legend/>
+          {keys.map((key, i) => (
+            <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={data.length < 24}/>
+          ))}
+        </LineChart>
       );
     }
     if (type === 'area') {
@@ -1451,12 +1817,12 @@ export default function SqlPractice() {
           <div className="sp-panel">
             <div className="sp-hdr" style={{ justifyContent:'space-between' }}>
               <span style={{ display:'flex', alignItems:'center', gap:'0.35rem' }}><Database size={10}/> SQL Editor</span>
-              <span style={{ fontSize:'0.63rem', opacity:0.5, fontWeight:400, textTransform:'none', letterSpacing:0 }}>Ctrl+Enter to run · Tab to accept hint</span>
+              <span style={{ fontSize:'0.63rem', opacity:0.5, fontWeight:400, textTransform:'none', letterSpacing:0 }}>Shift+Enter or Ctrl+Enter to run · Tab accepts hint</span>
             </div>
             <div ref={editorContainerRef} style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', minHeight:220 }}/>
             {/* Run bar */}
             <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.45rem 0.75rem', background:'rgba(0,0,0,0.18)', flexWrap:'wrap' }}>
-              <button onClick={() => runQuery()} disabled={loading} title="Run query (Ctrl+Enter)"
+              <button onClick={() => runQuery()} disabled={loading} title="Run query (Shift+Enter or Ctrl+Enter)"
                 style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.44rem 1.2rem',
                   background: loading ? 'rgba(99,102,241,0.35)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
                   border:'none', borderRadius:8, cursor: loading ? 'not-allowed' : 'pointer',
@@ -1564,7 +1930,7 @@ export default function SqlPractice() {
                         {chartAnalysis.altTypes.length > 0 && (
                           <div style={{ display:'flex', gap:'0.3rem', marginBottom:'0.5rem', alignItems:'center' }}>
                             {[chartAnalysis.type, ...chartAnalysis.altTypes].map(t => {
-                              const icons = { bar:BarChart2, hbar:BarChart2, line:TrendingUp, area:TrendingUp, donut:Search, scatter:Search, histogram:BarChart2, multiline:TrendingUp, 'stacked-bar':BarChart2 };
+                              const icons = { bar:BarChart2, hbar:BarChart2, line:TrendingUp, area:TrendingUp, donut:Search, scatter:Search, bubble:Search, histogram:BarChart2, multiline:TrendingUp, 'stacked-bar':BarChart2, 'grouped-bar':BarChart2, 'stacked-series':BarChart2, 'series-line':TrendingUp };
                               const Icon = icons[t] || BarChart2;
                               return (
                                 <button key={t} className={`sp-chart-pill${chartType===t?' active':''}`} onClick={() => setChartType(t)} title={t}>
@@ -1584,6 +1950,9 @@ export default function SqlPractice() {
                             <select value={yAxis ?? ''} onChange={e => setYAxis(e.target.value)} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:5, padding:'0.15rem 0.35rem', fontSize:'0.74rem', color:'var(--text-primary)' }}>
                               {results.columns.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
+                            {chartAnalysis.axisConfig.y2 && <span>Y2: {chartAnalysis.axisConfig.y2}</span>}
+                            {chartAnalysis.axisConfig.series && <span>Series: {chartAnalysis.axisConfig.series}</span>}
+                            {chartAnalysis.axisConfig.size && <span>Size: {chartAnalysis.axisConfig.size}</span>}
                           </div>
                         )}
                         <ResponsiveContainer width="100%" height={210}>
@@ -1681,7 +2050,11 @@ export default function SqlPractice() {
           </div>
 
           {/* Preview table */}
-          {previewData && previewData.columns.length > 0 ? (
+          {previewError ? (
+            <p style={{ padding:'0.85rem 1rem', color:'#f87171', fontSize:'0.82rem', fontFamily:'monospace' }}>
+              {previewError}
+            </p>
+          ) : previewData && previewData.columns.length > 0 ? (
             <div className="sp-preview-rw">
               <table className="sp-rt">
                 <thead>
