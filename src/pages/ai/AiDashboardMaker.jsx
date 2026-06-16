@@ -38,133 +38,6 @@ import {
 const DARK  = { page:'#07070f', card:'#0d0d1a', card2:'#111122', border:'rgba(255,255,255,0.07)', text:'#e2e8f0', sub:'#64748b', input:'rgba(255,255,255,0.05)', hover:'rgba(255,255,255,0.04)', glass:'rgba(13,13,26,0.85)' };
 const LIGHT = { page:'#f0f4ff', card:'#ffffff',  card2:'#f8faff', border:'rgba(0,0,0,0.08)',       text:'#0f172a', sub:'#64748b', input:'rgba(0,0,0,0.04)',        hover:'rgba(0,0,0,0.03)',       glass:'rgba(255,255,255,0.9)' };
 const FREE_DASHBOARD_LIMIT = 3;
-const SUPPORTED_DASHBOARD_JSON_CHART_TYPES = new Set(['line', 'area', 'bar', 'stackedBar', 'pie', 'donut', 'scatter', 'radar']);
-
-const DASHBOARD_JSON_PROMPT = `
-You are an expert senior Power BI report builder and enterprise Business Intelligence dashboard architect.
-
-Generate ONLY valid JSON for a modern executive analytics dashboard. Return no markdown, no code blocks, no comments, and no explanation. The response must work with JSON.parse().
-
-Create an actual senior-level Power BI-style report: executive summary, KPI scorecards, revenue and sales performance, customer behavior, channel/campaign efficiency, operations, inventory, delivery, risk, recommendations, and forecasting. Use realistic sample data. Do not generate empty arrays.
-
-Use ONLY these chart types:
-line, area, bar, stackedBar, pie, donut, scatter, radar
-
-Do NOT use unsupported chart types:
-heatmap, funnel, gauge, treemap, sankey, bubble, combo, composed, waterfall, radialBar, table, matrix, card
-
-Expected JSON structure:
-{
-  "title": "",
-  "description": "",
-  "filters": [],
-  "kpis": [],
-  "charts": [],
-  "tables": [],
-  "insights": [],
-  "forecasting": []
-}
-
-Generate 20+ KPI cards including: Total Revenue, Total Sales, Gross Profit, Net Profit, Profit Margin, Orders, Average Sales, Average Order Value, Customers, New Customers, Returning Customers, Retention Rate, Churn Rate, Customer Lifetime Value, Conversion Rate, Revenue Growth, Sales Growth, YoY Growth, MoM Growth, ROI, CPA, MRR.
-
-Every KPI must follow:
-{
-  "title": "",
-  "value": "",
-  "change": "",
-  "trend": "up",
-  "description": ""
-}
-
-Generate 20+ charts covering: Daily Sales, Weekly Sales, Monthly Sales, Quarterly Sales, Yearly Sales, Revenue vs Expenses, Profit Analysis, YoY Growth, MoM Growth, Sales Growth, Revenue Growth, Top Products, Bottom Products, Product Profitability, Category Performance, Customer Segmentation, Customer Acquisition, Customer Retention, Geographic Sales, Repeat Purchases, Campaign Performance, Traffic Sources, ROI Analysis, Lead Generation, Inventory Turnover, Stock Levels, Order Fulfillment, Delivery Performance.
-
-Every chart must follow:
-{
-  "title": "",
-  "type": "line",
-  "xKey": "",
-  "dataKey": "",
-  "data": []
-}
-
-For multi-series charts:
-{
-  "title": "Revenue vs Expenses",
-  "type": "bar",
-  "xKey": "month",
-  "dataKey": ["revenue", "expenses"],
-  "data": []
-}
-
-Rules for chart data:
-- chart.type must be one of the supported chart types only.
-- chart.data must always be an array with realistic rows.
-- chart.xKey must exist in every data row. Use safe keys like day, week, month, quarter, year, category, region, segment, channel, campaign, product.
-- chart.dataKey may be a string or an array of strings. Every dataKey must exist in every data row.
-- pie and donut charts must use a category xKey and one numeric dataKey.
-- stackedBar charts must use dataKey as an array of numeric series keys.
-- scatter charts must include numeric x and y values and use dataKey for the y metric when possible.
-- radar charts must include category labels and multiple numeric metrics when useful.
-
-Generate tables:
-- Top Products
-- Customer Segments
-- Regional Performance
-- Campaign ROI
-- Inventory Status
-
-Every table must follow:
-{
-  "title": "",
-  "columns": [],
-  "rows": []
-}
-
-Generate insights:
-- Key Findings
-- Growth Opportunities
-- Risks
-- Recommendations
-- Executive Summary
-
-Every insight must follow:
-{
-  "type": "opportunity",
-  "title": "",
-  "description": "",
-  "priority": "high"
-}
-
-Generate filters: Date Range, Region, Category, Segment, Channel, Campaign.
-
-Every filter must follow:
-{
-  "label": "",
-  "key": "",
-  "type": "select",
-  "options": []
-}
-
-Generate forecasting sections:
-- Sales Forecast
-- Revenue Forecast
-- Customer Growth Forecast
-- Demand Forecast
-
-Every forecasting item must follow:
-{
-  "title": "",
-  "type": "line",
-  "xKey": "",
-  "dataKey": "",
-  "data": []
-}
-
-Quality bar:
-- Make the report suitable for Power BI, Tableau, or Looker executives.
-- Use business-ready naming, realistic values, strong metric coverage, and non-empty arrays.
-- Return ONLY the JSON object.
-`;
 
 const ALL_SEMANTIC_TYPES = Object.keys(SEMANTIC_STYLE);
 
@@ -202,80 +75,6 @@ function confidenceBadge(score) {
   if (score >= 80) return { label: `${score}%`, color: '#10b981', bg: 'rgba(16,185,129,0.1)', text: 'High confidence' };
   if (score >= 55) return { label: `${score}%`, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', text: 'Medium confidence' };
   return { label: `${score}%`, color: '#ef4444', bg: 'rgba(239,68,68,0.1)', text: 'AI assist needed' };
-}
-
-function normalizeDashboardJsonChartType(type) {
-  const raw = String(type || 'bar').trim();
-  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
-  const aliases = {
-    stackedbar: 'stackedBar',
-    stackedcolumn: 'stackedBar',
-    column: 'bar',
-    columnchart: 'bar',
-    clusteredbar: 'bar',
-    clusteredcolumn: 'bar',
-    horizontalbar: 'bar',
-    hbar: 'bar',
-    linechart: 'line',
-    areachart: 'area',
-    piechart: 'pie',
-    doughnut: 'donut',
-    donutchart: 'donut',
-    scatterplot: 'scatter',
-    scatterchart: 'scatter',
-    radarchart: 'radar',
-  };
-  const normalized = aliases[key] || raw;
-  return SUPPORTED_DASHBOARD_JSON_CHART_TYPES.has(normalized) ? normalized : 'bar';
-}
-
-function normalizeDashboardJsonDataKey(dataKey) {
-  if (Array.isArray(dataKey)) {
-    const keys = dataKey.map(k => String(k || '').trim()).filter(Boolean);
-    return keys.length ? keys : ['value'];
-  }
-  const key = String(dataKey || '').trim();
-  return key || 'value';
-}
-
-function sanitizeDashboardJsonChart(chart = {}, index = 0) {
-  const type = normalizeDashboardJsonChartType(chart.type || chart.chartType);
-  const xKey = String(chart.xKey || chart.xCol || chart.xAxis || chart.nameKey || 'name').trim() || 'name';
-  const dataKey = normalizeDashboardJsonDataKey(chart.dataKey || chart.yKey || chart.yCol || chart.yAxis || chart.valueKey || 'value');
-  const data = Array.isArray(chart.data) ? chart.data : [];
-  const yCol = Array.isArray(dataKey) ? dataKey[0] : dataKey;
-  const hasColumnMeasure = Object.prototype.hasOwnProperty.call(chart, 'yCol') || Object.prototype.hasOwnProperty.call(chart, 'yAxis');
-  const hasLiteralMeasure = Object.prototype.hasOwnProperty.call(chart, 'dataKey') || Object.prototype.hasOwnProperty.call(chart, 'valueKey');
-
-  return {
-    ...chart,
-    id: chart.id || `ai_chart_${index}_${type}`,
-    title: chart.title || `Chart ${index + 1}`,
-    type,
-    xKey,
-    dataKey,
-    data,
-    xCol: chart.xCol || chart.xAxis || chart.xKey,
-    yCol: hasColumnMeasure ? (chart.yCol || chart.yAxis || null) : (hasLiteralMeasure ? yCol : null),
-  };
-}
-
-function sanitizeDashboardJsonPlan(plan) {
-  if (!plan || typeof plan !== 'object') return plan;
-  const sanitizeCharts = (charts) => (Array.isArray(charts) ? charts : []).map(sanitizeDashboardJsonChart);
-
-  return {
-    ...plan,
-    filters: Array.isArray(plan.filters) ? plan.filters : [],
-    kpis: Array.isArray(plan.kpis) ? plan.kpis : [],
-    charts: sanitizeCharts(plan.charts),
-    tables: Array.isArray(plan.tables) ? plan.tables : [],
-    insights: Array.isArray(plan.insights) ? plan.insights : [],
-    forecasting: sanitizeCharts(plan.forecasting),
-    tabs: Array.isArray(plan.tabs)
-      ? plan.tabs.map(tab => ({ ...tab, charts: sanitizeCharts(tab.charts) }))
-      : plan.tabs,
-  };
 }
 
 function convertGoogleSheetsUrl(url) {
@@ -1539,7 +1338,6 @@ export default function AiDashboardMaker() {
           userPrompt:      store.userPrompt,
           helperText:      store.columnHelp,
           rowCount:        store.rows.length,
-          dashboardPrompt:  DASHBOARD_JSON_PROMPT,
         };
 
         const sig = planSignature({
@@ -1575,14 +1373,12 @@ export default function AiDashboardMaker() {
           }
         }
 
-        const safeAiPlan = aiPlan ? sanitizeDashboardJsonPlan(aiPlan) : null;
-
-        finalPlan = safeAiPlan
-          ? normalizeAiPlan(safeAiPlan, ea, store.rows, store.userPrompt)
+        finalPlan = aiPlan
+          ? normalizeAiPlan(aiPlan, ea, store.rows, store.userPrompt)
           : localMultiTabPlan;
-        finalSource = safeAiPlan ? source : 'engine';
+        finalSource = aiPlan ? source : 'engine';
 
-        if (safeAiPlan && !cached) store.setCachedPlan(sig, safeAiPlan, source);
+        if (aiPlan && !cached) store.setCachedPlan(sig, aiPlan, source);
       }
 
       store.setGenStage(2);
