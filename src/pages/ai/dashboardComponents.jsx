@@ -181,6 +181,64 @@ export function normalizeChartType(type) {
   return map[key] || raw;
 }
 
+function isRendererChartType(type) {
+  return ADVANCED_CHART_TYPES.includes(type);
+}
+
+function parseChartNumber(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = parseFloat(String(v ?? '').replace(/[^0-9.+\-eE]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeChartDataKeys(dataKey) {
+  if (Array.isArray(dataKey)) {
+    const keys = dataKey.map(k => String(k || '').trim()).filter(Boolean);
+    return keys.length ? keys : ['value'];
+  }
+  const key = String(dataKey || '').trim();
+  return key ? [key] : ['value'];
+}
+
+function normalizeLiteralChartData(rows, spec) {
+  const rawRows = Array.isArray(rows) ? rows : [];
+  if (!rawRows.length) return [];
+
+  const hasLiteralKeys = !!(spec?.xKey || spec?.dataKey || spec?.nameKey || spec?.valueKey);
+  if (!hasLiteralKeys) return rawRows;
+
+  const xKey = spec.xKey || spec.nameKey || spec.xCol || 'name';
+  const dataKeys = normalizeChartDataKeys(spec.dataKey || spec.valueKey || spec.yKey || spec.yCol || 'value');
+  const firstDataKey = dataKeys[0] || 'value';
+
+  if (['pie', 'donut', 'explodedPie'].includes(spec.type)) {
+    return rawRows.map((row, index) => ({
+      name: String(row?.[xKey] ?? row?.name ?? row?.label ?? `Item ${index + 1}`),
+      value: parseChartNumber(row?.[firstDataKey] ?? row?.value),
+    }));
+  }
+
+  if (['scatter', 'bubble', 'dotPlot'].includes(spec.type)) {
+    const yKey = dataKeys[0] || spec.yKey || spec.yCol || 'y';
+    return rawRows.map((row, index) => ({
+      name: String(row?.name ?? row?.[xKey] ?? `Point ${index + 1}`),
+      x: parseChartNumber(row?.x ?? row?.[xKey]),
+      y: parseChartNumber(row?.y ?? row?.[yKey]),
+    }));
+  }
+
+  return rawRows.map((row, index) => {
+    const out = {
+      name: String(row?.[xKey] ?? row?.name ?? row?.label ?? `Item ${index + 1}`),
+    };
+    dataKeys.forEach(key => {
+      out[key] = parseChartNumber(row?.[key] ?? row?.value);
+    });
+    if (!dataKeys.length) out.value = parseChartNumber(row?.value);
+    return out;
+  });
+}
+
 function normalizeAggregation(agg) {
   const a = String(agg || 'sum').toLowerCase();
   if (a === 'average') return 'avg';
@@ -706,10 +764,14 @@ function EmptyChart({ T }) {
 }
 
 export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = false }) {
-  const initialType = normalizeChartType(initSpec.type || initSpec.chartType || 'bar');
+  const safeInitSpec = initSpec || {};
+  const normalizedInitialType = normalizeChartType(safeInitSpec.type || safeInitSpec.chartType || 'bar');
+  const initialType = isRendererChartType(normalizedInitialType) ? normalizedInitialType : 'bar';
   const [activeType, setActiveType] = useState(initialType);
-  const spec = { ...initSpec, type: activeType };
-  const chartData = data || [];
+  const normalizedActiveType = normalizeChartType(activeType);
+  const safeActiveType = isRendererChartType(normalizedActiveType) ? normalizedActiveType : 'bar';
+  const spec = { ...safeInitSpec, type: safeActiveType };
+  const chartData = normalizeLiteralChartData(Array.isArray(data) ? data : safeInitSpec.data, spec);
   const keys = chartData.length > 0
     ? Object.keys(chartData[0]).filter(k => !['name','x','y','date','min','max','start','end','remaining','growth','isPeak','isWorst','forecast'].includes(k))
     : ['value'];
@@ -728,7 +790,7 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
   const axTick  = { fill:T.sub, fontSize:10 };
   const common  = { data: chartData, margin:{ top:5, right:10, left:-10, bottom:5 } };
   const isAdvanced = ['heatmap','correlationMatrix','calendarHeatmap','gauge','radialBar','linearGauge','table','conditionalTable','matrix','kpiTrendCard','card','multiRowCard','sunburst','multiRingDonut','bullet'].includes(spec.type);
-  const chartHeight = initSpec.width === 'full' || initSpec.size === 'large' || initSpec.size === 'wide' ? 292 : 238;
+  const chartHeight = safeInitSpec.width === 'full' || safeInitSpec.size === 'large' || safeInitSpec.size === 'wide' ? 292 : 238;
 
   const chart = (() => {
     switch (spec.type) {
@@ -1112,7 +1174,7 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
       }
       case 'linearGauge': return <LinearGaugeViz data={chartData} T={T} fmtY={fmtY}/>;
       case 'bullet': return <BulletViz data={chartData} T={T} fmtY={fmtY}/>;
-      case 'card': return <SingleValueCard data={chartData} T={T} fmtY={fmtY} title={initSpec.title}/>;
+      case 'card': return <SingleValueCard data={chartData} T={T} fmtY={fmtY} title={safeInitSpec.title}/>;
       case 'multiRowCard': return <MultiRowCard data={chartData} T={T} fmtY={fmtY}/>;
       case 'conditionalTable': return <TableChart data={chartData} T={T} fmtY={fmtY} conditional/>;
       case 'matrix': return <TableChart data={chartData} T={T} fmtY={fmtY}/>;
@@ -1127,8 +1189,8 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
       onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'.5rem' }}>
         <div>
-          <div style={{ fontWeight:600, fontSize:'.83rem', color:T.text }}>{initSpec.title}</div>
-          {initSpec.description && <div style={{ fontSize:'.68rem', color:T.sub }}>{initSpec.description}</div>}
+          <div style={{ fontWeight:600, fontSize:'.83rem', color:T.text }}>{safeInitSpec.title}</div>
+          {safeInitSpec.description && <div style={{ fontSize:'.68rem', color:T.sub }}>{safeInitSpec.description}</div>}
         </div>
         {!readOnly && (
           <div style={{ display:'flex', alignItems:'center', gap:'.22rem' }}>
@@ -1158,10 +1220,10 @@ export function ChartWidget({ spec: initSpec, data, T, onExpand, readOnly = fals
           {chart || <div/>}
         </ResponsiveContainer>
       )}
-      {(initSpec.reason || initSpec.insightQuestion) && (
+      {(safeInitSpec.reason || safeInitSpec.insightQuestion) && (
         <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:'.45rem', display:'flex', flexDirection:'column', gap:'.18rem' }}>
-          {initSpec.insightQuestion && <div style={{ fontSize:'.68rem', color:T.text, fontWeight:600 }}>{initSpec.insightQuestion}</div>}
-          {initSpec.reason && <div style={{ fontSize:'.66rem', color:T.sub, lineHeight:1.45 }}>Why this chart matters: {initSpec.reason}</div>}
+          {safeInitSpec.insightQuestion && <div style={{ fontSize:'.68rem', color:T.text, fontWeight:600 }}>{safeInitSpec.insightQuestion}</div>}
+          {safeInitSpec.reason && <div style={{ fontSize:'.66rem', color:T.sub, lineHeight:1.45 }}>Why this chart matters: {safeInitSpec.reason}</div>}
         </div>
       )}
     </div>
