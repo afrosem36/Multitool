@@ -35,12 +35,11 @@ export default function ResultCards({ results, unit, onUnitChange, onRetest }) {
   ];
 
   return (
-    <div className="ist-screen ist-screen--results">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="ist-results-inner"
-      >
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="ist-results-summary"
+    >
         {/* Quality badge + title */}
         <div className="ist-results-header">
           <motion.span
@@ -143,7 +142,6 @@ export default function ResultCards({ results, unit, onUnitChange, onRetest }) {
           <RotateCw size={16} />
           Test Again
         </motion.button>
-      </motion.div>
-    </div>
+    </motion.div>
   );
 }

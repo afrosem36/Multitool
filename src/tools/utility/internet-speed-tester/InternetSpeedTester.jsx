@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Wifi, ArrowDown, ArrowUp, Activity, Zap, AlertCircle, Globe } from 'lucide-react';
 import { useSpeedTest } from './hooks/useSpeedTest';
 import TestProgress from './components/TestProgress';
@@ -109,24 +109,22 @@ export default function InternetSpeedTester() {
   // Testing in progress
   if (isTesting) {
     return (
-      <div className="ist-screen ist-screen--testing">
-        <TestProgress
-          phase={phase}
-          phaseProgress={phaseProgress}
-          overallProgress={overallProgress}
-          realTimeSpeed={realTimeSpeed}
-          speedHistory={speedHistory}
-          onStop={stopTest}
-        />
-      </div>
+      <TestProgress
+        phase={phase}
+        phaseProgress={phaseProgress}
+        overallProgress={overallProgress}
+        realTimeSpeed={realTimeSpeed}
+        speedHistory={speedHistory}
+        onStop={stopTest}
+      />
     );
   }
 
   // Results view
   if (results) {
     return (
-      <div className="ist-screen ist-screen--results" style={{ display: 'block' }}>
-        <div style={{ maxWidth: 680, margin: '0 auto', padding: '2rem 1rem' }}>
+      <div className="ist-screen ist-screen--results">
+        <div className="ist-results-inner">
           <ResultCards
             results={results}
             unit={unit}

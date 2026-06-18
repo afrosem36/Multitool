@@ -1,98 +1,93 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { polarToXY, buildArcPath } from '../utils/speedUtils';
-
-const START_ANGLE = -210;
-const END_ANGLE   = 30;
-const TOTAL_DEG   = END_ANGLE - START_ANGLE; // 240°
-const RADIUS      = 88;
+import { Gauge } from '@/components/ui/gauge-1';
 
 /**
- * SpeedGauge — semi-arc SVG speedometer.
+ * SpeedGauge - animated speed tester meter and progress bar.
  *
  * @param {object} props
- * @param {number} props.value  - Current speed value
- * @param {number} [props.max]  - Maximum scale value (default 200)
- * @param {number} [props.size] - SVG canvas size in px (default 240)
- * @param {string} [props.color] - Needle / accent color
- * @param {string} [props.unit]  - Label shown beneath the number
+ * @param {number} props.value - Current speed value
+ * @param {number} [props.max] - Maximum scale value
+ * @param {number} [props.size] - Gauge size in px
+ * @param {string} [props.color] - Accent color
+ * @param {string} [props.unit] - Display unit
  */
 export default function SpeedGauge({ value, max = 200, size = 240, color = '#22d3ee', unit = 'Mbps' }) {
-  const cx = size / 2;
-  const cy = size / 2 + 14;
-
-  const pct    = Math.min(value / max, 1);
-  const arcDeg = pct * TOTAL_DEG;
-
-  // Needle geometry
-  const needleDeg   = START_ANGLE + arcDeg;
-  const needleTip   = polarToXY(needleDeg, RADIUS - 6, cx, cy);
-  const needleBase1 = polarToXY(needleDeg + 90, 7, cx, cy);
-  const needleBase2 = polarToXY(needleDeg - 90, 7, cx, cy);
-
-  const displayValue = value < 1
-    ? value.toFixed(2)
-    : value >= 100
-    ? Math.round(value)
-    : value.toFixed(1);
+  const safeValue = Number.isFinite(value) ? Math.max(value, 0) : 0;
+  const safeMax = Number.isFinite(max) && max > 0 ? max : 100;
+  const percent = Math.min((safeValue / safeMax) * 100, 100);
+  const displayValue = formatSpeed(safeValue);
+  const quality = getSpeedQuality(safeValue);
 
   return (
-    <svg
-      width={size}
-      height={size * 0.72}
-      viewBox={`0 0 ${size} ${size * 0.72}`}
-      style={{ overflow: 'visible' }}
+    <div
+      className="ist-speed-gauge"
+      style={{ '--ist-gauge-color': color, '--ist-gauge-percent': `${percent}%` }}
       aria-label={`Speed gauge: ${displayValue} ${unit}`}
     >
-      {/* Track */}
-      <path
-        d={buildArcPath(START_ANGLE, END_ANGLE, RADIUS, cx, cy)}
-        fill="none"
-        stroke="rgba(255,255,255,0.07)"
-        strokeWidth="10"
-        strokeLinecap="round"
-      />
-
-      {/* Gradient definition */}
-      <defs>
-        <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%"   stopColor="#6366f1" />
-          <stop offset="50%"  stopColor="#22d3ee" />
-          <stop offset="100%" stopColor="#10b981" />
-        </linearGradient>
-      </defs>
-
-      {/* Filled arc */}
-      {value > 0 && (
-        <motion.path
-          d={buildArcPath(START_ANGLE, START_ANGLE + arcDeg, RADIUS, cx, cy)}
-          fill="none"
-          stroke="url(#gaugeGrad)"
-          strokeWidth="10"
-          strokeLinecap="round"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
+      <div className="ist-speed-gauge__ring">
+        <Gauge
+          value={safeValue}
+          min={0}
+          max={safeMax}
+          size={size}
+          strokeWidth={8}
+          gradient
+          glowEffect
+          tickMarks
+          label={unit}
+          unit={unit}
+          primary={{
+            0: '#f87171',
+            15: '#f59e0b',
+            35: '#22d3ee',
+            70: color,
+          }}
+          secondary="rgba(255,255,255,0.10)"
+          thresholds={[
+            { value: safeMax * 0.25, color: 'rgba(245,158,11,0.9)' },
+            { value: safeMax * 0.5, color: 'rgba(34,211,238,0.9)' },
+            { value: safeMax * 0.75, color },
+          ]}
+          className={{
+            svgClassName: 'ist-speed-gauge__svg',
+            textClassName: 'ist-speed-gauge__value',
+            labelClassName: 'ist-speed-gauge__unit',
+          }}
         />
-      )}
+      </div>
 
-      {/* Needle */}
-      <motion.polygon
-        points={`${needleTip.x},${needleTip.y} ${needleBase1.x},${needleBase1.y} ${needleBase2.x},${needleBase2.y}`}
-        fill={color}
-        opacity={0.9}
-        animate={{ opacity: [0.7, 1, 0.7] }}
-        transition={{ duration: 1.5, repeat: Infinity }}
-      />
-      <circle cx={cx} cy={cy} r="5" fill={color} opacity={0.9} />
+      <div className="ist-speed-gauge__status">
+        <span>{quality}</span>
+        <strong>
+          {displayValue} {unit}
+        </strong>
+      </div>
 
-      {/* Centre value */}
-      <text x={cx} y={cy - 18} textAnchor="middle" fontSize="32" fontWeight="700" fill="#fff">
-        {displayValue}
-      </text>
-      <text x={cx} y={cy - 2} textAnchor="middle" fontSize="11" fill="rgba(255,255,255,0.4)" fontWeight="500">
-        {unit}
-      </text>
-    </svg>
+      <div className="ist-speed-gauge__bar" aria-hidden="true">
+        <span className="ist-speed-gauge__bar-fill" />
+      </div>
+
+      <div className="ist-speed-gauge__scale">
+        <span>0</span>
+        <span>{formatSpeed(safeMax / 2)}</span>
+        <span>
+          {formatSpeed(safeMax)} {unit}
+        </span>
+      </div>
+    </div>
   );
+}
+
+function formatSpeed(speed) {
+  if (speed < 1) return speed.toFixed(2);
+  if (speed >= 100) return String(Math.round(speed));
+  return speed.toFixed(1);
+}
+
+function getSpeedQuality(speed) {
+  if (speed >= 100) return 'Excellent';
+  if (speed >= 50) return 'Fast';
+  if (speed >= 20) return 'Good';
+  if (speed > 0) return 'Warming up';
+  return 'Waiting for signal';
 }
