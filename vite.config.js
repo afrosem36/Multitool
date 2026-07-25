@@ -4,9 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { cloudflare } from "@cloudflare/vite-plugin";
 
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [tailwindcss(), react({ fastRefresh: true }), cloudflare()],
+// Keep the Cloudflare assets integration for production builds. During local
+// development the standalone API Worker owns port 8787; starting a second
+// assets Worker here would take that port and make POST /api requests hit the
+// SPA server instead of worker/src/index.js.
+export default defineConfig(({ command }) => ({
+  plugins: [
+    tailwindcss(),
+    react({ fastRefresh: true }),
+    ...(command === 'build' ? [cloudflare()] : []),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -89,4 +96,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

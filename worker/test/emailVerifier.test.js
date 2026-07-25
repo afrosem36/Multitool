@@ -11,6 +11,7 @@ import {
   inspectAddress,
   isConfirmationExpired,
   isSendRateLimited,
+  isTurnstileResultValid,
   mapResendEvent,
   normalizeEmail,
   validateEmailSyntax,
@@ -92,6 +93,38 @@ test('enforces per-email and per-IP send limits', () => {
   assert.equal(isSendRateLimited({ emailSentWithinDay: false, ipSendsWithinHour: 4 }).limited, false);
 });
 
+test('accepts Cloudflare always-pass test results only with the matching test secret', () => {
+  const dummyResult = {
+    success: true,
+    hostname: 'example.com',
+    action: undefined,
+    'error-codes': [],
+  };
+  assert.equal(isTurnstileResultValid(dummyResult, {
+    TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+  }), true);
+  assert.equal(isTurnstileResultValid(dummyResult, {
+    TURNSTILE_SECRET_KEY: 'production-secret',
+  }), false);
+});
+
+test('production Turnstile results require the expected action and an allowed hostname', () => {
+  const env = {
+    TURNSTILE_SECRET_KEY: 'production-secret',
+    TURNSTILE_ALLOWED_HOSTNAMES: 'multitool.space,www.multitool.space',
+  };
+  assert.equal(isTurnstileResultValid({
+    success: true,
+    hostname: 'multitool.space',
+    action: 'email_verifier_send',
+  }, env), true);
+  assert.equal(isTurnstileResultValid({
+    success: true,
+    hostname: 'attacker.example',
+    action: 'email_verifier_send',
+  }, env), false);
+});
+
 test('duplicate webhook events are not claimed twice', async () => {
   const ids = new Set();
   const db = {
@@ -122,4 +155,3 @@ test('verifies valid webhook signatures and rejects invalid ones', async () => {
   assert.equal(await verifyResendWebhookSignature(payload, headers, secret, 1700000000), true);
   assert.equal(await verifyResendWebhookSignature(`${payload}x`, headers, secret, 1700000000), false);
 });
-

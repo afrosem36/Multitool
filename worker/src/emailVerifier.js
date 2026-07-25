@@ -2,6 +2,7 @@ const EMAIL_MAX_LENGTH = 254;
 const LOCAL_MAX_LENGTH = 64;
 const CONFIRMATION_TTL_MS = 24 * 60 * 60 * 1000;
 const WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
+const TURNSTILE_ALWAYS_PASS_TEST_SECRET = '1x0000000000000000000000000000000AA';
 
 const ROLE_LOCAL_PARTS = new Set([
   'admin', 'billing', 'contact', 'help', 'info', 'marketing', 'office',
@@ -386,6 +387,22 @@ function publicResultFromRow(row) {
   };
 }
 
+export function isTurnstileResultValid(result, env) {
+  if (result?.success !== true) return false;
+  if (env.TURNSTILE_SECRET_KEY === TURNSTILE_ALWAYS_PASS_TEST_SECRET) return true;
+
+  const allowedHostnames = new Set(
+    (env.TURNSTILE_ALLOWED_HOSTNAMES || 'multitool.space,www.multitool.space,localhost,127.0.0.1')
+      .split(',')
+      .map((hostname) => hostname.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  return (
+    result.action === 'email_verifier_send' &&
+    allowedHostnames.has(String(result.hostname || '').toLowerCase())
+  );
+}
+
 async function verifyTurnstile(token, ip, env) {
   if (!env.TURNSTILE_SECRET_KEY) throw new Error('Turnstile is not configured');
   const body = new FormData();
@@ -399,15 +416,7 @@ async function verifyTurnstile(token, ip, env) {
   });
   if (!response.ok) return false;
   const result = await response.json();
-  const allowedHostnames = new Set(
-    (env.TURNSTILE_ALLOWED_HOSTNAMES || 'multitool.space,www.multitool.space,localhost,127.0.0.1')
-      .split(',')
-      .map((hostname) => hostname.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  const valid = result.success === true &&
-    result.action === 'email_verifier_send' &&
-    allowedHostnames.has(String(result.hostname || '').toLowerCase());
+  const valid = isTurnstileResultValid(result, env);
   if (!valid) {
     console.error('Turnstile validation failed', {
       success: result.success,
@@ -470,7 +479,8 @@ async function sendWithResend({ env, email, verificationId, confirmUrl }) {
       'Idempotency-Key': `email-verification/${verificationId}`,
     },
     body: JSON.stringify({
-      from: env.EMAIL_VERIFIER_FROM || 'Email Verifier <verification@mail.multitool.space>',
+      from: env.EMAIL_VERIFIER_FROM || env.FROM_EMAIL ||
+        'Email Verifier <verification@mail.multitool.space>',
       to: [email],
       subject: template.subject,
       html: template.html,
@@ -479,7 +489,14 @@ async function sendWithResend({ env, email, verificationId, confirmUrl }) {
     }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.id) throw new Error('The verification email could not be sent');
+  if (!response.ok || !data.id) {
+    console.error('Resend email send failed', {
+      status: response.status,
+      type: data.name || data.type || data.code,
+      message: data.message || data.error?.message || 'Provider rejected the request',
+    });
+    throw new Error('The verification email could not be sent');
+  }
   return data.id;
 }
 
@@ -506,6 +523,16 @@ async function insertVerification(db, values) {
 }
 
 export function registerEmailVerifierRoutes(app) {
+  app.use('/api/email-verifier/*', async (c, next) => {
+    const rawPathname = new URL(c.req.url).pathname;
+    const pathname = rawPathname === '/' ? '/' : rawPathname.replace(/\/+$/, '');
+    console.log('Email verifier route', {
+      pathname,
+      method: c.req.method,
+    });
+    await next();
+  });
+
   app.post('/api/email-verifier/check', async (c) => {
     const db = c.env.multitool_db || c.env.DB;
     if (!db) return jsonError(c, 'Verification storage is unavailable.', 503, 'DATABASE_UNAVAILABLE');
@@ -654,6 +681,15 @@ export function registerEmailVerifierRoutes(app) {
       console.error('Email verifier send failed:', error?.message);
       return jsonError(c, 'The verification email could not be sent. Please try again later.', 500, 'SEND_FAILED');
     }
+  });
+
+  app.all('/api/email-verifier/send', (c) => {
+    c.header('Allow', 'POST, OPTIONS');
+    return c.json({
+      success: false,
+      code: 'METHOD_NOT_ALLOWED',
+      message: 'Method not allowed',
+    }, 405);
   });
 
   app.get('/api/email-verifier/status/:verificationId', async (c) => {
