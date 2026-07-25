@@ -17,6 +17,8 @@ bucket_name = "multitoolhub-files"
 
 [vars]
 R2_BUCKET_NAME = "multitoolhub-files"
+EMAIL_VERIFIER_FROM = "Email Verifier <verification@mail.multitoolhub.space>"
+TURNSTILE_ALLOWED_HOSTNAMES = "multitoolhub.space,www.multitoolhub.space,multitool.space,www.multitool.space"
 
 # Secrets (set with: npx wrangler secret put KEY_NAME)
 # JWT_SECRET, GROQ_API_KEY, GEMINI_API_KEY

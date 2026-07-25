@@ -7,10 +7,10 @@ mail.
 
 ## 1. Prepare the sending domain
 
-In Resend, add and verify `mail.multitool.space`, then publish the DNS records
+In Resend, add and verify `mail.multitoolhub.space`, then publish the DNS records
 Resend supplies in Cloudflare DNS. The production sender defaults to:
 
-`Email Verifier <verification@mail.multitool.space>`
+`Email Verifier <verification@mail.multitoolhub.space>`
 
 Create a Resend webhook for:
 
@@ -47,11 +47,11 @@ Set these non-secret Worker variables in the Cloudflare dashboard or
 ```text
 FRONTEND_URL=https://multitool.space
 PUBLIC_API_URL=https://<worker-domain>
-EMAIL_VERIFIER_FROM=Email Verifier <verification@mail.multitool.space>
-TURNSTILE_ALLOWED_HOSTNAMES=multitool.space,www.multitool.space
+EMAIL_VERIFIER_FROM=Email Verifier <verification@mail.multitoolhub.space>
+TURNSTILE_ALLOWED_HOSTNAMES=multitoolhub.space,www.multitoolhub.space,multitool.space,www.multitool.space
 ```
 
-Create a Turnstile widget for `multitool.space`. Add its public site key to the
+Create a Turnstile widget for `multitoolhub.space`. Add its public site key to the
 frontend deployment as:
 
 ```text

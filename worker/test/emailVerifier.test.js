@@ -120,6 +120,15 @@ test('production Turnstile results require the expected action and an allowed ho
   }, env), true);
   assert.equal(isTurnstileResultValid({
     success: true,
+    hostname: 'www.multitoolhub.space',
+    action: 'email_verifier_send',
+  }, {
+    ...env,
+    TURNSTILE_ALLOWED_HOSTNAMES:
+      'multitoolhub.space,www.multitoolhub.space,multitool.space,www.multitool.space',
+  }), true);
+  assert.equal(isTurnstileResultValid({
+    success: true,
     hostname: 'attacker.example',
     action: 'email_verifier_send',
   }, env), false);

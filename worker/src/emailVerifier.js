@@ -392,7 +392,8 @@ export function isTurnstileResultValid(result, env) {
   if (env.TURNSTILE_SECRET_KEY === TURNSTILE_ALWAYS_PASS_TEST_SECRET) return true;
 
   const allowedHostnames = new Set(
-    (env.TURNSTILE_ALLOWED_HOSTNAMES || 'multitool.space,www.multitool.space,localhost,127.0.0.1')
+    (env.TURNSTILE_ALLOWED_HOSTNAMES ||
+      'multitoolhub.space,www.multitoolhub.space,multitool.space,www.multitool.space,localhost,127.0.0.1')
       .split(',')
       .map((hostname) => hostname.trim().toLowerCase())
       .filter(Boolean)
@@ -480,7 +481,7 @@ async function sendWithResend({ env, email, verificationId, confirmUrl }) {
     },
     body: JSON.stringify({
       from: env.EMAIL_VERIFIER_FROM || env.FROM_EMAIL ||
-        'Email Verifier <verification@mail.multitool.space>',
+        'Email Verifier <verification@mail.multitoolhub.space>',
       to: [email],
       subject: template.subject,
       html: template.html,
