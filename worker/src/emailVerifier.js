@@ -405,9 +405,18 @@ async function verifyTurnstile(token, ip, env) {
       .map((hostname) => hostname.trim().toLowerCase())
       .filter(Boolean)
   );
-  return result.success === true &&
+  const valid = result.success === true &&
     result.action === 'email_verifier_send' &&
     allowedHostnames.has(String(result.hostname || '').toLowerCase());
+  if (!valid) {
+    console.error('Turnstile validation failed', {
+      success: result.success,
+      errorCodes: result['error-codes'],
+      hostname: result.hostname,
+      action: result.action,
+    });
+  }
+  return valid;
 }
 
 function getRequestIp(c) {
