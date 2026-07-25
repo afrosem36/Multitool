@@ -4,10 +4,16 @@ import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import * as cheerio from 'cheerio';
 import { registerEmailVerifierRoutes } from './emailVerifier.js';
+import {
+  cleanupExpiredEmailVerificationJobs,
+  processEmailVerificationQueue,
+  registerEmailVerifierBulkRoutes,
+} from './emailVerifierBulk.js';
 
 const app = new Hono();
 
 registerEmailVerifierRoutes(app);
+registerEmailVerifierBulkRoutes(app);
 
 const ALLOWED_ORIGINS = [
   "https://www.multitool.space",
@@ -23,7 +29,7 @@ function getCorsHeaders(origin) {
       "Access-Control-Allow-Origin": origin || "*",
       "Access-Control-Allow-Credentials": "true",
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Email-Job-Token, Idempotency-Key",
       "Access-Control-Max-Age": "86400",
     };
   }
@@ -4385,5 +4391,11 @@ export default {
     const out = new Response(response.body, response);
     Object.entries(corsHeaders).forEach(([k, v]) => out.headers.set(k, v));
     return out;
+  },
+  async queue(batch, env) {
+    await processEmailVerificationQueue(batch, env);
+  },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(cleanupExpiredEmailVerificationJobs(env));
   },
 };

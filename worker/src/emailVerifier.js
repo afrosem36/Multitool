@@ -40,6 +40,7 @@ const STATUS_LABELS = {
   pending: 'Pending',
   unknown: 'Unknown',
   complaint: 'Complaint',
+  precheck_failed: 'Precheck Failed',
 };
 
 function jsonError(c, message, status = 400, code = 'BAD_REQUEST') {
@@ -128,7 +129,7 @@ export async function checkDomain(domain, fetchImpl = fetch) {
 
 export function calculateTechnicalResult(address, dns) {
   let score = 0;
-  if (address.syntaxValid) score += 15;
+  if (address.syntaxValid) score += 10;
   if (dns.domainValid === true) score += 15;
   if (dns.mxValid === true) score += 25;
   if (!address.disposable) score += 10;
@@ -146,7 +147,7 @@ export function calculateTechnicalResult(address, dns) {
     reason = 'The DNS lookup did not complete. This does not mean the address is invalid.';
   } else if (!dns.domainValid) {
     status = 'undeliverable';
-    score = Math.min(score, 15);
+    score = Math.min(score, 10);
     reason = 'The domain could not be found in DNS.';
   } else if (!dns.mxValid) {
     status = 'undeliverable';
@@ -208,6 +209,13 @@ export async function runTechnicalCheck(email, fetchImpl = fetch) {
     ? await checkDomain(address.domain, fetchImpl)
     : { domainValid: false, mxValid: false, mxRecords: [], dnsStatus: 'not_run' };
   const result = calculateTechnicalResult(address, dns);
+  const scoreBreakdown = [
+    { signal: 'Valid syntax', points: address.syntaxValid ? 10 : 0 },
+    { signal: 'Domain resolves', points: dns.domainValid === true ? 15 : 0 },
+    { signal: 'MX records found', points: dns.mxValid === true ? 25 : 0 },
+    { signal: 'Not disposable', points: !address.disposable ? 10 : 0 },
+    { signal: 'Not role-based', points: !address.roleBased ? 5 : 0 },
+  ];
 
   return {
     email: address.normalizedEmail,
@@ -246,6 +254,7 @@ export async function runTechnicalCheck(email, fetchImpl = fetch) {
     deliveryStatus: 'not_sent',
     confirmationStatus: 'not_requested',
     suggestedEmail: address.suggestedEmail,
+    scoreBreakdown,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -317,9 +326,13 @@ export function mapResendEvent(type) {
   return {
     'email.sent': { status: 'pending', deliveryStatus: 'sent' },
     'email.delivered': { status: 'delivered', deliveryStatus: 'delivered' },
-    'email.bounced': { status: 'undeliverable', deliveryStatus: 'bounced' },
+    'email.bounced': { status: 'undeliverable', deliveryStatus: 'hard_bounce' },
     'email.delivery_delayed': { status: 'delayed', deliveryStatus: 'delayed' },
     'email.complained': { status: 'complaint', deliveryStatus: 'complaint' },
+    'email.failed': { status: 'unknown', deliveryStatus: 'failed' },
+    'email.suppressed': { status: 'undeliverable', deliveryStatus: 'suppressed' },
+    'email.opened': { status: null, deliveryStatus: null, engagementStatus: 'open_detected' },
+    'email.clicked': { status: null, deliveryStatus: null, engagementStatus: 'click_detected' },
   }[type] || null;
 }
 
@@ -354,7 +367,20 @@ export async function claimRateLimit(db, rateKey, maximum, expiresAt, now = new 
   return (result.meta?.changes || 0) > 0;
 }
 
+export async function getRateLimitCount(db, rateKey, now = new Date().toISOString()) {
+  const row = await db.prepare(
+    'SELECT request_count FROM email_verification_rate_limits WHERE rate_key = ? AND expires_at > ?'
+  ).bind(rateKey, now).first();
+  return Number(row?.request_count || 0);
+}
+
 function publicResultFromRow(row) {
+  let scoreBreakdown = [];
+  try {
+    scoreBreakdown = row.score_breakdown ? JSON.parse(row.score_breakdown) : [];
+  } catch {
+    scoreBreakdown = [];
+  }
   return {
     verificationId: row.id,
     email: row.normalized_email,
@@ -378,16 +404,30 @@ function publicResultFromRow(row) {
       label: row.catch_all == null ? 'Unknown without a safe SMTP test' : row.catch_all ? 'Catch-all detected' : 'Not catch-all',
     },
     deliveryStatus: row.delivery_status || 'not_sent',
-    confirmationStatus: row.confirmed_at ? 'confirmed' : row.sent_at ? 'waiting' : 'not_requested',
+    engagementStatus: row.engagement_status ||
+      (Number(row.click_count || 0) > 0 ? 'click_detected' :
+        Number(row.open_count || 0) > 0 ? 'open_detected' : 'no_open_detected'),
+    confirmationStatus: row.confirmation_status ||
+      (row.confirmed_at ? 'confirmed_active' : row.sent_at ? 'not_confirmed' : 'not_requested'),
     reason: row.reason,
     checkedAt: row.updated_at,
+    latestEvent: row.latest_event,
+    latestEventAt: row.latest_event_at || row.updated_at,
     deliveredAt: row.delivered_at,
+    firstOpenedAt: row.first_opened_at,
+    lastOpenedAt: row.last_opened_at,
+    openCount: Number(row.open_count || 0),
+    firstClickedAt: row.first_clicked_at,
+    lastClickedAt: row.last_clicked_at,
+    clickCount: Number(row.click_count || 0),
     confirmedAt: row.confirmed_at,
     expiresAt: row.expires_at,
+    scoreBreakdown,
+    trackingNote: 'Open tracking is an estimate. Some email clients block tracking images, while privacy features may generate automatic opens. A secure confirmation-link click remains the strongest proof.',
   };
 }
 
-export function isTurnstileResultValid(result, env) {
+export function isTurnstileResultValid(result, env, expectedAction = 'email_verifier_send') {
   if (result?.success !== true) return false;
   if (env.TURNSTILE_SECRET_KEY === TURNSTILE_ALWAYS_PASS_TEST_SECRET) return true;
 
@@ -399,12 +439,12 @@ export function isTurnstileResultValid(result, env) {
       .filter(Boolean)
   );
   return (
-    result.action === 'email_verifier_send' &&
+    result.action === expectedAction &&
     allowedHostnames.has(String(result.hostname || '').toLowerCase())
   );
 }
 
-async function verifyTurnstile(token, ip, env) {
+export async function verifyTurnstile(token, ip, env, expectedAction = 'email_verifier_send') {
   if (!env.TURNSTILE_SECRET_KEY) throw new Error('Turnstile is not configured');
   const body = new FormData();
   body.append('secret', env.TURNSTILE_SECRET_KEY);
@@ -417,7 +457,7 @@ async function verifyTurnstile(token, ip, env) {
   });
   if (!response.ok) return false;
   const result = await response.json();
-  const valid = isTurnstileResultValid(result, env);
+  const valid = isTurnstileResultValid(result, env, expectedAction);
   if (!valid) {
     console.error('Turnstile validation failed', {
       success: result.success,
@@ -443,7 +483,7 @@ function buildConfirmationEmail(confirmUrl) {
     subject: 'Confirm your email address',
     text: `Hello,
 
-A one-time verification was requested for this email address on multitool.space.
+A one-time verification was requested for this email address on multitoolhub.space.
 
 Confirm that this email is active:
 ${confirmUrl}
@@ -451,25 +491,25 @@ ${confirmUrl}
 If you did not request this verification, you can safely ignore this message.
 
 Regards,
-Multitool.space`,
+Multitoolhub.space`,
     html: `<!doctype html>
 <html><body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#172033">
   <div style="max-width:560px;margin:0 auto;padding:40px 20px">
     <div style="background:#ffffff;border:1px solid #dfe6f0;border-radius:18px;padding:34px">
-      <div style="font-size:14px;font-weight:700;color:#4f46e5;margin-bottom:22px">MULTITOOL.SPACE</div>
+      <div style="font-size:14px;font-weight:700;color:#4f46e5;margin-bottom:22px">MULTITOOLHUB.SPACE</div>
       <h1 style="font-size:25px;margin:0 0 18px">Confirm your email address</h1>
       <p style="line-height:1.65;margin:0 0 18px">Hello,</p>
-      <p style="line-height:1.65;margin:0 0 24px">A one-time verification was requested for this email address on multitool.space.</p>
+      <p style="line-height:1.65;margin:0 0 24px">A one-time verification was requested for this email address on multitoolhub.space.</p>
       <a href="${escapedUrl}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;padding:14px 22px;border-radius:10px">Confirm Email</a>
       <p style="line-height:1.65;color:#667085;font-size:14px;margin:26px 0 0">This link expires after 24 hours. If you did not request this verification, you can safely ignore this message.</p>
-      <p style="line-height:1.65;margin:24px 0 0">Regards,<br>Multitool.space</p>
+      <p style="line-height:1.65;margin:24px 0 0">Regards,<br>Multitoolhub.space</p>
     </div>
   </div>
 </body></html>`,
   };
 }
 
-async function sendWithResend({ env, email, verificationId, confirmUrl }) {
+export async function sendWithResend({ env, email, verificationId, jobRowId = null, confirmUrl }) {
   if (!env.RESEND_API_KEY) throw new Error('Email delivery is not configured');
   const template = buildConfirmationEmail(confirmUrl);
   const response = await fetch('https://api.resend.com/emails', {
@@ -486,7 +526,10 @@ async function sendWithResend({ env, email, verificationId, confirmUrl }) {
       subject: template.subject,
       html: template.html,
       text: template.text,
-      tags: [{ name: 'verification_id', value: verificationId }],
+      tags: [
+        { name: 'verification_id', value: verificationId },
+        ...(jobRowId ? [{ name: 'job_row_id', value: jobRowId }] : []),
+      ],
     }),
   });
   const data = await response.json().catch(() => ({}));
@@ -496,7 +539,9 @@ async function sendWithResend({ env, email, verificationId, confirmUrl }) {
       type: data.name || data.type || data.code,
       message: data.message || data.error?.message || 'Provider rejected the request',
     });
-    throw new Error('The verification email could not be sent');
+    const error = new Error('The verification email could not be sent');
+    error.transient = response.status === 429 || response.status >= 500;
+    throw error;
   }
   return data.id;
 }
@@ -507,8 +552,9 @@ async function insertVerification(db, values) {
       id, email, normalized_email, confirmation_token_hash, provider_message_id,
       verification_mode, status, confidence_score, syntax_valid, domain_valid,
       mx_valid, disposable, role_based, catch_all, smtp_status, delivery_status,
+      technical_status, engagement_status, confirmation_status, score_breakdown,
       reason, requester_ip_hash, created_at, updated_at, sent_at, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     values.id, values.email, values.normalizedEmail, values.tokenHash || null,
     values.providerMessageId || null, values.mode, values.status, values.confidenceScore,
@@ -518,8 +564,130 @@ async function insertVerification(db, values) {
     values.disposable ? 1 : 0, values.roleBased ? 1 : 0,
     values.catchAll == null ? null : values.catchAll ? 1 : 0,
     values.smtpStatus || 'not_attempted', values.deliveryStatus || 'not_sent',
+    values.status, 'no_open_detected',
+    values.mode === 'confirmation' ? 'not_confirmed' : 'not_requested',
+    JSON.stringify(values.scoreBreakdown || []),
     values.reason, values.ipHash, values.createdAt, values.createdAt,
     values.sentAt || null, values.expiresAt || null
+  ).run();
+}
+
+function providerEventTimestamp(event) {
+  const raw = event?.created_at || event?.data?.created_at || event?.data?.createdAt;
+  const parsed = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+}
+
+function resendTagValue(tags, name) {
+  if (Array.isArray(tags)) return tags.find((tag) => tag?.name === name)?.value || '';
+  return tags?.[name] || '';
+}
+
+function bounceDetails(event) {
+  const rawType = String(
+    event?.data?.bounce?.type ||
+    event?.data?.bounce_type ||
+    event?.data?.type ||
+    ''
+  ).toLowerCase();
+  const reason = String(
+    event?.data?.bounce?.message ||
+    event?.data?.reason ||
+    event?.data?.message ||
+    ''
+  ).slice(0, 1000);
+  const soft = /soft|temporary|transient|mailbox[_ -]?full|delayed/.test(`${rawType} ${reason}`.toLowerCase());
+  return { type: soft ? 'soft' : 'hard', reason: reason || null };
+}
+
+export function reduceDeliveryStatus(current, eventType, bounceType = 'hard') {
+  const terminal = new Set(['complaint', 'hard_bounce', 'suppressed']);
+  if (current === 'complaint') return current;
+  if (eventType === 'email.complained') return 'complaint';
+  if (current === 'hard_bounce' && eventType !== 'email.complained') return current;
+  if (current === 'suppressed' && !['email.complained', 'email.bounced'].includes(eventType)) return current;
+  if (eventType === 'email.bounced') return bounceType === 'soft' ? 'soft_bounce' : 'hard_bounce';
+  if (eventType === 'email.suppressed') return terminal.has(current) ? current : 'suppressed';
+  if (eventType === 'email.failed') return terminal.has(current) ? current : 'failed';
+  if (eventType === 'email.delivered') return terminal.has(current) || current === 'failed' ? current : 'delivered';
+  if (eventType === 'email.delivery_delayed') {
+    return terminal.has(current) || ['failed', 'delivered'].includes(current) ? current : 'delayed';
+  }
+  if (eventType === 'email.sent') {
+    return terminal.has(current) || ['failed', 'delivered', 'delayed', 'soft_bounce'].includes(current)
+      ? current
+      : 'sent';
+  }
+  return current || 'not_sent';
+}
+
+function legacyStatusForDelivery(currentStatus, deliveryStatus) {
+  if (currentStatus === 'confirmed') return currentStatus;
+  return {
+    delivered: 'delivered',
+    delayed: 'delayed',
+    soft_bounce: 'risky',
+    hard_bounce: 'undeliverable',
+    suppressed: 'undeliverable',
+    complaint: 'complaint',
+    failed: 'unknown',
+    sent: 'pending',
+  }[deliveryStatus] || currentStatus || 'pending';
+}
+
+function deliveryReason(eventType, bounceReason) {
+  return {
+    'email.sent': 'The email provider accepted the verification request.',
+    'email.delivered': 'The receiving mail server accepted the verification message.',
+    'email.delivery_delayed': 'The receiving server reported a temporary delivery delay.',
+    'email.bounced': bounceReason || 'The receiving server rejected the verification message.',
+    'email.failed': 'The email provider reported a terminal delivery failure.',
+    'email.suppressed': 'The provider suppressed this address to protect sender reputation.',
+    'email.complained': 'The recipient marked the verification message as spam. Further sends are suppressed.',
+  }[eventType] || null;
+}
+
+async function recordSuppression(db, normalizedEmail, reason, verificationId, jobRowId, providerCreatedAt) {
+  if (!normalizedEmail || !reason) return;
+  const now = new Date().toISOString();
+  await db.prepare(`
+    INSERT INTO email_verification_suppressions (
+      normalized_email, reason, source_verification_id, source_job_row_id,
+      provider_created_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(normalized_email) DO UPDATE SET
+      reason = excluded.reason,
+      source_verification_id = COALESCE(excluded.source_verification_id, source_verification_id),
+      source_job_row_id = COALESCE(excluded.source_job_row_id, source_job_row_id),
+      provider_created_at = excluded.provider_created_at,
+      updated_at = excluded.updated_at
+  `).bind(
+    normalizedEmail, reason, verificationId || null, jobRowId || null,
+    providerCreatedAt, now, now
+  ).run();
+}
+
+async function refreshBulkWebhookCounters(db, jobId, eventAt) {
+  await db.prepare(`
+    UPDATE email_verification_jobs
+    SET delivered_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'delivered'),
+        pending_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status IN ('queued', 'sending', 'sent', 'pending')),
+        opened_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND open_count > 0),
+        clicked_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND click_count > 0),
+        confirmed_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND confirmation_status = 'confirmed_active'),
+        bounced_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status IN ('soft_bounce', 'hard_bounce')),
+        delayed_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'delayed'),
+        soft_bounce_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'soft_bounce'),
+        hard_bounce_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'hard_bounce'),
+        suppressed_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'suppressed'),
+        complaint_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'complaint'),
+        failed_rows = (SELECT COUNT(*) FROM email_verification_job_rows WHERE job_id = ? AND delivery_status = 'failed'),
+        latest_event_at = CASE WHEN latest_event_at IS NULL OR latest_event_at < ? THEN ? ELSE latest_event_at END,
+        updated_at = ?
+    WHERE id = ?
+  `).bind(
+    ...Array(12).fill(jobId),
+    eventAt, eventAt, new Date().toISOString(), jobId
   ).run();
 }
 
@@ -541,14 +709,47 @@ export function registerEmailVerifierRoutes(app) {
     try {
       const body = await c.req.json();
       const email = normalizeEmail(body.email);
-      const ipHash = await hashValue(getRequestIp(c), c.env.TOKEN_HASH_SECRET);
+      const ip = getRequestIp(c);
+      const ipHash = await hashValue(ip, c.env.TOKEN_HASH_SECRET);
+      const hourlyKey = `instant-ip:${ipHash}`;
+      const challengeThreshold = Math.max(1, Number(c.env.EMAIL_INSTANT_TURNSTILE_THRESHOLD || 10));
+      const hourlyLimit = Math.max(challengeThreshold, Number(c.env.EMAIL_INSTANT_HOURLY_LIMIT || 30));
+      const dailyLimit = Math.max(hourlyLimit, Number(c.env.EMAIL_INSTANT_DAILY_LIMIT || 100));
+      const hourlyCount = await getRateLimitCount(db, hourlyKey);
+      if (hourlyCount >= challengeThreshold) {
+        if (!body.turnstileToken) {
+          return jsonError(
+            c,
+            'Complete the bot-protection check to continue with additional instant checks.',
+            428,
+            'TURNSTILE_REQUIRED'
+          );
+        }
+        const turnstileValid = await verifyTurnstile(
+          body.turnstileToken,
+          ip,
+          c.env,
+          'email_verifier_instant'
+        );
+        if (!turnstileValid) {
+          return jsonError(c, 'Bot-protection verification failed. Please try again.', 403, 'TURNSTILE_FAILED');
+        }
+      }
       const checkAllowed = await claimRateLimit(
         db,
-        `instant-ip:${ipHash}`,
-        30,
+        hourlyKey,
+        hourlyLimit,
         new Date(Date.now() + 60 * 60 * 1000).toISOString()
       );
       if (!checkAllowed) return jsonError(c, 'Too many checks were requested. Try again later.', 429, 'RATE_LIMITED');
+      const today = new Date().toISOString().slice(0, 10);
+      const dayAllowed = await claimRateLimit(
+        db,
+        `instant-day:${ipHash}:${today}`,
+        dailyLimit,
+        new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      );
+      if (!dayAllowed) return jsonError(c, 'The daily Instant Check limit has been reached.', 429, 'RATE_LIMITED');
 
       const result = await runTechnicalCheck(email);
       const id = crypto.randomUUID();
@@ -567,6 +768,7 @@ export function registerEmailVerifierRoutes(app) {
         catchAll: result.catchAll.value,
         smtpStatus: result.smtp.status,
         reason: result.reason,
+        scoreBreakdown: result.scoreBreakdown,
         ipHash,
         createdAt: result.checkedAt,
       });
@@ -648,6 +850,7 @@ export function registerEmailVerifierRoutes(app) {
         smtpStatus: technical.smtp.status,
         deliveryStatus: 'requesting',
         reason: 'A permission-based confirmation email is being sent.',
+        scoreBreakdown: technical.scoreBreakdown,
         ipHash,
         createdAt: now,
         expiresAt,
@@ -718,12 +921,12 @@ export function registerEmailVerifierRoutes(app) {
     const db = c.env.multitool_db || c.env.DB;
     const html = (title, message, success = false) => c.html(`<!doctype html>
       <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-      <title>${title} | Multitool.space</title></head>
+      <title>${title} | Multitoolhub.space</title></head>
       <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1020;color:#f8fafc;font-family:Inter,Arial,sans-serif">
       <main style="width:min(520px,calc(100% - 40px));box-sizing:border-box;padding:38px;border:1px solid #29324c;border-radius:22px;background:#11182c;text-align:center">
       <div style="width:58px;height:58px;margin:0 auto 20px;display:grid;place-items:center;border-radius:50%;background:${success ? '#123d32' : '#3b2230'};font-size:28px">${success ? '✓' : '!'}</div>
       <h1 style="margin:0 0 12px;font-size:28px">${title}</h1><p style="margin:0;color:#aab5cf;line-height:1.65">${message}</p>
-      <a href="${(c.env.FRONTEND_URL || 'https://multitool.space')}/tools/email-verifier" style="display:inline-block;margin-top:26px;color:#a5b4fc">Return to Email Verifier</a>
+      <a href="${(c.env.FRONTEND_URL || 'https://www.multitoolhub.space')}/tools/email-verifier" style="display:inline-block;margin-top:26px;color:#a5b4fc">Return to Email Verifier</a>
       </main></body></html>`, success ? 200 : 400);
     try {
       if (!c.env.TOKEN_HASH_SECRET) throw new Error('TOKEN_HASH_SECRET is not configured');
@@ -731,19 +934,58 @@ export function registerEmailVerifierRoutes(app) {
       const row = await db.prepare(
         'SELECT id, status, expires_at FROM email_verifications WHERE confirmation_token_hash = ? LIMIT 1'
       ).bind(tokenHash).first();
-      if (!row) return html('Invalid confirmation link', 'This confirmation link is not valid or has already been removed.');
-      if (isConfirmationExpired(row.expires_at)) return html('Confirmation link expired', 'This one-time confirmation link has expired. Request a new verification if needed.');
-      if (row.status === 'complaint') {
+      const bulkRow = row ? null : await db.prepare(`
+        SELECT id, job_id, technical_status, delivery_status, confirmation_status,
+          confirmation_expires_at
+        FROM email_verification_job_rows
+        WHERE confirmation_token_hash = ? LIMIT 1
+      `).bind(tokenHash).first();
+      if (!row && !bulkRow) return html('Invalid confirmation link', 'This confirmation link is not valid or has already been removed.');
+      const expiresAt = row?.expires_at || bulkRow?.confirmation_expires_at;
+      if (isConfirmationExpired(expiresAt)) {
+        if (bulkRow) {
+          await db.prepare(`
+            UPDATE email_verification_job_rows
+            SET confirmation_status = 'expired', updated_at = ?
+            WHERE id = ? AND confirmation_status != 'confirmed_active'
+          `).bind(new Date().toISOString(), bulkRow.id).run();
+        }
+        return html('Confirmation link expired', 'This one-time confirmation link has expired. Request a new verification if needed.');
+      }
+      if (row?.status === 'complaint' || bulkRow?.delivery_status === 'complaint') {
         return html('Verification unavailable', 'This address reported the message as spam, so the verification remains suppressed.');
       }
-      if (row.status !== 'confirmed') {
+      if (bulkRow) {
+        if (bulkRow.confirmation_status !== 'confirmed_active') {
+          const now = new Date().toISOString();
+          await db.prepare(`
+            UPDATE email_verification_job_rows
+            SET confirmation_status = 'confirmed_active', confidence_score = 100,
+              confirmed_at = ?, updated_at = ?, latest_event = 'confirmed',
+              latest_event_at = ?,
+              reason = 'The recipient completed the unique secure confirmation link.'
+            WHERE id = ? AND delivery_status != 'complaint'
+          `).bind(now, now, now, bulkRow.id).run();
+          await db.prepare(`
+            UPDATE email_verification_jobs
+            SET confirmed_rows = (
+              SELECT COUNT(*) FROM email_verification_job_rows
+              WHERE job_id = ? AND confirmation_status = 'confirmed_active'
+            ), latest_event_at = ?, updated_at = ?
+            WHERE id = ?
+          `).bind(bulkRow.job_id, now, now, bulkRow.job_id).run();
+        }
+      } else if (row.status !== 'confirmed') {
         const now = new Date().toISOString();
         await db.prepare(`
           UPDATE email_verifications
-          SET status = 'confirmed', confidence_score = 100, confirmed_at = ?, updated_at = ?,
+          SET status = 'confirmed', technical_status = 'confirmed',
+              confirmation_status = 'confirmed_active', confidence_score = 100,
+              confirmed_at = ?, updated_at = ?, latest_event = 'confirmed',
+              latest_event_at = ?,
               reason = 'The recipient opened the secure confirmation link.'
           WHERE id = ?
-        `).bind(now, now, row.id).run();
+        `).bind(now, now, now, row.id).run();
       }
       return html('Email confirmed', 'This email address is now Confirmed Active. The confirmation proves the link was opened, not where future messages will be placed.', true);
     } catch (error) {
@@ -773,70 +1015,195 @@ export function registerEmailVerifierRoutes(app) {
         return c.json({ received: true, duplicate: true });
       }
 
-      const messageId = event.data?.email_id || event.data?.id;
+      const messageId = event.data?.email_id || event.data?.id || '';
       const eventTags = event.data?.tags;
-      const taggedVerificationId = Array.isArray(eventTags)
-        ? eventTags.find((tag) => tag?.name === 'verification_id')?.value
-        : eventTags?.verification_id;
-      if (!messageId && !taggedVerificationId) return c.json({ received: true, ignored: true });
-      const now = new Date().toISOString();
-      const bounceReason = event.data?.bounce?.message || event.data?.reason || null;
-      const timeColumn = event.type === 'email.delivered'
-        ? 'delivered_at'
-        : event.type === 'email.bounced' ? 'bounced_at' : null;
-      const scoreSql = event.type === 'email.delivered'
-        ? "CASE WHEN status = 'confirmed' THEN 100 WHEN delivery_status = 'delivered' THEN confidence_score ELSE MIN(confidence_score + 15, 99) END"
-        : event.type === 'email.bounced' || event.type === 'email.complained' ? '0' : 'confidence_score';
-      const stateSql = {
-        'email.complained': { status: "'complaint'", delivery: "'complaint'" },
-        'email.bounced': {
-          status: "CASE WHEN status = 'complaint' THEN status ELSE 'undeliverable' END",
-          delivery: "CASE WHEN delivery_status = 'complaint' THEN delivery_status ELSE 'bounced' END",
-        },
-        'email.delivered': {
-          status: "CASE WHEN status IN ('confirmed', 'complaint', 'undeliverable') THEN status ELSE 'delivered' END",
-          delivery: "CASE WHEN delivery_status IN ('complaint', 'bounced') THEN delivery_status ELSE 'delivered' END",
-        },
-        'email.delivery_delayed': {
-          status: "CASE WHEN status IN ('confirmed', 'complaint', 'undeliverable', 'delivered') THEN status ELSE 'delayed' END",
-          delivery: "CASE WHEN delivery_status IN ('complaint', 'bounced', 'delivered') THEN delivery_status ELSE 'delayed' END",
-        },
-        'email.sent': {
-          status: "CASE WHEN status IN ('confirmed', 'complaint', 'undeliverable', 'delivered', 'delayed') THEN status ELSE 'pending' END",
-          delivery: "CASE WHEN delivery_status IN ('complaint', 'bounced', 'delivered', 'delayed') THEN delivery_status ELSE 'sent' END",
-        },
-      }[event.type];
-      const timestampSql = timeColumn ? `, ${timeColumn} = ?` : '';
-      const bindings = [
-        bounceReason,
-        event.type === 'email.delivered'
-          ? 'The receiving mail server accepted the verification message.'
-          : event.type === 'email.bounced'
-            ? 'The receiving mail server permanently rejected the verification message.'
-            : event.type === 'email.delivery_delayed'
-              ? 'The receiving server reported a temporary delivery delay.'
-              : event.type === 'email.complained'
-                ? 'The recipient marked the verification message as spam. Further sends are suppressed.'
-                : 'The email provider accepted the verification request.',
-        now,
-      ];
-      if (timeColumn) bindings.push(now);
-      bindings.push(messageId || '', taggedVerificationId || '');
-      const updated = await db.prepare(`
-        UPDATE email_verifications
-        SET status = ${stateSql.status}, delivery_status = ${stateSql.delivery}, bounce_reason = ?, reason = ?,
-            updated_at = ?, confidence_score = ${scoreSql}${timestampSql},
-            provider_message_id = COALESCE(provider_message_id, NULLIF(?, ''))
-        WHERE provider_message_id = ? OR id = ?
-      `).bind(
-        ...bindings.slice(0, -2),
-        messageId || '',
-        messageId || '',
-        taggedVerificationId || ''
-      ).run();
-      if ((updated.meta?.changes || 0) === 0) {
+      const taggedVerificationId = resendTagValue(eventTags, 'verification_id');
+      const taggedJobRowId = resendTagValue(eventTags, 'job_row_id');
+      if (!messageId && !taggedVerificationId && !taggedJobRowId) {
+        return c.json({ received: true, ignored: true });
+      }
+
+      const single = await db.prepare(`
+        SELECT * FROM email_verifications
+        WHERE provider_message_id = ? OR id = ? LIMIT 1
+      `).bind(messageId, taggedVerificationId).first();
+      const bulk = await db.prepare(`
+        SELECT * FROM email_verification_job_rows
+        WHERE provider_email_id = ? OR id = ? LIMIT 1
+      `).bind(messageId, taggedJobRowId).first();
+      if (!single && !bulk) {
         await db.prepare('DELETE FROM email_verification_webhook_events WHERE event_id = ?').bind(eventId).run();
         return jsonError(c, 'Verification record is not ready.', 503, 'RETRY_WEBHOOK');
+      }
+
+      const eventAt = providerEventTimestamp(event);
+      const receivedAt = new Date().toISOString();
+      const bounce = bounceDetails(event);
+      const redactedPayload = JSON.stringify({
+        type: event.type,
+        bounceType: event.type === 'email.bounced' ? bounce.type : undefined,
+        bounceReason: event.type === 'email.bounced' ? bounce.reason : undefined,
+      });
+      await db.prepare(`
+        INSERT INTO email_verification_events (
+          id, verification_id, job_row_id, provider_event_id, provider_email_id,
+          event_type, provider_created_at, event_payload, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        crypto.randomUUID(), single?.id || null, bulk?.id || null, eventId,
+        messageId || single?.provider_message_id || bulk?.provider_email_id || null,
+        event.type, eventAt, redactedPayload, receivedAt
+      ).run();
+
+      if (single) {
+        const isEngagement = event.type === 'email.opened' || event.type === 'email.clicked';
+        const deliveryIsNewer = !single.delivery_event_at || eventAt >= single.delivery_event_at;
+        let deliveryStatus = single.delivery_status || 'not_sent';
+        let legacyStatus = single.status;
+        let score = Number(single.confidence_score || 0);
+        if (!isEngagement && deliveryIsNewer) {
+          deliveryStatus = reduceDeliveryStatus(deliveryStatus, event.type, bounce.type);
+          legacyStatus = legacyStatusForDelivery(legacyStatus, deliveryStatus);
+          if (['hard_bounce', 'suppressed', 'complaint'].includes(deliveryStatus)) score = 0;
+          else if (deliveryStatus === 'delivered' && single.status !== 'confirmed') {
+            score = Math.min(99, score + (single.delivery_status === 'delivered' ? 0 : 15));
+          }
+        }
+        if (single.status === 'confirmed' || single.confirmation_status === 'confirmed_active') score = 100;
+        if (event.type === 'email.opened' && score < 100) score = Math.min(99, score + 2);
+        if (event.type === 'email.clicked' && score < 100) score = Math.min(99, score + 5);
+        const reason = deliveryReason(event.type, bounce.reason) || single.reason;
+        await db.prepare(`
+          UPDATE email_verifications
+          SET status = ?, technical_status = COALESCE(technical_status, ?),
+              delivery_status = ?, engagement_status = ?,
+              confidence_score = ?, bounce_reason = COALESCE(?, bounce_reason),
+              reason = ?, updated_at = ?, latest_event = ?, latest_event_at =
+                CASE WHEN latest_event_at IS NULL OR latest_event_at < ? THEN ? ELSE latest_event_at END,
+              delivery_event_at = CASE WHEN ? = 1 THEN ? ELSE delivery_event_at END,
+              provider_message_id = COALESCE(provider_message_id, NULLIF(?, '')),
+              sent_at = CASE WHEN ? = 'email.sent' THEN COALESCE(sent_at, ?) ELSE sent_at END,
+              delivered_at = CASE WHEN ? = 'email.delivered' THEN COALESCE(delivered_at, ?) ELSE delivered_at END,
+              delayed_at = CASE WHEN ? = 'email.delivery_delayed' THEN COALESCE(delayed_at, ?) ELSE delayed_at END,
+              bounced_at = CASE WHEN ? = 'email.bounced' THEN COALESCE(bounced_at, ?) ELSE bounced_at END,
+              failed_at = CASE WHEN ? IN ('email.failed', 'email.suppressed') THEN COALESCE(failed_at, ?) ELSE failed_at END,
+              complained_at = CASE WHEN ? = 'email.complained' THEN COALESCE(complained_at, ?) ELSE complained_at END,
+              first_opened_at = CASE WHEN ? = 'email.opened' THEN
+                CASE WHEN first_opened_at IS NULL OR first_opened_at > ? THEN ? ELSE first_opened_at END
+                ELSE first_opened_at END,
+              last_opened_at = CASE WHEN ? = 'email.opened' THEN
+                CASE WHEN last_opened_at IS NULL OR last_opened_at < ? THEN ? ELSE last_opened_at END
+                ELSE last_opened_at END,
+              open_count = open_count + CASE WHEN ? = 'email.opened' THEN 1 ELSE 0 END,
+              first_clicked_at = CASE WHEN ? = 'email.clicked' THEN
+                CASE WHEN first_clicked_at IS NULL OR first_clicked_at > ? THEN ? ELSE first_clicked_at END
+                ELSE first_clicked_at END,
+              last_clicked_at = CASE WHEN ? = 'email.clicked' THEN
+                CASE WHEN last_clicked_at IS NULL OR last_clicked_at < ? THEN ? ELSE last_clicked_at END
+                ELSE last_clicked_at END,
+              click_count = click_count + CASE WHEN ? = 'email.clicked' THEN 1 ELSE 0 END,
+              engagement_event_at = CASE WHEN ? = 1 AND
+                (engagement_event_at IS NULL OR engagement_event_at < ?) THEN ? ELSE engagement_event_at END
+          WHERE id = ?
+        `).bind(
+          legacyStatus, legacyStatus, deliveryStatus,
+          event.type === 'email.clicked' ? 'click_detected' :
+            event.type === 'email.opened' && single.engagement_status !== 'click_detected'
+              ? 'open_detected'
+              : single.engagement_status || 'no_open_detected',
+          score, bounce.reason, reason, receivedAt, event.type, eventAt, eventAt,
+          !isEngagement && deliveryIsNewer ? 1 : 0, eventAt, messageId,
+          event.type, eventAt, event.type, eventAt, event.type, eventAt,
+          event.type, eventAt, event.type, eventAt, event.type, eventAt,
+          event.type, eventAt, eventAt, event.type, eventAt, eventAt, event.type,
+          event.type, eventAt, eventAt, event.type, eventAt, eventAt, event.type,
+          isEngagement ? 1 : 0, eventAt, eventAt, single.id
+        ).run();
+        if (['email.bounced', 'email.suppressed', 'email.complained'].includes(event.type)) {
+          const suppressionReason = event.type === 'email.complained'
+            ? 'complaint'
+            : event.type === 'email.suppressed' ? 'provider_suppressed' :
+              bounce.type === 'hard' ? 'hard_bounce' : null;
+          await recordSuppression(db, single.normalized_email, suppressionReason, single.id, null, eventAt);
+        }
+      }
+
+      if (bulk) {
+        const isEngagement = event.type === 'email.opened' || event.type === 'email.clicked';
+        const deliveryIsNewer = !bulk.delivery_event_at || eventAt >= bulk.delivery_event_at;
+        let deliveryStatus = bulk.delivery_status || 'not_sent';
+        let technicalStatus = bulk.technical_status || 'unknown';
+        let score = Number(bulk.confidence_score || 0);
+        if (!isEngagement && deliveryIsNewer) {
+          deliveryStatus = reduceDeliveryStatus(deliveryStatus, event.type, bounce.type);
+          if (['hard_bounce', 'suppressed', 'complaint'].includes(deliveryStatus)) {
+            technicalStatus = 'undeliverable';
+            score = 0;
+          } else if (deliveryStatus === 'soft_bounce' && technicalStatus !== 'undeliverable') {
+            technicalStatus = 'risky';
+          } else if (deliveryStatus === 'delivered') {
+            score = Math.min(99, score + (bulk.delivery_status === 'delivered' ? 0 : 15));
+          }
+        }
+        if (bulk.confirmation_status === 'confirmed_active') score = 100;
+        if (event.type === 'email.opened' && score < 100) score = Math.min(99, score + 2);
+        if (event.type === 'email.clicked' && score < 100) score = Math.min(99, score + 5);
+        await db.prepare(`
+          UPDATE email_verification_job_rows
+          SET technical_status = ?, delivery_status = ?, engagement_status = ?,
+              confidence_score = ?, bounce_type = COALESCE(?, bounce_type),
+              bounce_reason = COALESCE(?, bounce_reason), reason = ?,
+              updated_at = ?, latest_event = ?, latest_event_at =
+                CASE WHEN latest_event_at IS NULL OR latest_event_at < ? THEN ? ELSE latest_event_at END,
+              delivery_event_at = CASE WHEN ? = 1 THEN ? ELSE delivery_event_at END,
+              provider_email_id = COALESCE(provider_email_id, NULLIF(?, '')),
+              sent_at = CASE WHEN ? = 'email.sent' THEN COALESCE(sent_at, ?) ELSE sent_at END,
+              delivered_at = CASE WHEN ? = 'email.delivered' THEN COALESCE(delivered_at, ?) ELSE delivered_at END,
+              delayed_at = CASE WHEN ? = 'email.delivery_delayed' THEN COALESCE(delayed_at, ?) ELSE delayed_at END,
+              bounced_at = CASE WHEN ? = 'email.bounced' THEN COALESCE(bounced_at, ?) ELSE bounced_at END,
+              failed_at = CASE WHEN ? IN ('email.failed', 'email.suppressed') THEN COALESCE(failed_at, ?) ELSE failed_at END,
+              complained_at = CASE WHEN ? = 'email.complained' THEN COALESCE(complained_at, ?) ELSE complained_at END,
+              first_opened_at = CASE WHEN ? = 'email.opened' THEN
+                CASE WHEN first_opened_at IS NULL OR first_opened_at > ? THEN ? ELSE first_opened_at END
+                ELSE first_opened_at END,
+              last_opened_at = CASE WHEN ? = 'email.opened' THEN
+                CASE WHEN last_opened_at IS NULL OR last_opened_at < ? THEN ? ELSE last_opened_at END
+                ELSE last_opened_at END,
+              open_count = open_count + CASE WHEN ? = 'email.opened' THEN 1 ELSE 0 END,
+              first_clicked_at = CASE WHEN ? = 'email.clicked' THEN
+                CASE WHEN first_clicked_at IS NULL OR first_clicked_at > ? THEN ? ELSE first_clicked_at END
+                ELSE first_clicked_at END,
+              last_clicked_at = CASE WHEN ? = 'email.clicked' THEN
+                CASE WHEN last_clicked_at IS NULL OR last_clicked_at < ? THEN ? ELSE last_clicked_at END
+                ELSE last_clicked_at END,
+              click_count = click_count + CASE WHEN ? = 'email.clicked' THEN 1 ELSE 0 END,
+              engagement_event_at = CASE WHEN ? = 1 AND
+                (engagement_event_at IS NULL OR engagement_event_at < ?) THEN ? ELSE engagement_event_at END
+          WHERE id = ?
+        `).bind(
+          technicalStatus, deliveryStatus,
+          event.type === 'email.clicked' ? 'click_detected' :
+            event.type === 'email.opened' && bulk.engagement_status !== 'click_detected'
+              ? 'open_detected'
+              : bulk.engagement_status || 'no_open_detected',
+          score, event.type === 'email.bounced' ? bounce.type : null, bounce.reason,
+          deliveryReason(event.type, bounce.reason) || bulk.reason, receivedAt,
+          event.type, eventAt, eventAt, !isEngagement && deliveryIsNewer ? 1 : 0,
+          eventAt, messageId, event.type, eventAt, event.type, eventAt,
+          event.type, eventAt, event.type, eventAt, event.type, eventAt,
+          event.type, eventAt, event.type, eventAt, eventAt, event.type,
+          eventAt, eventAt, event.type, event.type, eventAt, eventAt,
+          event.type, eventAt, eventAt, event.type, isEngagement ? 1 : 0,
+          eventAt, eventAt, bulk.id
+        ).run();
+        await refreshBulkWebhookCounters(db, bulk.job_id, eventAt);
+        if (['email.bounced', 'email.suppressed', 'email.complained'].includes(event.type)) {
+          const suppressionReason = event.type === 'email.complained'
+            ? 'complaint'
+            : event.type === 'email.suppressed' ? 'provider_suppressed' :
+              bounce.type === 'hard' ? 'hard_bounce' : null;
+          await recordSuppression(db, bulk.normalized_email, suppressionReason, null, bulk.id, eventAt);
+        }
       }
       return c.json({ received: true });
     } catch (error) {

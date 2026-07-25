@@ -55,7 +55,11 @@ export async function parseJsonResponse(response) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || data.message || 'Request failed');
+    const error = new Error(data.error || data.message || 'Request failed');
+    error.code = data.code || data.errorCode;
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
 
   return data;

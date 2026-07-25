@@ -15,10 +15,45 @@ migrations_dir = "migrations"
 binding = "MY_BUCKET"
 bucket_name = "multitoolhub-files"
 
+[[queues.producers]]
+binding = "EMAIL_VERIFICATION_QUEUE"
+queue = "email-verification-jobs"
+
+[[queues.consumers]]
+queue = "email-verification-jobs"
+max_batch_size = 1
+max_batch_timeout = 2
+max_retries = 4
+dead_letter_queue = "email-verification-jobs-dlq"
+max_concurrency = 1
+
+[triggers]
+crons = [ "17 3 * * *" ]
+
 [vars]
 R2_BUCKET_NAME = "multitoolhub-files"
 EMAIL_VERIFIER_FROM = "Email Verifier <verification@mail.multitoolhub.space>"
 TURNSTILE_ALLOWED_HOSTNAMES = "multitoolhub.space,www.multitoolhub.space,multitool.space,www.multitool.space"
+PUBLIC_API_URL = "https://multi-tool-backend.multitoolhub-api.workers.dev"
+EMAIL_INSTANT_TURNSTILE_THRESHOLD = "10"
+EMAIL_INSTANT_HOURLY_LIMIT = "30"
+EMAIL_INSTANT_DAILY_LIMIT = "100"
+EMAIL_BULK_INSTANT_MAX_ROWS = "5000"
+EMAIL_BULK_SEND_MAX_ROWS = "250"
+EMAIL_BULK_MAX_FILE_MB = "10"
+EMAIL_BULK_SEND_DAILY_LIMIT = "1000"
+EMAIL_BULK_BATCH_SIZE = "25"
+EMAIL_BULK_SEND_BATCH_SIZE = "10"
+EMAIL_BULK_SEND_CONCURRENCY = "5"
+EMAIL_BULK_INSTANT_TURNSTILE_ROWS = "100"
+EMAIL_BULK_INSTANT_IP_HOURLY_LIMIT = "10"
+EMAIL_BULK_INSTANT_IP_DAILY_LIMIT = "20000"
+EMAIL_BULK_SEND_IP_HOURLY_LIMIT = "2"
+EMAIL_BULK_SEND_IP_DAILY_LIMIT = "500"
+EMAIL_BULK_PER_DOMAIN_PER_MINUTE = "20"
+EMAIL_JOB_RETENTION_DAYS = "30"
+EMAIL_BOUNCE_PAUSE_PERCENT = "8"
+EMAIL_COMPLAINT_STOP_PERCENT = "0.1"
 
 # Secrets (set with: npx wrangler secret put KEY_NAME)
 # JWT_SECRET, GROQ_API_KEY, GEMINI_API_KEY

@@ -8,6 +8,7 @@ import {
   Clock3,
   Info,
   Loader2,
+  ListChecks,
   MailCheck,
   Minus,
   Send,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import SEOHead from '../../components/seo/SEOHead';
+import BulkEmailVerifier from '../../components/email-verifier/BulkEmailVerifier';
 import TurnstileWidget from '../../components/shared/TurnstileWidget';
 import { TURNSTILE_SITE_KEY } from '../../config';
 import { useToolHistory } from '../../hooks/useToolHistory';
@@ -25,9 +27,7 @@ import '../styles/EmailVerifier.css';
 
 const TERMINAL_STATUSES = new Set([
   'confirmed',
-  'delivered',
   'undeliverable',
-  'delayed',
   'complaint',
   'unknown',
 ]);
@@ -43,11 +43,12 @@ const EVIDENCE_FIELDS = [
   { key: 'smtp', label: 'SMTP', description: 'Server response' },
   { key: 'catchAll', label: 'Catch-all', description: 'Accepts any mailbox' },
   { key: 'deliveryStatus', label: 'Delivery', description: 'Message delivery' },
+  { key: 'engagementStatus', label: 'Engagement', description: 'Estimated interaction' },
   { key: 'confirmationStatus', label: 'Confirmation', description: 'Owner confirmation' },
 ];
 
 function normalizeStatus(value) {
-  return String(value ?? '').trim().toLowerCase();
+  return String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
 
 function isTerminal(result) {
@@ -59,21 +60,31 @@ function isTerminal(result) {
 function toneForStatus(value) {
   const status = normalizeStatus(value);
   if (
-    ['valid', 'confirmed', 'delivered', 'deliverable', 'pass', 'passed', 'true', 'yes'].includes(
+    [
+      'valid', 'confirmed', 'confirmed_active', 'delivered', 'deliverable',
+      'likely_deliverable', 'open_detected', 'click_detected', 'pass', 'passed',
+      'true', 'yes',
+    ].includes(
       status,
     )
   ) {
     return 'success';
   }
   if (
-    ['invalid', 'undeliverable', 'complaint', 'fail', 'failed', 'false', 'rejected', 'error'].includes(
+    [
+      'invalid', 'undeliverable', 'hard_bounce', 'suppressed', 'complaint',
+      'fail', 'failed', 'false', 'rejected', 'error',
+    ].includes(
       status,
     )
   ) {
     return 'danger';
   }
   if (
-    ['pending', 'checking', 'queued', 'sent', 'delayed', 'risky', 'warning', 'unknown'].includes(
+    [
+      'pending', 'checking', 'queued', 'sending', 'sent', 'delayed', 'soft_bounce',
+      'catch_all', 'risky', 'warning', 'unknown',
+    ].includes(
       status,
     )
   ) {
@@ -89,7 +100,9 @@ function displayValue(value) {
   if (typeof value === 'object') {
     return value.label || value.status || value.value || JSON.stringify(value);
   }
-  return String(value);
+  return String(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function evidenceTone(key, value) {
@@ -97,7 +110,7 @@ function evidenceTone(key, value) {
   if (typeof value === 'object') {
     if (typeof value.valid === 'boolean') return value.valid ? 'success' : 'danger';
     if (
-      (key === 'disposable' || key === 'roleBased' || key === 'catchAll') &&
+      (key === 'disposable' || key === 'roleBased') &&
       typeof value.value === 'boolean'
     ) {
       return value.value ? 'danger' : 'success';
@@ -105,7 +118,8 @@ function evidenceTone(key, value) {
     return toneForStatus(value.status ?? value.value ?? value.label);
   }
   if (typeof value === 'boolean') {
-    const negativeSignal = key === 'disposable' || key === 'roleBased' || key === 'catchAll';
+    if (key === 'catchAll' && value === true) return 'warning';
+    const negativeSignal = key === 'disposable' || key === 'roleBased';
     return value === negativeSignal ? 'danger' : 'success';
   }
   return toneForStatus(value);
@@ -152,6 +166,8 @@ function ConfidenceMeter({ score }) {
 
 function ResultPanel({ result }) {
   const overallTone = toneForStatus(result.status);
+  const latestEventTime =
+    result.latestEventAt || result.latestEventTime || result.updatedAt || result.checkedAt;
   const hasDeliveryFlow =
     (result.deliveryStatus && result.deliveryStatus !== 'not_sent') ||
     (result.confirmationStatus && result.confirmationStatus !== 'not_requested');
@@ -159,6 +175,7 @@ function ResultPanel({ result }) {
     ? [
         { key: 'status', label: 'Verification', value: result.statusLabel || result.status },
         { key: 'deliveryStatus', label: 'Delivery', value: result.deliveryStatus },
+        { key: 'engagementStatus', label: 'Engagement', value: result.engagementStatus },
         { key: 'confirmationStatus', label: 'Confirmation', value: result.confirmationStatus },
       ].filter((item) => item.value !== null && item.value !== undefined && item.value !== '')
     : [];
@@ -188,10 +205,10 @@ function ResultPanel({ result }) {
               </span>
             </div>
           )}
-          {result.checkedAt && (
+          {latestEventTime && (
             <div className="email-verifier__timestamp">
               <Clock3 size={16} aria-hidden="true" />
-              <span>Latest check: {formatTimestamp(result.checkedAt)}</span>
+              <span>Latest event: {formatTimestamp(latestEventTime)}</span>
             </div>
           )}
         </div>
@@ -226,6 +243,45 @@ function ResultPanel({ result }) {
           );
         })}
       </dl>
+
+      <div className="email-verifier__limitations">
+        <Info size={18} aria-hidden="true" />
+        <div>
+          <strong>SMTP probing is unavailable from Cloudflare</strong>
+          <p>
+            An unavailable SMTP signal does not make an address invalid. The score relies on the
+            other returned technical and delivery evidence.
+          </p>
+        </div>
+      </div>
+
+      <details className="email-verifier__score-details">
+        <summary>How this score was calculated</summary>
+        <p>
+          Confidence combines returned syntax, domain, MX, disposable, role-based, catch-all,
+          historical delivery, current delivery, engagement, and secure confirmation signals.
+          Confirmed Active is strongest; hard bounces and complaints override weaker positive
+          signals.
+        </p>
+        {Array.isArray(result.scoreBreakdown) && result.scoreBreakdown.length > 0 && (
+          <ul>
+            {result.scoreBreakdown.map((item, index) => (
+              <li key={`${item.signal || item.label}-${index}`}>
+                <span>{item.signal || item.label}</span>
+                <strong>{typeof item.points === 'number' && item.points > 0 ? '+' : ''}{item.points}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+
+      {hasDeliveryFlow && (
+        <p className="email-verifier__tracking-limitation">
+          Open tracking is an estimate. Some email clients block tracking images, while privacy
+          features may generate automatic opens. A secure confirmation-link click remains the
+          strongest proof.
+        </p>
+      )}
 
       {timeline.length > 1 && (
         <div className="email-verifier__timeline-wrap">
@@ -262,6 +318,7 @@ export default function EmailVerifier() {
   const [consent, setConsent] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [instantTurnstileRequired, setInstantTurnstileRequired] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -347,6 +404,7 @@ export default function EmailVerifier() {
     setMode(nextMode);
     setConsent(false);
     setTurnstileToken('');
+    setInstantTurnstileRequired(false);
     setError('');
     setResult(null);
   };
@@ -369,9 +427,13 @@ export default function EmailVerifier() {
       if (mode === 'instant') {
         const checkResult = await apiFetch('/api/email-verifier/check', {
           method: 'POST',
-          body: JSON.stringify({ email: enteredEmail }),
+          body: JSON.stringify({
+            email: enteredEmail,
+            turnstileToken: instantTurnstileRequired ? turnstileToken : undefined,
+          }),
         });
         setResult({ ...checkResult, email: checkResult.email || enteredEmail });
+        setInstantTurnstileRequired(false);
       } else {
         const sendResult = await apiFetch('/api/email-verifier/send', {
           method: 'POST',
@@ -390,6 +452,9 @@ export default function EmailVerifier() {
       }
     } catch (submitError) {
       setError(submitError.message);
+      if (mode === 'instant' && submitError.code === 'TURNSTILE_REQUIRED') {
+        setInstantTurnstileRequired(true);
+      }
       if (mode === 'confirm') {
         setTurnstileToken('');
         setTurnstileResetKey((key) => key + 1);
@@ -401,6 +466,10 @@ export default function EmailVerifier() {
 
   const confirmDisabled =
     mode === 'confirm' && (!consent || !turnstileToken || !TURNSTILE_SITE_KEY);
+  const instantDisabled =
+    mode === 'instant' &&
+    instantTurnstileRequired &&
+    (!turnstileToken || !TURNSTILE_SITE_KEY);
   const busy = isSubmitting || isPolling;
 
   return (
@@ -408,10 +477,10 @@ export default function EmailVerifier() {
       <SEOHead
         title="Email Verifier"
         description="Check whether an email address is likely able to receive messages, or send a permission-based confirmation email."
-        canonicalUrl="https://multitool.space/tools/email-verifier"
+        canonicalUrl="https://www.multitoolhub.space/tools/email-verifier"
       />
 
-      <main className="email-verifier container">
+      <main className={`email-verifier email-verifier--mode-${mode} container`}>
         <Link to="/utilities" className="email-verifier__back btn-secondary">
           <ArrowLeft size={17} aria-hidden="true" />
           Back to Utilities
@@ -480,9 +549,31 @@ export default function EmailVerifier() {
                   </span>
                   <span className="email-verifier__radio-dot" />
                 </label>
+
+                <label className={mode === 'bulk' ? 'is-selected' : ''}>
+                  <input
+                    type="radio"
+                    name="verification-mode"
+                    value="bulk"
+                    checked={mode === 'bulk'}
+                    onChange={() => changeMode('bulk')}
+                    disabled={busy}
+                  />
+                  <span className="email-verifier__mode-icon">
+                    <ListChecks size={20} aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong>Bulk Verification</strong>
+                    <small>Review and verify a spreadsheet in a controlled job.</small>
+                  </span>
+                  <span className="email-verifier__radio-dot" />
+                </label>
               </div>
             </fieldset>
 
+            {mode === 'bulk' ? (
+              <BulkEmailVerifier />
+            ) : (
             <div className="email-verifier__form-body">
               <label className="email-verifier__email-label" htmlFor="email-verifier-input">
                 Email address
@@ -505,7 +596,7 @@ export default function EmailVerifier() {
                 <button
                   className="email-verifier__submit btn-primary"
                   type="submit"
-                  disabled={busy || !email.trim() || confirmDisabled}
+                  disabled={busy || !email.trim() || confirmDisabled || instantDisabled}
                   aria-busy={busy}
                 >
                   {busy ? (
@@ -553,6 +644,22 @@ export default function EmailVerifier() {
                 </div>
               )}
 
+              {mode === 'instant' && instantTurnstileRequired && (
+                <div className="email-verifier__adaptive-challenge">
+                  <div>
+                    <strong>One more security check</strong>
+                    <p>Complete the challenge, then submit this instant check again.</p>
+                  </div>
+                  <TurnstileWidget
+                    siteKey={TURNSTILE_SITE_KEY}
+                    action="email_verifier_instant"
+                    onVerify={handleTurnstileVerify}
+                    onError={handleTurnstileError}
+                    resetKey={turnstileResetKey}
+                  />
+                </div>
+              )}
+
               <div className="email-verifier__announcements" aria-live="polite" aria-atomic="true">
                 {error && (
                   <div className="email-verifier__error" role="alert">
@@ -570,6 +677,7 @@ export default function EmailVerifier() {
                 )}
               </div>
             </div>
+            )}
           </form>
         </section>
 

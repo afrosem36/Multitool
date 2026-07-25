@@ -42,6 +42,7 @@ function loadTurnstile() {
 
 export default function TurnstileWidget({
   siteKey,
+  action = 'email_verifier_send',
   onVerify,
   onError,
   resetKey,
@@ -68,7 +69,7 @@ export default function TurnstileWidget({
 
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: siteKey,
-          action: 'email_verifier_send',
+          action,
           theme: 'auto',
           callback: (token) => {
             if (active) onVerify(token);
@@ -98,7 +99,7 @@ export default function TurnstileWidget({
       }
       widgetIdRef.current = null;
     };
-  }, [siteKey, onVerify, onError, resetKey]);
+  }, [siteKey, action, onVerify, onError, resetKey]);
 
   return (
     <div className="email-verifier__turnstile">

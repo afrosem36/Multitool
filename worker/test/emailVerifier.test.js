@@ -14,6 +14,7 @@ import {
   isTurnstileResultValid,
   mapResendEvent,
   normalizeEmail,
+  reduceDeliveryStatus,
   validateEmailSyntax,
   verifyResendWebhookSignature,
 } from '../src/emailVerifier.js';
@@ -69,8 +70,29 @@ test('SMTP timeout and blocking never turn a likely address invalid', () => {
 
 test('maps delivery, hard bounce, and complaint webhooks', () => {
   assert.deepEqual(mapResendEvent('email.delivered'), { status: 'delivered', deliveryStatus: 'delivered' });
-  assert.deepEqual(mapResendEvent('email.bounced'), { status: 'undeliverable', deliveryStatus: 'bounced' });
+  assert.deepEqual(mapResendEvent('email.bounced'), { status: 'undeliverable', deliveryStatus: 'hard_bounce' });
   assert.deepEqual(mapResendEvent('email.complained'), { status: 'complaint', deliveryStatus: 'complaint' });
+  assert.deepEqual(mapResendEvent('email.opened'), {
+    status: null,
+    deliveryStatus: null,
+    engagementStatus: 'open_detected',
+  });
+  assert.deepEqual(mapResendEvent('email.clicked'), {
+    status: null,
+    deliveryStatus: null,
+    engagementStatus: 'click_detected',
+  });
+  assert.deepEqual(mapResendEvent('email.failed'), { status: 'unknown', deliveryStatus: 'failed' });
+  assert.deepEqual(mapResendEvent('email.suppressed'), { status: 'undeliverable', deliveryStatus: 'suppressed' });
+});
+
+test('delivery reducer protects terminal and stronger out-of-order states', () => {
+  assert.equal(reduceDeliveryStatus('delivered', 'email.sent'), 'delivered');
+  assert.equal(reduceDeliveryStatus('hard_bounce', 'email.delivered'), 'hard_bounce');
+  assert.equal(reduceDeliveryStatus('complaint', 'email.sent'), 'complaint');
+  assert.equal(reduceDeliveryStatus('sent', 'email.delivery_delayed'), 'delayed');
+  assert.equal(reduceDeliveryStatus('sent', 'email.bounced', 'soft'), 'soft_bounce');
+  assert.equal(reduceDeliveryStatus('sent', 'email.bounced', 'hard'), 'hard_bounce');
 });
 
 test('creates a secure confirmation token and stores a hash instead of raw token', async () => {
@@ -132,6 +154,11 @@ test('production Turnstile results require the expected action and an allowed ho
     hostname: 'attacker.example',
     action: 'email_verifier_send',
   }, env), false);
+  assert.equal(isTurnstileResultValid({
+    success: true,
+    hostname: 'multitool.space',
+    action: 'email_verifier_bulk_send',
+  }, env, 'email_verifier_bulk_send'), true);
 });
 
 test('duplicate webhook events are not claimed twice', async () => {

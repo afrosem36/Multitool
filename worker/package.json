@@ -13,10 +13,14 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0",
-    "hono": "^4.4.0",
-    "nanoid": "^5.0.7"
+    "hono": "^4.12.32",
+    "nanoid": "^5.0.7",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "wrangler": "^4.87.0"
+  },
+  "overrides": {
+    "undici": "7.29.0"
   }
 }
