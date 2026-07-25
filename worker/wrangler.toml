@@ -20,4 +20,5 @@ R2_BUCKET_NAME = "multitoolhub-files"
 
 # Secrets (set with: npx wrangler secret put KEY_NAME)
 # JWT_SECRET, GROQ_API_KEY, GEMINI_API_KEY
+# RESEND_API_KEY, RESEND_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, TOKEN_HASH_SECRET
 # FRONTEND_URL, SHORT_DOMAIN (set as secrets so .dev.vars overrides locally)

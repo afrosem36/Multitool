@@ -54,12 +54,21 @@ import {
   Car,
   Heart,
   LayoutDashboard,
-  Wifi
+  Wifi,
+  MailCheck
 } from 'lucide-react';
 
 import { FEATURE_FLAGS } from '../config';
 
 export const utilityTools = [
+  {
+    id: 'email-verifier',
+    name: 'Email Verifier',
+    description: 'Check whether an email address is likely able to receive messages.',
+    path: '/tools/email-verifier',
+    icon: MailCheck,
+    color: 'rgba(34, 211, 238, 0.1)'
+  },
   {
     id: 'qr-generator',
     name: 'QR Code Generator',

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Website base URL - change this to your actual domain
-const SITE_URL = 'https://multitoolhub.space';
+const SITE_URL = 'https://multitool.space';
 const CURRENT_DATE = new Date().toISOString().split('T')[0];
 
 // Define all routes and their priorities/changefreq
@@ -60,6 +60,7 @@ const routes = [
   { path: '/tools/passport-photo', priority: 0.6, changefreq: 'monthly' },
   { path: '/tools/html-ide', priority: 0.6, changefreq: 'monthly' },
   { path: '/tools/sql-practice', priority: 0.6, changefreq: 'monthly' },
+  { path: '/tools/email-verifier', priority: 0.7, changefreq: 'monthly' },
 
   // Other Tools
   { path: '/tools/youtube-downloader', priority: 0.7, changefreq: 'monthly' },

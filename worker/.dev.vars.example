@@ -11,3 +11,10 @@ RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 # YouTube downloader Railway backend URL.
 API_URL=https://multitool-production-ddd8.up.railway.app
 WORKER_SECRET=my_super_secret_123456
+RESEND_API_KEY=re_your_resend_api_key
+RESEND_WEBHOOK_SECRET=whsec_your_resend_webhook_signing_secret
+TURNSTILE_SECRET_KEY=your_turnstile_secret_key
+TOKEN_HASH_SECRET=use_a_long_random_secret
+EMAIL_VERIFIER_FROM=Email Verifier <verification@mail.multitool.space>
+PUBLIC_API_URL=http://localhost:8787
+TURNSTILE_ALLOWED_HOSTNAMES=localhost,127.0.0.1,multitool.space,www.multitool.space

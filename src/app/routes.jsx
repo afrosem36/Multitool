@@ -61,6 +61,7 @@ const SqlPractice            = React.lazy(() => import('../pages/other-tools/Sql
 const MojibakeDecoder        = React.lazy(() => import('../pages/other-tools/MojibakeDecoder'));
 const YouTubeDownloader      = React.lazy(() => import('../pages/other-tools/YouTubeDownloader'));
 const SeoAnalyzer            = React.lazy(() => import('../pages/other-tools/SeoAnalyzer'));
+const EmailVerifier          = React.lazy(() => import('../pages/other-tools/EmailVerifier'));
 
 const ExcelMerger            = React.lazy(() => import('../pages/excel-tools/ExcelMerger'));
 const ExcelConverter         = React.lazy(() => import('../pages/excel-tools/ExcelConverter'));
@@ -221,6 +222,7 @@ export function AppRoutes() {
           <Route path="/tools/html-ide"           element={<HtmlIde />} />
           <Route path="/tools/sql-practice"       element={<SqlPractice />} />
           <Route path="/tools/youtube-downloader" element={<YouTubeDownloader />} />
+          <Route path="/tools/email-verifier"   element={<EmailVerifier />} />
 
           {/* Games */}
           <Route path="/games" element={<GamesHub />} />

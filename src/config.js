@@ -1,5 +1,7 @@
 export const API_BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 export const WORKER_SECRET = import.meta.env.VITE_WORKER_SECRET || "";
+export const TURNSTILE_SITE_KEY =
+  import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 
 export const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID || "";

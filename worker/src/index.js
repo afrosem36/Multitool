@@ -3,10 +3,15 @@ import { sign, verify } from 'hono/jwt';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import * as cheerio from 'cheerio';
+import { registerEmailVerifierRoutes } from './emailVerifier.js';
 
 const app = new Hono();
 
+registerEmailVerifierRoutes(app);
+
 const ALLOWED_ORIGINS = [
+  "https://www.multitool.space",
+  "https://multitool.space",
   "https://www.multitoolhub.space",
   "https://multitoolhub.space",
 ];
