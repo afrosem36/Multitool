@@ -15,7 +15,8 @@
     "postbuild": "node scripts/generate-seo-assets.mjs",
     "deploy:frontend": "npm run build && npx vercel --prod",
     "deploy:worker": "npm run deploy --prefix worker",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "test:email-verifier-ui": "node --test src/pages/other-tools/emailVerifierSignals.test.js"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",

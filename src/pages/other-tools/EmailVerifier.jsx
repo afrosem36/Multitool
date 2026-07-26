@@ -11,6 +11,7 @@ import {
   ListChecks,
   MailCheck,
   Minus,
+  RefreshCw,
   Send,
   ShieldCheck,
   X,
@@ -23,6 +24,11 @@ import TurnstileWidget from '../../components/shared/TurnstileWidget';
 import { TURNSTILE_SITE_KEY } from '../../config';
 import { useToolHistory } from '../../hooks/useToolHistory';
 import { apiFetch } from '../../utils/api';
+import {
+  canRefreshActivity,
+  getEngagementSignal,
+  isDeliveryVerification,
+} from './emailVerifierSignals';
 import '../styles/EmailVerifier.css';
 
 const TERMINAL_STATUSES = new Set([
@@ -164,13 +170,18 @@ function ConfidenceMeter({ score }) {
   );
 }
 
-function ResultPanel({ result }) {
+function ResultPanel({
+  result,
+  onRefreshActivity,
+  isRefreshingActivity,
+  activityMessage,
+}) {
   const overallTone = toneForStatus(result.status);
+  const engagementSignal = getEngagementSignal(result);
   const latestEventTime =
     result.latestEventAt || result.latestEventTime || result.updatedAt || result.checkedAt;
-  const hasDeliveryFlow =
-    (result.deliveryStatus && result.deliveryStatus !== 'not_sent') ||
-    (result.confirmationStatus && result.confirmationStatus !== 'not_requested');
+  const hasDeliveryFlow = isDeliveryVerification(result);
+  const refreshAvailable = canRefreshActivity(result);
   const timeline = hasDeliveryFlow
     ? [
         { key: 'status', label: 'Verification', value: result.statusLabel || result.status },
@@ -205,11 +216,36 @@ function ResultPanel({ result }) {
               </span>
             </div>
           )}
-          {latestEventTime && (
-            <div className="email-verifier__timestamp">
-              <Clock3 size={16} aria-hidden="true" />
-              <span>Latest event: {formatTimestamp(latestEventTime)}</span>
+          {(latestEventTime || refreshAvailable) && (
+            <div className="email-verifier__activity-tools">
+              {latestEventTime && (
+                <div className="email-verifier__timestamp">
+                  <Clock3 size={16} aria-hidden="true" />
+                  <span>Latest event: {formatTimestamp(latestEventTime)}</span>
+                </div>
+              )}
+              {refreshAvailable && (
+                <button
+                  type="button"
+                  className="email-verifier__refresh-activity"
+                  onClick={onRefreshActivity}
+                  disabled={isRefreshingActivity}
+                  aria-busy={isRefreshingActivity}
+                >
+                  <RefreshCw
+                    className={isRefreshingActivity ? 'email-verifier__spinner' : ''}
+                    size={16}
+                    aria-hidden="true"
+                  />
+                  {isRefreshingActivity ? 'Refreshing activity' : 'Refresh activity'}
+                </button>
+              )}
             </div>
+          )}
+          {hasDeliveryFlow && (
+            <span className="email-verifier__activity-status" role="status" aria-live="polite">
+              {activityMessage}
+            </span>
           )}
         </div>
       </div>
@@ -225,9 +261,13 @@ function ResultPanel({ result }) {
       <dl className="email-verifier__evidence">
         {EVIDENCE_FIELDS.map((field, index) => {
           const value = result[field.key];
-          const tone = evidenceTone(field.key, value);
+          const isEngagement = field.key === 'engagementStatus';
+          const tone = isEngagement ? engagementSignal.tone : evidenceTone(field.key, value);
           return (
-            <div className={`email-verifier__evidence-item is-${tone}`} key={field.key}>
+            <div
+              className={`email-verifier__evidence-item ${isEngagement ? 'email-verifier__evidence-item--telemetry' : ''} is-${tone}`}
+              key={field.key}
+            >
               <dt>
                 <span className="email-verifier__step">{String(index + 1).padStart(2, '0')}</span>
                 <span>
@@ -237,7 +277,23 @@ function ResultPanel({ result }) {
               </dt>
               <dd>
                 <StatusIcon tone={tone} />
-                <span>{displayValue(value)}</span>
+                {isEngagement ? (
+                  <span className="email-verifier__telemetry-reading">
+                    <span>
+                      <strong>{engagementSignal.label}</strong>
+                      {engagementSignal.timestamp && (
+                        <small>{formatTimestamp(engagementSignal.timestamp)}</small>
+                      )}
+                    </span>
+                    {engagementSignal.count > 1 && (
+                      <span className="email-verifier__event-count">
+                        {engagementSignal.count} {engagementSignal.countLabel}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span>{displayValue(value)}</span>
+                )}
               </dd>
             </div>
           );
@@ -321,8 +377,10 @@ export default function EmailVerifier() {
   const [instantTurnstileRequired, setInstantTurnstileRequired] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [activityMessage, setActivityMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isRefreshingActivity, setIsRefreshingActivity] = useState(false);
   const pollingRunRef = useRef(0);
   const pollingTimerRef = useRef(null);
   const { addHistory } = useToolHistory();
@@ -381,8 +439,8 @@ export default function EmailVerifier() {
 
         if (attempt >= MAX_POLL_ATTEMPTS - 1) {
           setIsPolling(false);
-          setError(
-            'The verification is still pending. You can submit the address again later to check its status.',
+          setActivityMessage(
+            'Automatic activity checks paused. You can refresh activity here later.',
           );
           return;
         }
@@ -406,6 +464,7 @@ export default function EmailVerifier() {
     setTurnstileToken('');
     setInstantTurnstileRequired(false);
     setError('');
+    setActivityMessage('');
     setResult(null);
   };
 
@@ -413,6 +472,7 @@ export default function EmailVerifier() {
     event.preventDefault();
     stopPolling();
     setError('');
+    setActivityMessage('');
     setResult(null);
 
     const enteredEmail = email.trim();
@@ -461,6 +521,32 @@ export default function EmailVerifier() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const refreshActivity = async () => {
+    if (!canRefreshActivity(result) || isRefreshingActivity) return;
+    const verificationId = result.verificationId;
+
+    setIsRefreshingActivity(true);
+    setError('');
+    setActivityMessage('Checking for the latest delivery and engagement activity…');
+
+    try {
+      const update = await apiFetch(
+        `/api/email-verifier/status/${encodeURIComponent(verificationId)}`,
+      );
+      setResult((current) => ({
+        ...current,
+        ...update,
+        verificationId: update.verificationId || current.verificationId,
+      }));
+      setActivityMessage('Activity refreshed. Only events reported by the email provider are shown.');
+    } catch (refreshError) {
+      setError(refreshError.message);
+      setActivityMessage('Activity could not be refreshed. Your verification email was not resent.');
+    } finally {
+      setIsRefreshingActivity(false);
     }
   };
 
@@ -681,7 +767,14 @@ export default function EmailVerifier() {
           </form>
         </section>
 
-        {result && <ResultPanel result={result} />}
+        {result && (
+          <ResultPanel
+            result={result}
+            onRefreshActivity={refreshActivity}
+            isRefreshingActivity={isRefreshingActivity}
+            activityMessage={activityMessage}
+          />
+        )}
 
         <aside className="email-verifier__privacy">
           <ShieldCheck size={20} aria-hidden="true" />
